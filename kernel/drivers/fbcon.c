@@ -23,6 +23,7 @@
 #include <jnu/fbcon.h>
 #include <jnu/klog.h>
 #include <jnu/string.h>
+#include <jnu/spinlock.h>
 #include <jnu/types.h>
 
 #include "font_data.h"
@@ -43,7 +44,8 @@ static struct {
 	uint32_t	cur_col;
 	uint32_t	cur_row;
 	bool		ready;
-} fb;
+	struct spinlock lock;
+} fb = { .lock = SPINLOCK_INITIALIZER };
 
 static void put_pixel(uint32_t x, uint32_t y, uint32_t color)
 {
@@ -171,7 +173,9 @@ static void emit_char(char c)
 
 void fbcon_write(const char *buf, size_t len)
 {
+	uint64_t flags = spin_lock_irqsave(&fb.lock);
 	if (!fb.ready) {
+		spin_unlock_irqrestore(&fb.lock, flags);
 		return;
 	}
 
@@ -184,6 +188,7 @@ void fbcon_write(const char *buf, size_t len)
 		emit_char(buf[i]);
 		i++;
 	}
+	spin_unlock_irqrestore(&fb.lock, flags);
 }
 
 static struct klog_backend fbcon_backend = {

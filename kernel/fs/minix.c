@@ -96,6 +96,10 @@ static uint32_t minix_bmap(struct vfs_mount *mnt, struct minix_raw_inode *ino, u
 	uint16_t per_block = MINIX_BLOCK_SIZE / sizeof(uint16_t);
 	if (block < per_block) {
 		if (ino->i_zone[7] == 0) return 0;
+		if (ino->i_zone[7] >= priv->sb.s_nzones) {
+			pr_err("minix: out of bounds single indirect pointer %u\n", ino->i_zone[7]);
+			return 0;
+		}
 		uint16_t buf[MINIX_BLOCK_SIZE / sizeof(uint16_t)];
 		if (minix_read_block(mnt, ino->i_zone[7], buf) != 0) return 0;
 		b = buf[block];
@@ -106,10 +110,18 @@ static uint32_t minix_bmap(struct vfs_mount *mnt, struct minix_raw_inode *ino, u
 	/* Double indirect */
 	if (block < (uint32_t)per_block * per_block) {
 		if (ino->i_zone[8] == 0) return 0;
+		if (ino->i_zone[8] >= priv->sb.s_nzones) {
+			pr_err("minix: out of bounds double indirect pointer %u\n", ino->i_zone[8]);
+			return 0;
+		}
 		uint16_t buf[MINIX_BLOCK_SIZE / sizeof(uint16_t)];
 		if (minix_read_block(mnt, ino->i_zone[8], buf) != 0) return 0;
 		uint32_t ind1 = buf[block / per_block];
 		if (ind1 == 0) return 0;
+		if (ind1 >= priv->sb.s_nzones) {
+			pr_err("minix: out of bounds single indirect pointer in double indirect %u\n", ind1);
+			return 0;
+		}
 		if (minix_read_block(mnt, ind1, buf) != 0) return 0;
 		b = buf[block % per_block];
 		goto check;

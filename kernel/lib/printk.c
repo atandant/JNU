@@ -21,12 +21,15 @@
 #include <jnu/cpu.h>
 #include <jnu/klog.h>
 #include <jnu/string.h>
+#include <jnu/spinlock.h>
 #include <jnu/types.h>
 
 /* Compile-time floor: messages with level > KLOG_BUILD_LEVEL are dropped. */
 #ifndef KLOG_BUILD_LEVEL
 #define KLOG_BUILD_LEVEL	KLOG_DEBUG
 #endif
+
+static struct spinlock printk_lock = SPINLOCK_INITIALIZER;
 
 /* ------------------------------------------------------------------------- */
 /* vsnprintf                                                                 */
@@ -388,6 +391,8 @@ void vprintk(enum klog_level level, const char *fmt, __builtin_va_list ap)
 		return;
 	}
 
+	uint64_t flags = spin_lock_irqsave(&printk_lock);
+
 	char line[1024];
 	int hlen;
 
@@ -425,6 +430,8 @@ void vprintk(enum klog_level level, const char *fmt, __builtin_va_list ap)
 
 	ring_write(line, total);
 	backends_write(level, line, total);
+
+	spin_unlock_irqrestore(&printk_lock, flags);
 }
 
 void printk(enum klog_level level, const char *fmt, ...)

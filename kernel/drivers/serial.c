@@ -17,6 +17,7 @@
 #include <jnu/io.h>
 #include <jnu/klog.h>
 #include <jnu/serial.h>
+#include <jnu/spinlock.h>
 #include <jnu/string.h>
 #include <jnu/types.h>
 
@@ -49,6 +50,7 @@
 
 
 static bool serial_ready;
+static struct spinlock serial_lock = SPINLOCK_INITIALIZER;
 
 static void put_byte(uint8_t b)
 {
@@ -60,7 +62,9 @@ static void put_byte(uint8_t b)
 
 void serial_write(const char *buf, size_t len)
 {
+	uint64_t flags = spin_lock_irqsave(&serial_lock);
 	if (!serial_ready) {
+		spin_unlock_irqrestore(&serial_lock, flags);
 		return;
 	}
 
@@ -71,6 +75,7 @@ void serial_write(const char *buf, size_t len)
 		}
 		put_byte(b);
 	}
+	spin_unlock_irqrestore(&serial_lock, flags);
 }
 
 static struct klog_backend serial_backend = {
