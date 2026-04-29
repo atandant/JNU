@@ -18,6 +18,7 @@
  */
 
 #include <jnu/compiler.h>
+#include <jnu/cpu.h>
 #include <jnu/klog.h>
 #include <jnu/string.h>
 #include <jnu/types.h>
@@ -391,12 +392,18 @@ void vprintk(enum klog_level level, const char *fmt, __builtin_va_list ap)
 	int hlen;
 
 	/*
-	 * Header. Phase 1 timestamp is always zero — the TSC calibration
-	 * lives in Phase 2. Format `[ssss.uuuuuu] LEVEL `.
+	 * Header. After Phase-2 cpu_calibrate_tsc(), `cpu_us_since_boot`
+	 * returns microseconds since CPU bring-up; before calibration it
+	 * returns 0, leaving the early-boot lines time-stamped at zero.
+	 * Format `[ssss.uuuuuu] LEVEL `.
 	 */
+	uint64_t us = cpu_us_since_boot();
+	uint64_t s  = us / 1000000ull;
+	uint64_t u  = us % 1000000ull;
 	hlen = snprintf(line, sizeof(line),
-			"[%5u.%06u] %s ",
-			0u, 0u, level_tag(level));
+			"[%5lu.%06lu] %s ",
+			(unsigned long)s, (unsigned long)u,
+			level_tag(level));
 
 	int blen = vsnprintf(line + hlen, sizeof(line) - (size_t)hlen,
 			     fmt, ap);

@@ -14,6 +14,7 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
+#include <jnu/io.h>
 #include <jnu/klog.h>
 #include <jnu/serial.h>
 #include <jnu/string.h>
@@ -45,17 +46,7 @@
 #define MCR_OUT2		0x08	/* required for IRQ delivery later */
 #define LSR_THRE		0x20	/* transmit holding empty */
 
-static inline void outb(uint16_t port, uint8_t val)
-{
-	__asm__ __volatile__ ("outb %0, %1" :: "a"(val), "Nd"(port));
-}
 
-static inline uint8_t inb(uint16_t port)
-{
-	uint8_t v;
-	__asm__ __volatile__ ("inb %1, %0" : "=a"(v) : "Nd"(port));
-	return v;
-}
 
 static bool serial_ready;
 

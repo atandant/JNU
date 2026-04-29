@@ -13,4 +13,13 @@
 
 #include <jnu/compiler.h>
 
+struct cpu_state;	/* defined in <jnu/idt.h> */
+
 __noreturn void panic(const char *fmt, ...) __printf(1, 2);
+
+/*
+ * Panic with a saved CPU state. Used by exception handlers so the
+ * forensic dump (§13) shows the faulting register file, faulting RIP,
+ * CR2, and a frame-pointer backtrace anchored at saved RBP.
+ */
+__noreturn void panic_with_state(struct cpu_state *st);

@@ -44,6 +44,7 @@ OBJDIR      := $(BUILD)/obj
 KERNEL_ELF  := $(BUILD)/kernel.elf
 KERNEL_ISO  := $(BUILD)/kernel.iso
 ISO_ROOT    := $(BUILD)/iso_root
+ATA_DISK    := $(BUILD)/disk.img
 
 LIMINE_DIR  := boot/limine
 FONT_HDR    := kernel/drivers/font_data.h
@@ -82,14 +83,39 @@ LDFLAGS := \
 C_SRCS := \
     kernel/lib/string.c \
     kernel/lib/printk.c \
+    kernel/lib/rbtree.c \
+    kernel/lib/spinlock.c \
     kernel/drivers/serial.c \
     kernel/drivers/fbcon.c \
+    kernel/drivers/pit.c \
+    kernel/drivers/rtc.c \
+    kernel/drivers/kbd.c \
+    kernel/drivers/pci.c \
+    kernel/drivers/ata.c \
+    kernel/arch/x86_64/cpu.c \
+    kernel/arch/x86_64/gdt.c \
+    kernel/arch/x86_64/idt.c \
+    kernel/arch/x86_64/exceptions.c \
+    kernel/arch/x86_64/pic.c \
+    kernel/arch/x86_64/apic.c \
+    kernel/arch/x86_64/paging.c \
+    kernel/mm/pmm.c \
+    kernel/mm/vmm.c \
+    kernel/mm/vma.c \
+    kernel/mm/slab.c \
+    kernel/fs/block.c \
+    kernel/fs/vfs.c \
+    kernel/fs/minix.c \
     kernel/kernel/cmdline.c \
     kernel/kernel/panic.c \
+    kernel/kernel/sched.c \
+    kernel/kernel/selftest.c \
+    kernel/kernel/symbols.c \
     kernel/kernel/main.c
 
 S_SRCS := \
-    kernel/arch/x86_64/boot.S
+    kernel/arch/x86_64/boot.S \
+    kernel/arch/x86_64/isr.S
 
 C_OBJS := $(C_SRCS:%.c=$(OBJDIR)/%.o)
 S_OBJS := $(S_SRCS:%.S=$(OBJDIR)/%.o)
@@ -99,13 +125,20 @@ OBJS := $(S_OBJS) $(C_OBJS) $(BUILDINFO_OBJ)
 
 # ---- top-level --------------------------------------------------------------
 
-.PHONY: all iso font clean distclean run debug check-limine
+.PHONY: all iso font ata-disk clean clean-disk distclean run run-disk debug debug-disk check-limine
 
 all: iso
 
 iso: $(KERNEL_ISO)
 
 font: $(FONT_HDR)
+
+#
+# ata-disk: create (or recreate) build/disk.img.
+# Pass SIZE=N to override the default 32 MiB, e.g.: make ata-disk SIZE=64
+#
+ata-disk:
+	@bash scripts/make-ata-disk.sh "$(ATA_DISK)" "$(or $(SIZE),32)"
 
 # ---- build rules ------------------------------------------------------------
 
@@ -153,25 +186,51 @@ $(KERNEL_ISO): $(KERNEL_ELF) boot/limine.cfg | check-limine
 
 # ---- run / debug ------------------------------------------------------------
 
+# QEMU flags shared between run targets.
+QEMU_COMMON := -machine q35 -m 256M \
+    -cdrom $(KERNEL_ISO) \
+    -boot d \
+    -serial stdio \
+    -no-reboot -no-shutdown
+
+# Attach an ATA disk only when build/disk.img exists.
+# q35 has no legacy IDE controller, so we add piix3-ide explicitly and
+# wire the drive image through it. This gives the ATA PIO driver real
+# devices at ports 0x1F0/0x170.
+comma := ,
+QEMU_IDE := -device piix3-ide$(comma)id=ide \
+    -drive id=hd0$(comma)file=$(ATA_DISK)$(comma)format=raw$(comma)if=none \
+    -device ide-hd$(comma)drive=hd0$(comma)bus=ide.0
+
+ifdef NODISK
+QEMU_DISK :=
+else
+QEMU_DISK := $(if $(wildcard $(ATA_DISK)),$(QEMU_IDE),)
+endif
+
 run: $(KERNEL_ISO)
-	"$(QEMU)" -machine q35 -m 256M \
-	    -cdrom $(KERNEL_ISO) \
-	    -boot d \
-	    -serial stdio \
-	    -no-reboot -no-shutdown
+	"$(QEMU)" $(QEMU_COMMON) $(QEMU_DISK)
+
+# run-disk: always require the disk image (fail if missing).
+run-disk: $(KERNEL_ISO) $(ATA_DISK)
+	"$(QEMU)" $(QEMU_COMMON) $(QEMU_IDE)
 
 debug: $(KERNEL_ISO)
-	"$(QEMU)" -machine q35 -m 256M \
-	    -cdrom $(KERNEL_ISO) \
-	    -boot d \
-	    -serial stdio \
-	    -no-reboot -no-shutdown \
-	    -s -S
+	"$(QEMU)" $(QEMU_COMMON) $(QEMU_DISK) -s -S
+
+debug-disk: $(KERNEL_ISO) $(ATA_DISK)
+	"$(QEMU)" $(QEMU_COMMON) $(QEMU_IDE) -s -S
 
 # ---- housekeeping -----------------------------------------------------------
 
+# clean: remove build artifacts but keep disk.img (it takes time to generate).
 clean:
-	rm -rf $(BUILD) $(FONT_HDR)
+	rm -rf $(BUILD)/obj $(BUILD)/kernel.elf $(BUILD)/kernel.iso \
+	       $(BUILD)/iso_root $(FONT_HDR)
 
-distclean: clean
+# clean-disk: also wipe the ATA disk image.
+clean-disk: clean
+	rm -f $(ATA_DISK)
+
+distclean: clean-disk
 	rm -rf $(LIMINE_DIR)

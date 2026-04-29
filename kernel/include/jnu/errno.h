@@ -27,5 +27,6 @@
 #define EINVAL		22	/* Invalid argument */
 #define ENOSPC		28	/* No space left */
 #define ERANGE		34	/* Out of range */
+#define ENAMETOOLONG	36	/* File name too long */
 #define ENOSYS		38	/* Not implemented */
 #define ENOTSUP		95	/* Not supported */

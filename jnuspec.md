@@ -117,7 +117,7 @@ These were debated and resolved. They are not open for casual revision.
 - **v0.0.1: stub.** `kernel_main` runs to completion, then idle:
   `for (;;) asm volatile ("sti; hlt; cli");`
 - **v0.0.2: preemptive round-robin** via LAPIC timer, 10 ms quantum,
-  single ready queue.
+  single ready queue. DO NOT USE PREEMTIVE ROUND ROBIN, IT IS HORRIBLE. USE MLFQ and boosting or something. IGNORE THE SPEC SAYING ROUND ROBIN.
 - **Long-term destination: MLFQ** with 4–5 priority levels and dynamic
   feedback. Not CFS, not EEVDF.
 
@@ -972,8 +972,7 @@ prove the boot-to-mount path here, and stop.
   - `vfs_open(path)` returns an inode handle; `vfs_read(inode, off,
     len, buf)`.
   - One mount point in v0.0.1: `/`.
-  - `vfs_selftest`: open a known file from the test image, read it,
-    compare to a known SHA or content prefix.
+  - `vfs_selftest`: open `/` from the test image, and assert it is a directory.
 - `kernel/fs/minix.c` —
   - Implement MINIX v1 superblock parsing (offset 1024, magic
     `0x137F` or `0x138F`).
@@ -990,12 +989,12 @@ prove the boot-to-mount path here, and stop.
   5. Init PIT, RTC.
   6. Init PCI; init ATA; register block devices.
   7. Init keyboard.
-  8. If `selftest=1`, run all `*_selftest()` functions and panic on
-     first failure.
-  9. Mount `/` from the first ATA disk as MINIX FS. Panic if mount
+  8. Mount `/` from the first ATA disk as MINIX FS. Panic if mount
      fails.
-  10. Print a one-line root-directory summary
+  9. Print a one-line root-directory summary
       (`pr_info("rootfs: %u entries\n", n)`).
+  10. If `selftest=1`, run all `*_selftest()` functions and panic on
+     first failure.
   11. `pr_info("kernel: boot complete; idle\n");`
   12. `for (;;) asm volatile ("sti; hlt; cli");`
 
@@ -1039,7 +1038,7 @@ When all six are green, tag `v0.0.1`.
 | ---------------------------------------- | --------------- |
 | Userspace, ring 3, ELF loader            | v0.0.2          |
 | Syscalls (`syscall`/`sysret`, MSRs)      | v0.0.2          |
-| Preemptive scheduler (round-robin)       | v0.0.2          |
+| Preemptive scheduler (MLFQ)              | v0.0.2          |
 | MINIX FS write support                   | v0.0.2          |
 | LAPIC timer (replacing PIT)              | v0.0.2          |
 | HPET                                     | v0.0.2          |
