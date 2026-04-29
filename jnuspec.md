@@ -1038,7 +1038,7 @@ When all six are green, tag `v0.0.1`.
 | ---------------------------------------- | --------------- |
 | Userspace, ring 3, ELF loader            | v0.0.2          |
 | Syscalls (`syscall`/`sysret`, MSRs)      | v0.0.2          |
-| Preemptive scheduler (MLFQ)              | v0.0.2          |
+| Scheduler (MLFQ)                         | v0.0.2          |
 | MINIX FS write support                   | v0.0.2          |
 | LAPIC timer (replacing PIT)              | v0.0.2          |
 | HPET                                     | v0.0.2          |
@@ -1047,7 +1047,8 @@ When all six are green, tag `v0.0.1`.
 | FPU/SSE/AVX state save in context switch | v0.0.3          |
 | First NIC (rtl8139 or virtio-net)        | v0.0.3          |
 | virtio-blk                               | v0.0.3          |
-| MLFQ scheduler                           | v0.0.4 / v0.0.5 |
+| KASLR (Kernel ASLR)                      | v0.0.3          |
+| Page zeroing/poisoning on `pmm_free`     | v0.0.3          |
 | SMP, x2APIC, IPIs, TLB shootdown         | v0.0.4          |
 | Loadable modules                         | v0.0.5+         |
 | Page replacement / swap                  | v0.0.5+         |
@@ -1055,7 +1056,7 @@ When all six are green, tag `v0.0.1`.
 | USB / xHCI                               | later           |
 | NVMe                                     | later           |
 | Real driver model                        | later           |
-| GPU drivers, WiFi, Bluetooth, audio      | unlikely ever   |
+| GPU drivers, WiFi, Bluetooth, audio      | unlikely, ever  |
 
 ---
 
@@ -1070,6 +1071,7 @@ When all six are green, tag `v0.0.1`.
 | Symbol table out of date with kernel ELF            | `gen-symbols.sh` is a Make dependency; rebuilds on every link. |
 | GDT order wrong → future `sysret` breaks            | Order is asserted at compile time via `_Static_assert` on offsets. |
 | Clang-only flags drift                              | Pinned clang version range in `setup-wsl.sh`; CI later.       |
+| HHDM stale data scraping (information leak)         | Deferred page zeroing/poisoning to v0.0.3. Acknowledged risk vs performance tradeoff in v0.0.1. |
 
 ---
 

@@ -44,13 +44,58 @@ static uint64_t read_cr3(void)
 	return v;
 }
 
+static void enforce_nx_on_hhdm(void)
+{
+	/*
+	 * Walk PML4 entries from 256 to 510 (covering 0xFFFF800000000000 to
+	 * 0xFFFFFF7FFFFFFFFF). This explicitly excludes index 511 where the
+	 * kernel image (.text, .rodata, etc.) resides. Limine maps the HHDM
+	 * in this range without the NX bit; we enforce W^X by setting it.
+	 */
+	for (unsigned i4 = 256; i4 < 511; i4++) {
+		if (!(kernel_pml4[i4] & PTE_PRESENT)) continue;
+
+		uint64_t *pdpt = phys_to_virt(kernel_pml4[i4] & PTE_ADDR_MASK);
+		for (unsigned i3 = 0; i3 < 512; i3++) {
+			if (!(pdpt[i3] & PTE_PRESENT)) continue;
+
+			if (pdpt[i3] & PTE_HUGE) {
+				pdpt[i3] |= PTE_NX;
+				continue;
+			}
+
+			uint64_t *pd = phys_to_virt(pdpt[i3] & PTE_ADDR_MASK);
+			for (unsigned i2 = 0; i2 < 512; i2++) {
+				if (!(pd[i2] & PTE_PRESENT)) continue;
+
+				if (pd[i2] & PTE_HUGE) {
+					pd[i2] |= PTE_NX;
+					continue;
+				}
+
+				uint64_t *pt = phys_to_virt(pd[i2] & PTE_ADDR_MASK);
+				for (unsigned i1 = 0; i1 < 512; i1++) {
+					if (pt[i1] & PTE_PRESENT) {
+						pt[i1] |= PTE_NX;
+					}
+				}
+			}
+		}
+	}
+
+	/* Reload CR3 to flush all TLB entries for modified page structures */
+	__asm__ __volatile__ ("mov %0, %%cr3" :: "r"(kernel_pml4_phys) : "memory");
+}
+
 void paging_init(uint64_t hhdm)
 {
 	hhdm_offset = hhdm;
 	kernel_pml4_phys = read_cr3() & 0x000FFFFFFFFFF000ull;
 	kernel_pml4 = phys_to_virt(kernel_pml4_phys);
 
-	pr_info("paging: kernel PML4 at phys 0x%lx\n",
+	enforce_nx_on_hhdm();
+
+	pr_info("paging: kernel PML4 at phys 0x%lx (HHDM NX enforced)\n",
 		(unsigned long)kernel_pml4_phys);
 }
 
@@ -232,7 +277,7 @@ int paging_ensure_hhdm(paddr_t base, size_t len)
 		unsigned i1 = pt_idx(va);
 		if (!(pt[i1] & PTE_PRESENT)) {
 			pt[i1] = (pa & PTE_ADDR_MASK) | PTE_PRESENT
-				 | PTE_WRITE;
+				 | PTE_WRITE | PTE_NX;
 			paging_invlpg(va);
 		}
 	}
