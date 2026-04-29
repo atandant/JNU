@@ -32,10 +32,8 @@ endif
 NASM    ?= nasm
 PYTHON  ?= python3
 
-# Path to a Windows-desktop qemu-system-x86_64 reachable from WSL. Override
-# on the command line, e.g.:
-#   make run QEMU="/mnt/c/Program Files/qemu/qemu-system-x86_64.exe"
-QEMU    ?= qemu-system-x86_64.exe
+# Path to QEMU.
+QEMU    ?= qemu-system-x86_64
 
 # ---- paths ------------------------------------------------------------------
 
@@ -230,40 +228,24 @@ $(KERNEL_ISO): $(KERNEL_ELF) $(INITRAMFS) boot/limine.cfg | check-limine
 
 # ---- run / debug ------------------------------------------------------------
 
-# QEMU flags shared between run targets.
-QEMU_COMMON := -machine q35 -m 256M \
-    -cdrom $(KERNEL_ISO) \
-    -boot d \
-    -serial stdio \
-    -no-reboot -no-shutdown
-
-# Attach an ATA disk only when build/disk.img exists.
-# q35 has no legacy IDE controller, so we add piix3-ide explicitly and
-# wire the drive image through it. This gives the ATA PIO driver real
-# devices at ports 0x1F0/0x170.
-comma := ,
-QEMU_IDE := -device piix3-ide$(comma)id=ide \
-    -drive id=hd0$(comma)file=$(ATA_DISK)$(comma)format=raw$(comma)if=none \
-    -device ide-hd$(comma)drive=hd0$(comma)bus=ide.0
-
-ifdef NODISK
-QEMU_DISK :=
+ifeq ($(OS),Windows_NT)
+RUN_SCRIPT := powershell.exe -ExecutionPolicy Bypass -File scripts\run-qemu.ps1
 else
-QEMU_DISK := $(if $(wildcard $(ATA_DISK)),$(QEMU_IDE),)
+RUN_SCRIPT := bash scripts/run-qemu.sh
 endif
 
 run: $(KERNEL_ISO)
-	"$(QEMU)" $(QEMU_COMMON) $(QEMU_DISK)
+	$(RUN_SCRIPT) $(if $(wildcard $(ATA_DISK)),--disk,)
 
 # run-disk: always require the disk image (fail if missing).
 run-disk: $(KERNEL_ISO) $(ATA_DISK)
-	"$(QEMU)" $(QEMU_COMMON) $(QEMU_IDE)
+	$(RUN_SCRIPT) --disk
 
 debug: $(KERNEL_ISO)
-	"$(QEMU)" $(QEMU_COMMON) $(QEMU_DISK) -s -S
+	$(RUN_SCRIPT) --debug
 
 debug-disk: $(KERNEL_ISO) $(ATA_DISK)
-	"$(QEMU)" $(QEMU_COMMON) $(QEMU_IDE) -s -S
+	$(RUN_SCRIPT) --disk --debug
 
 # ---- housekeeping -----------------------------------------------------------
 

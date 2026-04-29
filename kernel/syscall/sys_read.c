@@ -61,7 +61,7 @@ int64_t sys_read(int fd, void *ubuf, size_t len)
 
 		err = copy_to_user((uint8_t *)ubuf + done, buf, (size_t)n);
 		if (err) {
-			return err;
+			return done ? (int64_t)done : err;
 		}
 
 		file->offset += (uint64_t)n;

@@ -33,7 +33,7 @@ int64_t sys_write(int fd, const void *ubuf, size_t len)
 		err = copy_from_user(buf, (const uint8_t *)ubuf + done,
 				     chunk);
 		if (err) {
-			return err;
+			return done ? (int64_t)done : err;
 		}
 
 		klog_panic_write(buf, chunk);

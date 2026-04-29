@@ -136,6 +136,8 @@ static void kernel_thread_entry(struct thread_boot *boot)
 	kernel_thread_fn fn = boot->fn;
 	void *arg = boot->arg;
 
+	spin_unlock_irqrestore(&sched_lock, 1ull << 9);
+
 	fn(arg);
 	sched_exit_current(0);
 }
@@ -152,6 +154,8 @@ static void idle_loop(void *arg)
 static void user_thread_entry(void *arg)
 {
 	struct process *proc = arg;
+
+	spin_unlock_irqrestore(&sched_lock, 1ull << 9);
 
 	vmm_switch_to(proc->space);
 	arch_syscall_set_kernel_stack((uint64_t)(uintptr_t)proc->main_task->kstack_top);
@@ -307,28 +311,18 @@ fail_task:
 
 void sched_yield(void)
 {
-	uint64_t flags;
-
-	__asm__ __volatile__("pushfq; popq %0; cli"
-			     : "=r"(flags) :: "memory");
+	uint64_t flags = spin_lock_irqsave(&sched_lock);
 	schedule_locked();
-	if (flags & (1ull << 9)) {
-		__asm__ __volatile__("sti" ::: "memory");
-	}
+	spin_unlock_irqrestore(&sched_lock, flags);
 }
 
 void sched_exit_current(int status)
 {
-	uint64_t flags;
-
-	__asm__ __volatile__("pushfq; popq %0; cli"
-			     : "=r"(flags) :: "memory");
+	uint64_t flags = spin_lock_irqsave(&sched_lock);
 	current->exit_status = status & 0xFF;
 	current->state = TASK_ZOMBIE;
 	schedule_locked();
-	if (flags & (1ull << 9)) {
-		__asm__ __volatile__("sti" ::: "memory");
-	}
+	spin_unlock_irqrestore(&sched_lock, flags);
 
 	for (;;) {
 		__asm__ __volatile__("cli; hlt");
@@ -337,15 +331,10 @@ void sched_exit_current(int status)
 
 void sched_sleep_current(void)
 {
-	uint64_t flags;
-
-	__asm__ __volatile__("pushfq; popq %0; cli"
-			     : "=r"(flags) :: "memory");
+	uint64_t flags = spin_lock_irqsave(&sched_lock);
 	current->state = TASK_SLEEPING;
 	schedule_locked();
-	if (flags & (1ull << 9)) {
-		__asm__ __volatile__("sti" ::: "memory");
-	}
+	spin_unlock_irqrestore(&sched_lock, flags);
 }
 
 void sched_wake(struct task *task)

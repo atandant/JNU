@@ -7,22 +7,26 @@
 
 #include <jnu/errno.h>
 #include <jnu/exec.h>
+#include <jnu/fd.h>
 #include <jnu/initramfs.h>
 #include <jnu/kmalloc.h>
 #include <jnu/process.h>
 #include <jnu/sched.h>
+#include <jnu/spinlock.h>
 #include <jnu/types.h>
 #include <jnu/vfs.h>
 #include <jnu/vmm.h>
 
 static int next_pid = 1;
+static struct spinlock process_tree_lock = SPINLOCK_INITIALIZER;
 
 int process_alloc_pid(void)
 {
-	if (next_pid <= 0) {
+	int pid = __atomic_fetch_add(&next_pid, 1, __ATOMIC_RELAXED);
+	if (pid <= 0) {
 		return -ENOMEM;
 	}
-	return next_pid++;
+	return pid;
 }
 
 void process_release_pid(int pid)
@@ -149,8 +153,11 @@ int process_spawn(const char *path, char *const *argv, int *pid_out)
 		goto fail_space;
 	}
 
+	uint64_t flags = spin_lock_irqsave(&process_tree_lock);
 	child->next_sibling = parent->first_child;
 	parent->first_child = child;
+	spin_unlock_irqrestore(&process_tree_lock, flags);
+
 	*pid_out = child->pid;
 	return 0;
 
@@ -167,13 +174,23 @@ void process_exit_current(int status)
 {
 	struct task *task = sched_current();
 	struct process *proc = task ? task->process : NULL;
+	uint64_t flags;
 
 	if (!proc) {
 		return;
 	}
 
+	for (int fd = 0; fd < JNU_MAX_FDS; fd++) {
+		file_destroy(fd_close(&proc->fds, fd));
+	}
+
+	flags = spin_lock_irqsave(&process_tree_lock);
 	proc->exit_status = status & 0xFF;
 	proc->state = PROCESS_ZOMBIE;
+	if (proc->parent && proc->parent->main_task) {
+		sched_wake(proc->parent->main_task);
+	}
+	spin_unlock_irqrestore(&process_tree_lock, flags);
 }
 
 static struct process *find_child(struct process *parent, int pid)
@@ -207,14 +224,17 @@ int process_wait(int pid, int *status_out)
 	struct task *task = sched_current();
 	struct process *parent = task ? task->process : NULL;
 	struct process *child;
+	uint64_t flags;
 
 	if (!parent || (pid != -1 && pid <= 0)) {
 		return -EINVAL;
 	}
 
 	for (;;) {
+		flags = spin_lock_irqsave(&process_tree_lock);
 		child = find_child(parent, pid);
 		if (!child) {
+			spin_unlock_irqrestore(&process_tree_lock, flags);
 			return -ECHILD;
 		}
 		if (child->state == PROCESS_ZOMBIE) {
@@ -224,9 +244,11 @@ int process_wait(int pid, int *status_out)
 				*status_out = child->exit_status;
 			}
 			unlink_child(parent, child);
+			spin_unlock_irqrestore(&process_tree_lock, flags);
 			return child_pid;
 		}
-		sched_yield();
+		spin_unlock_irqrestore(&process_tree_lock, flags);
+		sched_sleep_current();
 	}
 }
 

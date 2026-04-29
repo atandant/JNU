@@ -17,6 +17,23 @@
 #include <jnu/string.h>
 #include <jnu/usercopy.h>
 #include <jnu/vmm.h>
+#include <jnu/cpu.h>
+
+static void smap_stac(void)
+{
+	struct cpu *c = cpu_current();
+	if (c && c->has_smap) {
+		__asm__ __volatile__("stac" ::: "memory");
+	}
+}
+
+static void smap_clac(void)
+{
+	struct cpu *c = cpu_current();
+	if (c && c->has_smap) {
+		__asm__ __volatile__("clac" ::: "memory");
+	}
+}
 
 static bool range_end(const void *uaddr, size_t len, uintptr_t *start,
 		      uintptr_t *end)
@@ -108,7 +125,9 @@ int copy_from_user(void *dst, const void *usrc, size_t len)
 		return err;
 	}
 
+	smap_stac();
 	memcpy(dst, usrc, len);
+	smap_clac();
 	return 0;
 }
 
@@ -128,24 +147,45 @@ int copy_to_user(void *udst, const void *src, size_t len)
 		return err;
 	}
 
+	smap_stac();
 	memcpy(udst, src, len);
+	smap_clac();
 	return 0;
 }
 
 int copy_string_from_user(char *dst, const char *usrc, size_t max)
 {
+	size_t done = 0;
+
 	if (!dst || max == 0) {
 		return -EINVAL;
 	}
 
-	for (size_t i = 0; i < max; i++) {
-		int err = copy_from_user(&dst[i], &usrc[i], 1);
+	while (done < max) {
+		uintptr_t curr = (uintptr_t)usrc + done;
+		size_t to_page_end = PAGE_SIZE - (curr & ~PAGE_MASK);
+		size_t chunk = max - done;
+		int err;
+
+		if (chunk > to_page_end) {
+			chunk = to_page_end;
+		}
+
+		err = user_range_mapped((const void *)curr, chunk, false);
 		if (err) {
 			return err;
 		}
-		if (dst[i] == '\0') {
-			return 0;
+
+		smap_stac();
+		for (size_t i = 0; i < chunk; i++) {
+			dst[done + i] = ((const char *)curr)[i];
+			if (dst[done + i] == '\0') {
+				smap_clac();
+				return 0;
+			}
 		}
+		smap_clac();
+		done += chunk;
 	}
 
 	dst[max - 1] = '\0';

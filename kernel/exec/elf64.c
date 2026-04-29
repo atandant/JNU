@@ -251,10 +251,27 @@ int elf64_load_image(struct addr_space *space, const struct exec_image *image,
 			return err;
 		}
 
-		err = image_read_exact(image, ph.p_offset, (void *)ph.p_vaddr,
-				       (size_t)ph.p_filesz);
-		if (err) {
-			return err;
+		uint64_t remaining = ph.p_filesz;
+		uint64_t file_off = ph.p_offset;
+		uint64_t curr_va = ph.p_vaddr;
+
+		while (remaining > 0) {
+			uint8_t buf[PAGE_SIZE];
+			size_t chunk = remaining > PAGE_SIZE ? PAGE_SIZE : remaining;
+
+			err = image_read_exact(image, file_off, buf, chunk);
+			if (err) {
+				return err;
+			}
+
+			err = copy_to_user((void *)curr_va, buf, chunk);
+			if (err) {
+				return err;
+			}
+
+			file_off += chunk;
+			curr_va += chunk;
+			remaining -= chunk;
 		}
 
 		err = vmm_protect(space, start,
@@ -285,8 +302,11 @@ int elf64_setup_initial_stack(struct addr_space *space, uint64_t *stack_out)
 		return err;
 	}
 
-	*(uint64_t *)stack = 0;
-	*(uint64_t *)(stack + 8) = 0;
+	uint64_t zero[2] = {0, 0};
+	err = copy_to_user((void *)stack, zero, sizeof(zero));
+	if (err) {
+		return err;
+	}
 	(void)pages;
 
 	*stack_out = stack;
