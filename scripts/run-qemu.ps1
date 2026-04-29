@@ -15,7 +15,7 @@
 [CmdletBinding()]
 param(
     [string]$Iso = "build/kernel.iso",
-    [int]$Memory = 256,
+    [int]$Memory = 300,
     [switch]$Debug
 )
 

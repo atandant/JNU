@@ -176,6 +176,20 @@ paddr_t pmm_alloc_pages(int order) {
   return 0;
 }
 
+paddr_t pmm_alloc_zeroed_pages(int order) {
+  paddr_t pa = pmm_alloc_pages(order);
+
+  if (pa) {
+    memset(phys_to_virt(pa), 0, PMM_ORDER_SIZE(order));
+  }
+
+  return pa;
+}
+
+paddr_t pmm_alloc_user_page(void) {
+  return pmm_alloc_zeroed_pages(0);
+}
+
 paddr_t pmm_alloc_dma(int order) {
   int o = order;
   while (o < PMM_MAX_ORDER && free_list_head[PMM_ZONE_DMA][o] == NO_LINK) {

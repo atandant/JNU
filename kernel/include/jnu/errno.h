@@ -15,6 +15,7 @@
 #define EIO		5	/* I/O error */
 #define ENXIO		6	/* No such device or address */
 #define E2BIG		7	/* Argument list too long */
+#define ENOEXEC		8	/* Executable format error */
 #define EAGAIN		11	/* Try again */
 #define ENOMEM		12	/* Out of memory */
 #define EACCES		13	/* Permission denied */
@@ -24,8 +25,10 @@
 #define ENODEV		19	/* No such device */
 #define ENOTDIR		20	/* Not a directory */
 #define EISDIR		21	/* Is a directory */
+#define ECHILD		10	/* No child processes */
 #define EINVAL		22	/* Invalid argument */
 #define ENOSPC		28	/* No space left */
+#define EMFILE		24	/* Too many open files */
 #define ERANGE		34	/* Out of range */
 #define ENAMETOOLONG	36	/* File name too long */
 #define ENOSYS		38	/* Not implemented */

@@ -59,11 +59,15 @@ int paging_unmap(struct addr_space *space, vaddr_t virt, size_t pages);
 int paging_protect(struct addr_space *space, vaddr_t virt, size_t pages,
 		   uint64_t new_flags);
 
+int paging_get_flags(struct addr_space *space, vaddr_t virt,
+		     uint64_t *out_flags);
+
 /*
  * For new address spaces: copy the kernel-half PDPT pointers from the
  * boot PML4 so kernel mappings are shared without per-space updates.
  */
 void paging_clone_kernel_half(uint64_t *new_pml4);
+void paging_destroy_user_half(uint64_t *pml4);
 
 /* Flush a single virtual page from the TLB. */
 static inline void paging_invlpg(vaddr_t v)

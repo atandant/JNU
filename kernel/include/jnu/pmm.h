@@ -46,6 +46,9 @@ void pmm_init(const struct limine_memmap_response *mm, uint64_t hhdm_offset);
  */
 paddr_t pmm_alloc_pages(int order);
 
+paddr_t pmm_alloc_zeroed_pages(int order);
+paddr_t pmm_alloc_user_page(void);
+
 paddr_t pmm_alloc_dma(int order);
 
 void pmm_free_pages(paddr_t pa, int order);

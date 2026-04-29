@@ -12,6 +12,7 @@
 
 #include <jnu/compiler.h>
 #include <jnu/errno.h>
+#include <jnu/kmalloc.h>
 #include <jnu/klog.h>
 #include <jnu/paging.h>
 #include <jnu/pmm.h>
@@ -44,6 +45,40 @@ void vmm_init(void)
 struct addr_space *vmm_kernel_space(void)
 {
 	return &kernel_space;
+}
+
+struct addr_space *vmm_create_space(void)
+{
+	struct addr_space *space;
+	paddr_t pml4_pa;
+
+	space = kzalloc(sizeof(*space));
+	if (!space) {
+		return NULL;
+	}
+
+	pml4_pa = pmm_alloc_zeroed_pages(0);
+	if (!pml4_pa) {
+		kfree(space);
+		return NULL;
+	}
+
+	space->pml4 = phys_to_virt(pml4_pa);
+	space->pml4_phys = pml4_pa;
+	rb_init(&space->vmas);
+	paging_clone_kernel_half(space->pml4);
+	return space;
+}
+
+void vmm_destroy_space(struct addr_space *space)
+{
+	if (!space || space == &kernel_space) {
+		return;
+	}
+
+	paging_destroy_user_half(space->pml4);
+	pmm_free_pages(space->pml4_phys, 0);
+	kfree(space);
 }
 
 int vmm_map(struct addr_space *space, vaddr_t virt, paddr_t phys,

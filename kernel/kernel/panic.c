@@ -19,6 +19,7 @@
 #include <jnu/klog.h>
 #include <jnu/paging.h>
 #include <jnu/panic.h>
+#include <jnu/sched.h>
 #include <jnu/string.h>
 #include <jnu/symbols.h>
 #include <jnu/types.h>
@@ -148,8 +149,16 @@ static void emit_backtrace(uint64_t rbp)
 
 static void emit_regs(const struct cpu_state *st, uint64_t cr2)
 {
-	emit_fmt("CPU 0  ring %u  task=<kernel>\n\n",
-		 (unsigned)(st->cs & 3));
+	struct task *task = sched_current();
+
+	if (task) {
+		emit_fmt("CPU 0  ring %u  pid=%d tid=%d task=%s\n\n",
+			 (unsigned)(st->cs & 3), task->pid, task->tid,
+			 task->name ? task->name : "(unnamed)");
+	} else {
+		emit_fmt("CPU 0  ring %u  task=<none>\n\n",
+			 (unsigned)(st->cs & 3));
+	}
 
 	emit_fmt("RIP=0x%016lx   ", (unsigned long)st->rip);
 	emit_symbol(st->rip);

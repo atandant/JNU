@@ -209,10 +209,114 @@ int paging_protect(struct addr_space *space, vaddr_t virt, size_t pages,
 	return 0;
 }
 
+int paging_get_flags(struct addr_space *space, vaddr_t virt,
+		     uint64_t *out_flags)
+{
+	uint64_t *pml4 = (space && space->pml4) ? space->pml4 : kernel_pml4;
+	uint64_t *pdpt;
+	uint64_t *pd;
+	uint64_t *pt;
+	uint64_t e;
+
+	if (!out_flags) {
+		return -EINVAL;
+	}
+
+	pdpt = table_for(pml4, pml4_idx(virt), false, 0);
+	if (!pdpt) {
+		return -ENOENT;
+	}
+
+	e = pdpt[pdpt_idx(virt)];
+	if (!(e & PTE_PRESENT)) {
+		return -ENOENT;
+	}
+	if (e & PTE_HUGE) {
+		*out_flags = e;
+		return 0;
+	}
+
+	pd = table_for(pdpt, pdpt_idx(virt), false, 0);
+	if (!pd) {
+		return -ENOENT;
+	}
+
+	e = pd[pd_idx(virt)];
+	if (!(e & PTE_PRESENT)) {
+		return -ENOENT;
+	}
+	if (e & PTE_HUGE) {
+		*out_flags = e;
+		return 0;
+	}
+
+	pt = table_for(pd, pd_idx(virt), false, 0);
+	if (!pt) {
+		return -ENOENT;
+	}
+
+	e = pt[pt_idx(virt)];
+	if (!(e & PTE_PRESENT)) {
+		return -ENOENT;
+	}
+
+	*out_flags = e;
+	return 0;
+}
+
 void paging_clone_kernel_half(uint64_t *new_pml4)
 {
 	for (unsigned i = 256; i < 512; i++) {
 		new_pml4[i] = kernel_pml4[i];
+	}
+}
+
+void paging_destroy_user_half(uint64_t *pml4)
+{
+	if (!pml4 || pml4 == kernel_pml4) {
+		return;
+	}
+
+	for (unsigned i4 = 0; i4 < 256; i4++) {
+		uint64_t e4 = pml4[i4];
+		if (!(e4 & PTE_PRESENT)) {
+			continue;
+		}
+
+		uint64_t *pdpt = phys_to_virt(e4 & PTE_ADDR_MASK);
+		for (unsigned i3 = 0; i3 < 512; i3++) {
+			uint64_t e3 = pdpt[i3];
+			if (!(e3 & PTE_PRESENT)) {
+				continue;
+			}
+			if (e3 & PTE_HUGE) {
+				continue;
+			}
+
+			uint64_t *pd = phys_to_virt(e3 & PTE_ADDR_MASK);
+			for (unsigned i2 = 0; i2 < 512; i2++) {
+				uint64_t e2 = pd[i2];
+				if (!(e2 & PTE_PRESENT)) {
+					continue;
+				}
+				if (e2 & PTE_HUGE) {
+					pmm_free_pages(e2 & PTE_ADDR_MASK, 9);
+					continue;
+				}
+
+				uint64_t *pt = phys_to_virt(e2 & PTE_ADDR_MASK);
+				for (unsigned i1 = 0; i1 < 512; i1++) {
+					uint64_t e1 = pt[i1];
+					if (e1 & PTE_PRESENT) {
+						pmm_free_pages(e1 & PTE_ADDR_MASK, 0);
+					}
+				}
+				pmm_free_pages(e2 & PTE_ADDR_MASK, 0);
+			}
+			pmm_free_pages(e3 & PTE_ADDR_MASK, 0);
+		}
+		pmm_free_pages(e4 & PTE_ADDR_MASK, 0);
+		pml4[i4] = 0;
 	}
 }
 

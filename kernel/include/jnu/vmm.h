@@ -34,6 +34,8 @@ struct addr_space {
 void vmm_init(void);
 
 struct addr_space *vmm_kernel_space(void);
+struct addr_space *vmm_create_space(void);
+void vmm_destroy_space(struct addr_space *space);
 
 /*
  * Map `pages` × 4 KiB starting at `virt` to `phys` in `space`. Updates

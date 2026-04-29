@@ -2,7 +2,7 @@
 # scripts/make-image.sh — build a Limine bootable ISO.
 #
 # Usage:
-#   make-image.sh <kernel.elf> <limine.cfg> <limine-dir> <iso-root> <out-iso>
+#   make-image.sh <kernel.elf> <limine.cfg> <limine-dir> <iso-root> <out-iso> [initramfs.cpio]
 #
 # Stages the kernel + limine binaries into <iso-root>, then runs
 # xorriso to produce a hybrid BIOS/UEFI bootable ISO. Finally, runs
@@ -14,8 +14,8 @@
 
 set -euo pipefail
 
-if [ "$#" -ne 5 ]; then
-	echo "usage: make-image.sh <kernel.elf> <limine.cfg> <limine-dir> <iso-root> <out-iso>" >&2
+if [ "$#" -lt 5 ] || [ "$#" -gt 6 ]; then
+	echo "usage: make-image.sh <kernel.elf> <limine.cfg> <limine-dir> <iso-root> <out-iso> [initramfs.cpio]" >&2
 	exit 2
 fi
 
@@ -24,6 +24,7 @@ limine_cfg="$2"
 limine_dir="$3"
 iso_root="$4"
 out_iso="$5"
+initramfs="${6:-}"
 
 if [ ! -d "$limine_dir" ] || [ ! -f "$limine_dir/limine-bios.sys" ]; then
 	echo "make-image.sh: $limine_dir is missing or has no built Limine." >&2
@@ -39,6 +40,9 @@ mkdir -p "$iso_root/EFI/BOOT"
 
 cp "$kernel"     "$iso_root/kernel.elf"
 cp "$limine_cfg" "$iso_root/limine.cfg"
+if [ -n "$initramfs" ]; then
+	cp "$initramfs" "$iso_root/initramfs.cpio"
+fi
 
 cp "$limine_dir/limine-bios.sys"     "$iso_root/"
 cp "$limine_dir/limine-bios-cd.bin"  "$iso_root/"

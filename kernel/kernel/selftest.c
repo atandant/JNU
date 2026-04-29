@@ -10,14 +10,20 @@
  */
 
 #include <jnu/ata.h>
+#include <jnu/elf64.h>
+#include <jnu/initramfs.h>
 #include <jnu/klog.h>
 #include <jnu/pci.h>
 #include <jnu/pmm.h>
+#include <jnu/process.h>
 #include <jnu/rbtree.h>
+#include <jnu/sched.h>
 #include <jnu/selftest.h>
 #include <jnu/slab.h>
 #include <jnu/spinlock.h>
 #include <jnu/types.h>
+#include <jnu/usercopy.h>
+#include <jnu/syscall.h>
 #include <jnu/vfs.h>
 #include <jnu/minix.h>
 #include <jnu/vmm.h>
@@ -28,6 +34,12 @@ static const struct selftest tests[] = {
 	{ "pmm",	pmm_selftest      },
 	{ "vmm",	vmm_selftest      },
 	{ "slab",	slab_selftest     },
+	{ "initramfs",	initramfs_selftest },
+	{ "usercopy",	usercopy_selftest },
+	{ "sched",	sched_selftest    },
+	{ "process",	process_selftest  },
+	{ "elf64",	elf64_selftest    },
+	{ "syscall",	syscall_selftest  },
 	{ "pci",	pci_selftest      },
 	{ "ata",	ata_selftest      },
 	{ "vfs",	vfs_selftest      },

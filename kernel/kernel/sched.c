@@ -1,17 +1,421 @@
 /*
- * kernel/kernel/sched.c — Scheduler stub for v0.0.1.
- *
- * v0.0.1 has no scheduler. Kernel_main runs to completion and idles.
- * This file exists so headers expecting `<jnu/sched.h>` can link.
+ * kernel/kernel/sched.c - Single-CPU round-robin scheduler.
  *
  * Copyright (c) 2026 The JNU Authors.
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
+#include <jnu/errno.h>
+#include <jnu/arch_syscall.h>
+#include <jnu/gdt.h>
+#include <jnu/kmalloc.h>
 #include <jnu/klog.h>
+#include <jnu/paging.h>
+#include <jnu/pmm.h>
+#include <jnu/process.h>
 #include <jnu/sched.h>
+#include <jnu/spinlock.h>
+#include <jnu/string.h>
+#include <jnu/types.h>
+#include <jnu/usermode.h>
+#include <jnu/vmm.h>
+
+#define KSTACK_ORDER	2
+#define KSTACK_SIZE	PMM_ORDER_SIZE(KSTACK_ORDER)
+#define SCHED_QUANTUM_TICKS 1
+
+struct thread_boot {
+	kernel_thread_fn	fn;
+	void			*arg;
+};
+
+static struct spinlock sched_lock = SPINLOCK_INITIALIZER;
+static struct task boot_task;
+static struct task idle_task;
+static struct task *current;
+static struct task *runq_head;
+static struct task *runq_tail;
+static struct task *all_tasks;
+static int next_tid = 1;
+static unsigned quantum_left = SCHED_QUANTUM_TICKS;
+static volatile uint64_t tick_count;
+static volatile uint64_t preempt_pending;
+
+static void idle_loop(void *arg);
+static void kernel_thread_entry(struct thread_boot *boot);
+static void user_thread_entry(void *arg);
+
+static void runq_push(struct task *task)
+{
+	task->run_next = NULL;
+	if (runq_tail) {
+		runq_tail->run_next = task;
+	} else {
+		runq_head = task;
+	}
+	runq_tail = task;
+}
+
+static struct task *runq_pop(void)
+{
+	struct task *task = runq_head;
+
+	if (!task) {
+		return NULL;
+	}
+	runq_head = task->run_next;
+	if (!runq_head) {
+		runq_tail = NULL;
+	}
+	task->run_next = NULL;
+	return task;
+}
+
+static void all_tasks_add(struct task *task)
+{
+	task->all_next = all_tasks;
+	all_tasks = task;
+}
+
+static void task_prepare_stack(struct task *task, kernel_thread_fn fn, void *arg)
+{
+	uintptr_t sp = (uintptr_t)task->kstack_top;
+	struct thread_boot *boot;
+
+	sp &= ~0xFull;
+	sp -= sizeof(*boot);
+	boot = (struct thread_boot *)sp;
+	boot->fn = fn;
+	boot->arg = arg;
+
+	memset(&task->ctx, 0, sizeof(task->ctx));
+	task->ctx.rsp = sp;
+	task->ctx.rip = (uint64_t)(uintptr_t)kernel_thread_entry;
+	task->ctx.rdi = (uint64_t)(uintptr_t)boot;
+}
+
+static void switch_to(struct task *next)
+{
+	struct task *prev = current;
+
+	if (prev == next) {
+		return;
+	}
+
+	current = next;
+	next->state = TASK_RUNNING;
+	quantum_left = SCHED_QUANTUM_TICKS;
+	tss_set_rsp0((uint64_t)(uintptr_t)next->kstack_top);
+	arch_syscall_set_kernel_stack((uint64_t)(uintptr_t)next->kstack_top);
+	vmm_switch_to((next->process && next->process->space) ?
+		      next->process->space : vmm_kernel_space());
+
+	context_switch(&prev->ctx, &next->ctx);
+}
+
+static void schedule_locked(void)
+{
+	struct task *prev = current;
+	struct task *next;
+
+	if (prev && prev->state == TASK_RUNNING && prev != &idle_task) {
+		prev->state = TASK_RUNNABLE;
+		runq_push(prev);
+	}
+
+	next = runq_pop();
+	if (!next) {
+		next = &idle_task;
+	}
+
+	switch_to(next);
+}
+
+static void kernel_thread_entry(struct thread_boot *boot)
+{
+	kernel_thread_fn fn = boot->fn;
+	void *arg = boot->arg;
+
+	fn(arg);
+	sched_exit_current(0);
+}
+
+static void idle_loop(void *arg)
+{
+	(void)arg;
+	for (;;) {
+		__asm__ __volatile__("sti; hlt; cli");
+		sched_yield();
+	}
+}
+
+static void user_thread_entry(void *arg)
+{
+	struct process *proc = arg;
+
+	vmm_switch_to(proc->space);
+	arch_syscall_set_kernel_stack((uint64_t)(uintptr_t)proc->main_task->kstack_top);
+	(void)usermode_enter(proc->user_entry, proc->user_stack);
+	sched_exit_current(127);
+}
 
 void sched_init(void)
 {
-	pr_info("sched: stub (no scheduler in v0.0.1)\n");
+	uint64_t rsp_now;
+
+	memset(&boot_task, 0, sizeof(boot_task));
+	boot_task.tid = next_tid++;
+	boot_task.pid = process_alloc_pid();
+	boot_task.state = TASK_RUNNING;
+	boot_task.name = "boot";
+	boot_task.kstack_top = NULL;
+	__asm__ __volatile__("mov %%rsp, %0" : "=r"(rsp_now));
+	boot_task.kstack_top = (void *)((rsp_now + 0xFFFull) & ~0xFFFull);
+	boot_task.process = process_create_kernel(&boot_task);
+	arch_syscall_set_kernel_stack((uint64_t)(uintptr_t)boot_task.kstack_top);
+	current = &boot_task;
+	all_tasks_add(&boot_task);
+
+	memset(&idle_task, 0, sizeof(idle_task));
+	idle_task.tid = next_tid++;
+	idle_task.pid = 0;
+	idle_task.state = TASK_RUNNABLE;
+	idle_task.name = "idle";
+	idle_task.kstack_base = phys_to_virt(pmm_alloc_zeroed_pages(KSTACK_ORDER));
+	idle_task.kstack_top = (uint8_t *)idle_task.kstack_base + KSTACK_SIZE;
+	task_prepare_stack(&idle_task, idle_loop, NULL);
+	all_tasks_add(&idle_task);
+
+	pr_info("sched: boot tid=%d pid=%d, idle tid=%d\n",
+		boot_task.tid, boot_task.pid, idle_task.tid);
+}
+
+int sched_create_user_task(const char *name, struct process *proc,
+			   struct task **out)
+{
+	struct task *task;
+	paddr_t stack_pa;
+	uint64_t flags;
+	int err;
+
+	if (!proc || !proc->space || !proc->user_entry || !proc->user_stack) {
+		return -EINVAL;
+	}
+
+	task = kzalloc(sizeof(*task));
+	if (!task) {
+		return -ENOMEM;
+	}
+
+	stack_pa = pmm_alloc_zeroed_pages(KSTACK_ORDER);
+	if (!stack_pa) {
+		err = -ENOMEM;
+		goto fail_task;
+	}
+
+	task->tid = next_tid++;
+	task->pid = proc->pid;
+	task->state = TASK_RUNNABLE;
+	task->kstack_base = phys_to_virt(stack_pa);
+	task->kstack_top = (uint8_t *)task->kstack_base + KSTACK_SIZE;
+	task->name = name ? name : "user";
+	task->parent = current;
+	task->process = proc;
+	task_prepare_stack(task, user_thread_entry, proc);
+	proc->main_task = task;
+
+	flags = spin_lock_irqsave(&sched_lock);
+	all_tasks_add(task);
+	runq_push(task);
+	spin_unlock_irqrestore(&sched_lock, flags);
+
+	if (out) {
+		*out = task;
+	}
+	return 0;
+
+fail_task:
+	kfree(task);
+	return err;
+}
+
+struct task *sched_current(void)
+{
+	return current;
+}
+
+int sched_create_kernel_thread(const char *name, kernel_thread_fn fn,
+			       void *arg, struct task **out)
+{
+	struct task *task;
+	paddr_t stack_pa;
+	uint64_t flags;
+	int err;
+
+	if (!fn) {
+		return -EINVAL;
+	}
+
+	task = kzalloc(sizeof(*task));
+	if (!task) {
+		return -ENOMEM;
+	}
+
+	stack_pa = pmm_alloc_zeroed_pages(KSTACK_ORDER);
+	if (!stack_pa) {
+		err = -ENOMEM;
+		goto fail_task;
+	}
+
+	task->tid = next_tid++;
+	task->pid = process_alloc_pid();
+	if (task->pid < 0) {
+		err = task->pid;
+		goto fail_stack;
+	}
+	task->state = TASK_RUNNABLE;
+	task->kstack_base = phys_to_virt(stack_pa);
+	task->kstack_top = (uint8_t *)task->kstack_base + KSTACK_SIZE;
+	task->name = name ? name : "kthread";
+	task->parent = current;
+	task_prepare_stack(task, fn, arg);
+
+	task->process = process_create_kernel(task);
+	if (!task->process) {
+		err = -ENOMEM;
+		goto fail_pid;
+	}
+
+	flags = spin_lock_irqsave(&sched_lock);
+	all_tasks_add(task);
+	runq_push(task);
+	spin_unlock_irqrestore(&sched_lock, flags);
+
+	if (out) {
+		*out = task;
+	}
+	return 0;
+
+fail_pid:
+	process_release_pid(task->pid);
+fail_stack:
+	pmm_free_pages(stack_pa, KSTACK_ORDER);
+fail_task:
+	kfree(task);
+	return err;
+}
+
+void sched_yield(void)
+{
+	uint64_t flags;
+
+	__asm__ __volatile__("pushfq; popq %0; cli"
+			     : "=r"(flags) :: "memory");
+	schedule_locked();
+	if (flags & (1ull << 9)) {
+		__asm__ __volatile__("sti" ::: "memory");
+	}
+}
+
+void sched_exit_current(int status)
+{
+	uint64_t flags;
+
+	__asm__ __volatile__("pushfq; popq %0; cli"
+			     : "=r"(flags) :: "memory");
+	current->exit_status = status & 0xFF;
+	current->state = TASK_ZOMBIE;
+	schedule_locked();
+	if (flags & (1ull << 9)) {
+		__asm__ __volatile__("sti" ::: "memory");
+	}
+
+	for (;;) {
+		__asm__ __volatile__("cli; hlt");
+	}
+}
+
+void sched_sleep_current(void)
+{
+	uint64_t flags;
+
+	__asm__ __volatile__("pushfq; popq %0; cli"
+			     : "=r"(flags) :: "memory");
+	current->state = TASK_SLEEPING;
+	schedule_locked();
+	if (flags & (1ull << 9)) {
+		__asm__ __volatile__("sti" ::: "memory");
+	}
+}
+
+void sched_wake(struct task *task)
+{
+	uint64_t flags;
+
+	if (!task) {
+		return;
+	}
+
+	flags = spin_lock_irqsave(&sched_lock);
+	if (task->state == TASK_SLEEPING) {
+		task->state = TASK_RUNNABLE;
+		runq_push(task);
+	}
+	spin_unlock_irqrestore(&sched_lock, flags);
+}
+
+void sched_tick(void)
+{
+	tick_count++;
+	if (quantum_left > 0) {
+		quantum_left--;
+	}
+	if (quantum_left == 0) {
+		preempt_pending++;
+		quantum_left = SCHED_QUANTUM_TICKS;
+	}
+}
+
+static void selftest_thread(void *arg)
+{
+	volatile int *counter = arg;
+
+	for (int i = 0; i < 8; i++) {
+		(*counter)++;
+		sched_yield();
+	}
+}
+
+int sched_selftest(void)
+{
+	volatile int a = 0;
+	volatile int b = 0;
+	struct pmm_stats before;
+	struct pmm_stats after;
+	int err;
+
+	pmm_get_stats(&before);
+	err = sched_create_kernel_thread("selftest-a", selftest_thread,
+					 (void *)&a, NULL);
+	if (err) {
+		return err;
+	}
+	err = sched_create_kernel_thread("selftest-b", selftest_thread,
+					 (void *)&b, NULL);
+	if (err) {
+		return err;
+	}
+
+	while (a < 8 || b < 8) {
+		sched_yield();
+	}
+
+	pmm_get_stats(&after);
+	if (after.free_pages > before.free_pages) {
+		return -EINVAL;
+	}
+
+	pr_info("sched: selftest ticks=%lu pending-preempt=%lu\n",
+		(unsigned long)tick_count, (unsigned long)preempt_pending);
+	return 0;
 }

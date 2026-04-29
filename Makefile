@@ -43,6 +43,12 @@ BUILD       := build
 OBJDIR      := $(BUILD)/obj
 KERNEL_ELF  := $(BUILD)/kernel.elf
 KERNEL_ISO  := $(BUILD)/kernel.iso
+INITRAMFS   := $(BUILD)/initramfs.cpio
+USER_INIT   := $(BUILD)/user/init
+USER_HELLO  := $(BUILD)/user/bin/hello
+USER_PROGRAM_SRCS := $(wildcard user/*/main.c)
+USER_PROGRAM_BINS := $(patsubst user/init/main.c,$(USER_INIT),$(USER_PROGRAM_SRCS))
+USER_PROGRAM_BINS := $(patsubst user/%/main.c,$(BUILD)/user/bin/%,$(USER_PROGRAM_BINS))
 ISO_ROOT    := $(BUILD)/iso_root
 ATA_DISK    := $(BUILD)/disk.img
 
@@ -98,11 +104,32 @@ C_SRCS := \
     kernel/arch/x86_64/exceptions.c \
     kernel/arch/x86_64/pic.c \
     kernel/arch/x86_64/apic.c \
+    kernel/arch/x86_64/arch_syscall.c \
+    kernel/arch/x86_64/usermode.c \
     kernel/arch/x86_64/paging.c \
     kernel/mm/pmm.c \
     kernel/mm/vmm.c \
     kernel/mm/vma.c \
     kernel/mm/slab.c \
+    kernel/initramfs/cpio_newc.c \
+    kernel/initramfs/initramfs.c \
+    kernel/exec/elf64.c \
+    kernel/syscall/common.c \
+    kernel/syscall/dispatch.c \
+    kernel/syscall/sys_close.c \
+    kernel/syscall/sys_exit.c \
+    kernel/syscall/sys_fstat.c \
+    kernel/syscall/sys_getpid.c \
+    kernel/syscall/sys_lseek.c \
+    kernel/syscall/sys_open.c \
+    kernel/syscall/sys_read.c \
+    kernel/syscall/sys_spawn.c \
+    kernel/syscall/sys_waitpid.c \
+    kernel/syscall/sys_write.c \
+    kernel/syscall/sys_yield.c \
+    kernel/user/copy.c \
+    kernel/user/fd.c \
+    kernel/user/process.c \
     kernel/fs/block.c \
     kernel/fs/vfs.c \
     kernel/fs/minix.c \
@@ -116,6 +143,9 @@ C_SRCS := \
 S_SRCS := \
     kernel/arch/x86_64/boot.S \
     kernel/arch/x86_64/isr.S
+S_SRCS += \
+    kernel/arch/x86_64/context.S \
+    kernel/arch/x86_64/syscall_entry.S
 
 C_OBJS := $(C_SRCS:%.c=$(OBJDIR)/%.o)
 S_OBJS := $(S_SRCS:%.S=$(OBJDIR)/%.o)
@@ -125,11 +155,13 @@ OBJS := $(S_OBJS) $(C_OBJS) $(BUILDINFO_OBJ)
 
 # ---- top-level --------------------------------------------------------------
 
-.PHONY: all iso font ata-disk clean clean-disk distclean run run-disk debug debug-disk check-limine
+.PHONY: all iso user font ata-disk clean clean-disk distclean run run-disk debug debug-disk check-limine
 
 all: iso
 
 iso: $(KERNEL_ISO)
+
+user: $(USER_PROGRAM_BINS)
 
 font: $(FONT_HDR)
 
@@ -156,7 +188,7 @@ $(OBJDIR)/%.o: %.S
 
 $(BUILDINFO_OBJ): scripts/gen-buildinfo.sh FORCE
 	@mkdir -p $(dir $@)
-	@VERSION="0.0.1" \
+	@VERSION="0.0.2" \
 	  SHA="$$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
 	  BUILDTIME="$$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
 	  bash scripts/gen-buildinfo.sh $(OBJDIR)/buildinfo.c
@@ -180,9 +212,21 @@ check-limine:
 	  exit 1; \
 	fi
 
-$(KERNEL_ISO): $(KERNEL_ELF) boot/limine.cfg | check-limine
+$(USER_PROGRAM_BINS): scripts/build-user.sh $(USER_PROGRAM_SRCS) \
+    user/libjnu/crt0.S user/libjnu/syscall.S \
+    user/libjnu/close.c user/libjnu/exit.c user/libjnu/fstat.c \
+    user/libjnu/getpid.c user/libjnu/lseek.c user/libjnu/open.c \
+    user/libjnu/read.c user/libjnu/spawn.c user/libjnu/waitpid.c \
+    user/libjnu/write.c user/libjnu/yield.c user/libjnu/include/jnu_syscall.h
+	@bash scripts/build-user.sh "$(BUILD)"
+
+$(INITRAMFS): scripts/make-initramfs.sh $(USER_PROGRAM_BINS) FORCE
+	@mkdir -p $(dir $@)
+	@bash scripts/make-initramfs.sh "$@" "$(BUILD)/user"
+
+$(KERNEL_ISO): $(KERNEL_ELF) $(INITRAMFS) boot/limine.cfg | check-limine
 	@bash scripts/make-image.sh "$(KERNEL_ELF)" "boot/limine.cfg" \
-	    "$(LIMINE_DIR)" "$(ISO_ROOT)" "$@"
+	    "$(LIMINE_DIR)" "$(ISO_ROOT)" "$@" "$(INITRAMFS)"
 
 # ---- run / debug ------------------------------------------------------------
 
@@ -226,7 +270,8 @@ debug-disk: $(KERNEL_ISO) $(ATA_DISK)
 # clean: remove build artifacts but keep disk.img (it takes time to generate).
 clean:
 	rm -rf $(BUILD)/obj $(BUILD)/kernel.elf $(BUILD)/kernel.iso \
-	       $(BUILD)/iso_root $(FONT_HDR)
+	       $(BUILD)/iso_root $(BUILD)/initramfs.cpio $(BUILD)/user \
+	       $(FONT_HDR)
 
 # clean-disk: also wipe the ATA disk image.
 clean-disk: clean

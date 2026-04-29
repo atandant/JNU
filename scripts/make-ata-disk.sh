@@ -47,6 +47,14 @@ if command -v mkfs.minix &>/dev/null; then
     if command -v python3 &>/dev/null; then
         echo "ata-disk: injecting test file..."
         python3 scripts/inject-file.py "$OUT" "test.txt" "Hello from JNU test file!"
+        if [ -d build/user/bin ]; then
+            for prog in build/user/bin/*; do
+                [ -f "$prog" ] || continue
+                name="$(basename "$prog")"
+                echo "ata-disk: injecting userspace program /$name"
+                python3 scripts/inject-file.py "$OUT" "$name" "@$prog"
+            done
+        fi
     fi
 else
     echo "ata-disk: mkfs.minix not found — image has signature only (no FS)"

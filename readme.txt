@@ -82,7 +82,6 @@
                     Gemini 2.5 Pro
                     --Open source models--
                     Deepseek V3
-                    (More models soon, this is just my opinion.)
         
         --Operating system developers--
         For those learning how to make operating systems, I advise you
