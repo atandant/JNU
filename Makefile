@@ -102,6 +102,7 @@ C_SRCS := \
     kernel/arch/x86_64/exceptions.c \
     kernel/arch/x86_64/pic.c \
     kernel/arch/x86_64/apic.c \
+    kernel/arch/x86_64/lapic_timer.c \
     kernel/arch/x86_64/arch_syscall.c \
     kernel/arch/x86_64/usermode.c \
     kernel/arch/x86_64/paging.c \

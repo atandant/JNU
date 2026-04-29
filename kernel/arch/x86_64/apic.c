@@ -291,6 +291,11 @@ void apic_eoi(void)
 	}
 }
 
+volatile uint32_t *lapic_mmio_base(void)
+{
+	return lapic_mmio;
+}
+
 static void lapic_init(void)
 {
 	uint64_t apic_base = rdmsr(MSR_APIC_BASE);

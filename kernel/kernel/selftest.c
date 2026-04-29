@@ -13,6 +13,7 @@
 #include <jnu/elf64.h>
 #include <jnu/initramfs.h>
 #include <jnu/klog.h>
+#include <jnu/lapic_timer.h>
 #include <jnu/pci.h>
 #include <jnu/pmm.h>
 #include <jnu/process.h>
@@ -37,6 +38,7 @@ static const struct selftest tests[] = {
 	{ "initramfs",	initramfs_selftest },
 	{ "usercopy",	usercopy_selftest },
 	{ "sched",	sched_selftest    },
+	{ "lapic_timer",lapic_timer_selftest },
 	{ "process",	process_selftest  },
 	{ "elf64",	elf64_selftest    },
 	{ "syscall",	syscall_selftest  },

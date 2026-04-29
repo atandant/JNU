@@ -9,15 +9,17 @@
  *   5. CPU bring-up (CPUID, CR0/CR4/EFER, GS_BASE), GDT/TSS, IDT, PIC
  *      remap+mask, ACPI/MADT/APIC.
  *   6. PMM, paging, VMM, slab.
- *   7. PIT (100 Hz timer via IOAPIC).
+ *   7. PIT (100 Hz timer via IOAPIC, used for calibration).
  *   8. TSC calibration (klog timestamps now sensible).
  *   9. RTC wall-clock read.
- *  10. PCI enumeration.
- *  11. ATA init + block device registration.
- *  12. Keyboard init.
- *  13. Selftests, gated on `selftest=1`.
- *  14. Optional debug hooks (`panictest=1`, `dump=mem`, `dump=blocks`).
- *  15. Idle loop.
+ *  10. Initramfs parse, scheduler init.
+ *  11. LAPIC timer takes over as scheduler tick; PIT IRQ masked.
+ *  12. PCI enumeration.
+ *  13. ATA init + block device registration.
+ *  14. Keyboard init.
+ *  15. Selftests, gated on `selftest=1`.
+ *  16. Optional debug hooks (`panictest=1`, `dump=mem`, `dump=blocks`).
+ *  17. Idle loop.
  *
  * Copyright (c) 2026 The JNU Authors.
  * SPDX-License-Identifier: GPL-2.0-only
@@ -38,6 +40,7 @@
 #include <jnu/initramfs.h>
 #include <jnu/kbd.h>
 #include <jnu/klog.h>
+#include <jnu/lapic_timer.h>
 #include <jnu/paging.h>
 #include <jnu/panic.h>
 #include <jnu/pci.h>
@@ -476,6 +479,16 @@ void kernel_main(void) {
   bring_up_initramfs();
 
   sched_init();
+
+  /*
+   * Replace the PIT (channel 0) as the tick source with the LAPIC
+   * timer (jnuspec2.md §2.7). lapic_timer_init() registers the IRQ
+   * handler on VEC_LAPIC_TIMER and arms the timer. Once it returns,
+   * silence the legacy PIT IRQ at the IOAPIC so jiffies stops ticking
+   * and we get exactly one timer source.
+   */
+  lapic_timer_init();
+  ioapic_mask(0);
 
   /* Set RSP0 once to the boot stack top so a future user→kernel
    * trap has a valid kernel stack to switch to. */
