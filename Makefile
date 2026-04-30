@@ -96,6 +96,8 @@ C_SRCS := \
     kernel/drivers/kbd.c \
     kernel/drivers/pci.c \
     kernel/drivers/ata.c \
+    kernel/drivers/acpi.c \
+    kernel/drivers/hpet.c \
     kernel/arch/x86_64/cpu.c \
     kernel/arch/x86_64/gdt.c \
     kernel/arch/x86_64/idt.c \

@@ -13,6 +13,7 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
+#include <jnu/acpi.h>
 #include <jnu/apic.h>
 #include <jnu/compiler.h>
 #include <jnu/cpu.h>
@@ -35,31 +36,6 @@ static void *hhdm(uint64_t pa)
 /* ------------------------------------------------------------------------- */
 /* ACPI structures                                                            */
 /* ------------------------------------------------------------------------- */
-
-struct __packed acpi_rsdp {
-	char		signature[8];
-	uint8_t		checksum;
-	char		oem_id[6];
-	uint8_t		revision;
-	uint32_t	rsdt_address;
-	/* v2+ */
-	uint32_t	length;
-	uint64_t	xsdt_address;
-	uint8_t		extended_checksum;
-	uint8_t		reserved[3];
-};
-
-struct __packed acpi_sdt_header {
-	char		signature[4];
-	uint32_t	length;
-	uint8_t		revision;
-	uint8_t		checksum;
-	char		oem_id[6];
-	char		oem_table_id[8];
-	uint32_t	oem_revision;
-	uint32_t	creator_id;
-	uint32_t	creator_revision;
-};
 
 struct __packed acpi_madt {
 	struct acpi_sdt_header	hdr;
@@ -146,58 +122,7 @@ static size_t lapic_count;
 /* RSDP / SDT walking                                                         */
 /* ------------------------------------------------------------------------- */
 
-static bool checksum_ok(const void *p, size_t len)
-{
-	const uint8_t *b = p;
-	uint8_t sum = 0;
-	for (size_t i = 0; i < len; i++) {
-		sum = (uint8_t)(sum + b[i]);
-	}
-	return sum == 0;
-}
 
-static const struct acpi_sdt_header *find_table(const struct acpi_rsdp *rsdp,
-						const char *sig)
-{
-	if (rsdp->revision >= 2 && rsdp->xsdt_address) {
-		paging_ensure_hhdm(rsdp->xsdt_address,
-				   sizeof(struct acpi_sdt_header));
-		const struct acpi_sdt_header *xsdt =
-			hhdm(rsdp->xsdt_address);
-		paging_ensure_hhdm(rsdp->xsdt_address, xsdt->length);
-		size_t n = (xsdt->length - sizeof(*xsdt)) / 8;
-		const uint64_t *ptrs =
-			(const uint64_t *)((const uint8_t *)xsdt +
-					   sizeof(*xsdt));
-		for (size_t i = 0; i < n; i++) {
-			paging_ensure_hhdm(ptrs[i],
-					   sizeof(struct acpi_sdt_header));
-			const struct acpi_sdt_header *t = hhdm(ptrs[i]);
-			if (memcmp(t->signature, sig, 4) == 0) {
-				return t;
-			}
-		}
-	} else if (rsdp->rsdt_address) {
-		paging_ensure_hhdm(rsdp->rsdt_address,
-				   sizeof(struct acpi_sdt_header));
-		const struct acpi_sdt_header *rsdt =
-			hhdm(rsdp->rsdt_address);
-		paging_ensure_hhdm(rsdp->rsdt_address, rsdt->length);
-		size_t n = (rsdt->length - sizeof(*rsdt)) / 4;
-		const uint32_t *ptrs =
-			(const uint32_t *)((const uint8_t *)rsdt +
-					   sizeof(*rsdt));
-		for (size_t i = 0; i < n; i++) {
-			paging_ensure_hhdm(ptrs[i],
-					   sizeof(struct acpi_sdt_header));
-			const struct acpi_sdt_header *t = hhdm(ptrs[i]);
-			if (memcmp(t->signature, sig, 4) == 0) {
-				return t;
-			}
-		}
-	}
-	return NULL;
-}
 
 /* ------------------------------------------------------------------------- */
 /* MADT parse                                                                 */
@@ -474,21 +399,9 @@ void apic_init(uint64_t rsdp_phys, uint64_t hhdm_offset)
 		return;
 	}
 
-	/*
-	 * Limine's HHDM may omit RESERVED memory-map regions (the BIOS
-	 * ROM area 0xE0000–0xFFFFF where the RSDP typically lives).
-	 * Map the firmware pages before dereferencing them.
-	 */
-	paging_ensure_hhdm(rsdp_phys, sizeof(struct acpi_rsdp));
+	acpi_init(rsdp_phys, hhdm_offset);
 
-	const struct acpi_rsdp *rsdp = hhdm(rsdp_phys);
-	if (memcmp(rsdp->signature, "RSD PTR ", 8) != 0 ||
-	    !checksum_ok(rsdp, 20)) {
-		pr_err("apic: RSDP signature/checksum bad\n");
-		return;
-	}
-
-	const struct acpi_sdt_header *madt_h = find_table(rsdp, "APIC");
+	const struct acpi_sdt_header *madt_h = acpi_find_table("APIC");
 	if (!madt_h) {
 		pr_err("apic: MADT not found\n");
 		return;

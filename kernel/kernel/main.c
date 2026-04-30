@@ -36,6 +36,7 @@
 #include <jnu/exec.h>
 #include <jnu/fbcon.h>
 #include <jnu/gdt.h>
+#include <jnu/hpet.h>
 #include <jnu/idt.h>
 #include <jnu/initramfs.h>
 #include <jnu/kbd.h>
@@ -465,12 +466,16 @@ void kernel_main(void) {
   uint64_t rsdp_phys = resolve_rsdp_phys(hhdm);
   apic_init(rsdp_phys, hhdm);
 
+  /* HPET: high-precision reference counter for TSC calibration
+   * and monotonic timing. Optional — falls back to PIT. */
+  hpet_init(rsdp_phys, hhdm);
+
   /* PIT timer: 100 Hz via IOAPIC. Must come before TSC calibration
    * if we ever switch cpu_calibrate_tsc to use PIT channel 0 IRQs
    * (currently it uses channel 2 polling, so order is flexible). */
   pit_init();
 
-  /* TSC calibration: klog timestamps stop being zero from here. */
+  /* TSC calibration: uses HPET if available, else PIT channel 2. */
   cpu_calibrate_tsc();
 
   /* RTC: print wall-clock time at boot. */
