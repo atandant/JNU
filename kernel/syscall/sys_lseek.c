@@ -55,7 +55,8 @@ int64_t sys_lseek(int fd, int64_t off, int whence) {
   }
   /* author here, gemini 3.1 pro added this as a fix to an issue in
    * the fuzz test where the lseek test said the kernel or jnulib did
-   * not reject it. Grep/Rg: Opus 4.7 FIXME this bug, could be a hack.
+   * not reject it. Grep/Rg: Opus 4.7 FIXME(atandant) this bug, could be a hack
+   * that has subtle edge cases.
    */
   if (__builtin_add_overflow(base, off, &next) || next < 0 ||
       next >= 0x7fffffffffffffffLL) {
