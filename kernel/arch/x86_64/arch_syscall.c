@@ -1,6 +1,12 @@
 /*
  * kernel/arch/x86_64/arch_syscall.c - syscall/sysret MSR setup.
  *
+ * Owns the per-CPU syscall scratch struct that syscall_entry.S reads
+ * via the GS segment after SWAPGS.  v0.0.2 has a single CPU so there
+ * is one struct; the design is laid out so SMP only needs to allocate
+ * one per CPU and write each CPU's MSR_KERNEL_GS_BASE accordingly,
+ * without touching the asm.
+ *
  * Copyright (c) 2026 The JNU Authors.
  * SPDX-License-Identifier: GPL-2.0-only
  */
@@ -25,11 +31,30 @@
 #define RFLAGS_AC	(1ull << 18)
 
 extern void syscall_entry(void);
-extern uint64_t syscall_kernel_stack_top;
+
+/*
+ * Per-CPU syscall scratch.  Layout MUST match syscall_entry.S:
+ *   offset 0 -> saved user RSP
+ *   offset 8 -> kernel stack top of the currently-scheduled task
+ *
+ * Future SMP: replace this with one slot per CPU and have the per-CPU
+ * bring-up write its own MSR_KERNEL_GS_BASE.  No asm change required.
+ */
+struct syscall_scratch {
+	uint64_t user_rsp;
+	uint64_t kernel_rsp;
+};
+
+static struct syscall_scratch boot_scratch;
 
 void arch_syscall_set_kernel_stack(uint64_t stack_top)
 {
-	syscall_kernel_stack_top = stack_top;
+	/*
+	 * Called from sched switch_to() on every context switch.  The
+	 * scratch slot is per-CPU, so on single-CPU it always describes
+	 * the currently-running task.
+	 */
+	boot_scratch.kernel_rsp = stack_top;
 }
 
 void arch_syscall_init(void)
@@ -51,5 +76,19 @@ void arch_syscall_init(void)
 	wrmsr(MSR_FMASK, fmask);
 	wrmsr(MSR_EFER, rdmsr(MSR_EFER) | EFER_SCE);
 
+	/*
+	 * Install the per-CPU syscall scratch into MSR_KERNEL_GS_BASE.
+	 * SWAPGS in syscall_entry.S exposes this struct as gs:[0]/gs:[8],
+	 * eliminating the previous single-global user-RSP slot that was
+	 * hostile to SMP and to any future reentrant kernel work.
+	 */
+	wrmsr(MSR_KERNEL_GS_BASE, (uint64_t)(uintptr_t)&boot_scratch);
+
 	pr_info("syscall: syscall/sysret MSRs installed\n");
+}
+
+void arch_syscall_install_user_gs(void)
+{
+	wrmsr(MSR_KERNEL_GS_BASE, (uint64_t)(uintptr_t)&boot_scratch);
+	wrmsr(MSR_GS_BASE, 0);
 }

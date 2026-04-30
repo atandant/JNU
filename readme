@@ -10,7 +10,7 @@
         with the sole goal of being reliable and usable by anyone's
         standards. We currently support x86_64 and some important
         kernel infrastructure, completely vibe coded by hand with
-        yours truly. Anthropic :D :D :D 
+        yours truly. Anthropic
     
     What is the purpose of this?
 
@@ -37,7 +37,7 @@
         For those who want to learn kernel development:
         read the codebase and the following coding style in 
         style.txt (i genuinely forgot to make it, so read jnuspec or
-        jnuspec2, i have dementia ngl). We allow kernel developers to contribute freely in a scenario where the kernel is maturing and not overly complex.
+        jnuspec2.). We allow kernel developers to contribute freely in a scenario where the kernel is maturing and not overly complex.
 
             --vibe-coders--
         For those who want to vibe-code new features or additions, here is
@@ -84,7 +84,16 @@
         For those learning how to make operating systems, I advise you
         to be careful what you read in this codebase. AIs are not accurate, 
         and they hallucinate sometimes. You'd spend more time learning accurate
-        information on Linux, MikeOS, or a Rust-based OS like Redox.
+        information on Linux, MikeOS, or a Rust-based OS like Redox, maybe you
+        could read this OS time to time but seriously. You should wait till JNU
+        is actually worth reading for.
+
+        --Casual users--
+        If your learning to make an OS but as a casual newcomer,
+        see (Operating system developers) section since it's
+        important. If you want to test it I strongly suggest
+        an emulator, however I'm kind of confident it can boot
+        on ancient hardware.
 
     License: GPLv2.0 GNU, see LICENSE in the root file tree.    
 

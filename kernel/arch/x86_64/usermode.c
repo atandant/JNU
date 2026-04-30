@@ -9,12 +9,15 @@
 #include <jnu/gdt.h>
 #include <jnu/types.h>
 #include <jnu/usermode.h>
+#include <jnu/arch_syscall.h>
 
 int usermode_enter(uint64_t entry, uint64_t stack)
 {
 	if (!entry || !stack) {
 		return -EINVAL;
 	}
+
+	arch_syscall_install_user_gs();
 
 	/*
 	 * iretq pops RIP, CS, RFLAGS, RSP, SS but does NOT touch the

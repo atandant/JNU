@@ -44,6 +44,12 @@ void printk(enum klog_level level, const char *fmt, ...) __printf(2, 3);
 void vprintk(enum klog_level level, const char *fmt, __builtin_va_list ap);
 
 /*
+ * Raw locked write to the ring buffer and backends. Does not format
+ * headers or append newlines. Used for user-space stdout/stderr.
+ */
+void klog_raw_write(enum klog_level level, const char *buf, size_t len);
+
+/*
  * Direct-to-backends panic write path. Bypasses ring buffer and locks.
  * Only callable from panic context.
  */

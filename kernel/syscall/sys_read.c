@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
+#include <jnu/chardev.h>
 #include <jnu/errno.h>
 #include <jnu/fd.h>
 #include <jnu/process.h>
@@ -26,6 +27,57 @@ static ssize_t file_read_at(struct file *file, uint64_t off, void *buf,
 	return -EINVAL;
 }
 
+/*
+ * Drain a char_device into userspace.  Read into a kernel bounce
+ * buffer first, then copy_to_user(), so the driver never sees the
+ * user pointer and the SMAP/usercopy contract from §2.3/§2.8 holds.
+ *
+ * Char devices are non-seekable and `ubuf` may be only partially
+ * mapped; we do not advance file->offset and we return whatever the
+ * driver had ready (short read is normal for a tty-style device).
+ */
+static int64_t chardev_read_to_user(struct char_device *cdev, void *ubuf,
+				    size_t len)
+{
+	char buf[READ_CHUNK];
+	size_t done = 0;
+
+	while (done < len) {
+		size_t chunk = len - done;
+		ssize_t n;
+		int err;
+
+		if (chunk > sizeof(buf)) {
+			chunk = sizeof(buf);
+		}
+
+		n = cdev->ops->read(cdev, buf, chunk);
+		if (n < 0) {
+			return done ? (int64_t)done : n;
+		}
+		if (n == 0) {
+			break;
+		}
+
+		err = copy_to_user((uint8_t *)ubuf + done, buf, (size_t)n);
+		if (err) {
+			return done ? (int64_t)done : err;
+		}
+
+		done += (size_t)n;
+		/*
+		 * Char devices are stream-like.  A short read from the
+		 * driver means "no more bytes ready right now"; do not
+		 * spin trying to fill `len`.
+		 */
+		if ((size_t)n < chunk) {
+			break;
+		}
+	}
+
+	return (int64_t)done;
+}
+
 int64_t sys_read(int fd, void *ubuf, size_t len)
 {
 	struct task *task = sched_current();
@@ -40,6 +92,14 @@ int64_t sys_read(int fd, void *ubuf, size_t len)
 	file = fd_get(&task->process->fds, fd);
 	if (!file) {
 		return -EINVAL;
+	}
+
+	if (file->type == JNU_FILE_CHARDEV) {
+		if (!file->u.chardev || !file->u.chardev->ops ||
+		    !file->u.chardev->ops->read) {
+			return -EINVAL;
+		}
+		return chardev_read_to_user(file->u.chardev, ubuf, len);
 	}
 
 	while (done < len) {

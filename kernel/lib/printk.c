@@ -381,6 +381,14 @@ void klog_panic_write(const char *buf, size_t len)
 	}
 }
 
+void klog_raw_write(enum klog_level level, const char *buf, size_t len)
+{
+	uint64_t flags = spin_lock_irqsave(&printk_lock);
+	ring_write(buf, len);
+	backends_write(level, buf, len);
+	spin_unlock_irqrestore(&printk_lock, flags);
+}
+
 /* ------------------------------------------------------------------------- */
 /* printk                                                                    */
 /* ------------------------------------------------------------------------- */

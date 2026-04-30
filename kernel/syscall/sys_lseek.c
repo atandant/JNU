@@ -40,6 +40,11 @@ int64_t sys_lseek(int fd, int64_t off, int whence) {
     return -EINVAL;
   }
 
+  /* Char devices (e.g. /dev/kbd) are streams. */
+  if (file->type == JNU_FILE_CHARDEV) {
+    return -ESPIPE;
+  }
+
   switch (whence) {
   case JNU_SEEK_SET:
     base = 0;

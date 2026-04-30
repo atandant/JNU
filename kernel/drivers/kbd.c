@@ -171,10 +171,20 @@ static void kbd_irq_handler(struct cpu_state *st) {
 		uint8_t mods = current_modifiers();
 		char c = scandata_keycode_to_ascii(keycode, mods);
 
-		pr_debug("kbd: sc=0x%02x kc=%s char='%c'\n", (unsigned)sc,
-		         scandata_keycode_name(keycode), (c >= 0x20 && c <= 0x7E) ? c : '.');
-
+		/*
+		 * The pr_debug stays inside `if (c)` on purpose: only
+		 * key-downs that actually produce an ASCII byte are worth
+		 * tracing.  A previous hack pulled it out so it fired on
+		 * every non-modifier key-down (F-keys, arrows, etc.); that
+		 * spammed the COM1 backend from IRQ context and made it
+		 * trivial to overrun the 64-byte ring buffer at typing
+		 * speed.  See `personalhacks` for context.
+		 */
 		if (c) {
+			pr_debug("kbd: sc=0x%02x kc=%s char='%c'\n",
+			         (unsigned)sc,
+			         scandata_keycode_name(keycode),
+			         (c >= 0x20 && c <= 0x7E) ? c : '.');
 			ring_put(c);
 		}
 	}

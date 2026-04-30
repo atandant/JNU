@@ -19,6 +19,13 @@ struct char_ops {
 	/*
 	 * Read up to `len` bytes into `buf`. Returns number of bytes
 	 * actually read, or a negative errno.
+	 *
+	 * `buf` MUST be a kernel pointer.  Char device implementations
+	 * write directly into `buf` (often under a spinlock with IRQs
+	 * disabled), so passing a userspace pointer here would bypass
+	 * SMAP and risk faulting inside an IRQ-off critical section
+	 * (see jnuspec2.md §2.3 / §2.8).  Syscall layers must drain
+	 * into a kernel bounce buffer first and then copy_to_user().
 	 */
 	ssize_t (*read)(struct char_device *dev, void *buf, size_t len);
 

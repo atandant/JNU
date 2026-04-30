@@ -8,6 +8,7 @@
 #pragma once
 
 #include <jnu/types.h>
+#include <jnu/chardev.h>
 #include <jnu/initramfs.h>
 #include <jnu/vfs.h>
 
@@ -16,6 +17,7 @@
 enum jnu_file_type {
 	JNU_FILE_INITRAMFS,
 	JNU_FILE_VFS,
+	JNU_FILE_CHARDEV,
 };
 
 struct jnu_stat {
@@ -32,6 +34,7 @@ struct file {
 	union {
 		struct initramfs_file initramfs;
 		struct vfs_inode *vfs;
+		struct char_device *chardev;
 	} u;
 };
 

@@ -32,4 +32,5 @@
 #define ERANGE		34	/* Out of range */
 #define ENAMETOOLONG	36	/* File name too long */
 #define ENOSYS		38	/* Not implemented */
+#define ESPIPE		29	/* Illegal seek */
 #define ENOTSUP		95	/* Not supported */

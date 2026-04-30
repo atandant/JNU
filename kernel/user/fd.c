@@ -60,5 +60,10 @@ void file_destroy(struct file *file)
 	if (file->type == JNU_FILE_VFS) {
 		vfs_close(file->u.vfs);
 	}
+	/*
+	 * JNU_FILE_CHARDEV: the char_device is a singleton owned by the
+	 * driver (e.g. kbd_get_chardev() returns &kbd_cdev).  Nothing to
+	 * release here besides the surrounding `struct file` slab entry.
+	 */
 	kfree(file);
 }

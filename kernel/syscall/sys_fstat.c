@@ -14,6 +14,7 @@
 
 #define JNU_DT_REG	1
 #define JNU_DT_DIR	2
+#define JNU_DT_CHR	3
 
 int64_t sys_fstat(int fd, void *ust)
 {
@@ -41,6 +42,11 @@ int64_t sys_fstat(int fd, void *ust)
 		st.size = file->u.vfs->size;
 		st.mode = file->u.vfs->mode;
 		st.type = file->u.vfs->is_dir ? JNU_DT_DIR : JNU_DT_REG;
+	} else if (file->type == JNU_FILE_CHARDEV) {
+		st.ino = 0;
+		st.size = 0;
+		st.mode = 0;
+		st.type = JNU_DT_CHR;
 	} else {
 		return -EINVAL;
 	}
