@@ -1,0 +1,6 @@
+I need to implement and fix the hack of moving the pr_debug out of the
+        if (c) check
+    And implementing userspace read access of input with more plans of
+    expansion.
+
+    toodles or, whatever.

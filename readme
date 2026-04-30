@@ -36,8 +36,8 @@
 
         For those who want to learn kernel development:
         read the codebase and the following coding style in 
-        style.txt. We allow kernel developers to contribute freely
-        in a scenario where the kernel is maturing and not overly complex.
+        style.txt (i genuinely forgot to make it, so read jnuspec or
+        jnuspec2, i have dementia ngl). We allow kernel developers to contribute freely in a scenario where the kernel is maturing and not overly complex.
 
             --vibe-coders--
         For those who want to vibe-code new features or additions, here is
