@@ -72,8 +72,21 @@ struct addr_space *vmm_create_space(void)
 
 void vmm_destroy_space(struct addr_space *space)
 {
+	struct rb_node *node;
+
 	if (!space || space == &kernel_space) {
 		return;
+	}
+
+	/*
+	 * Free every VMA descriptor allocated by map_zeroed_user_pages().
+	 * Without this walk, every process exit leaks all VMA nodes.
+	 */
+	while ((node = rb_first(&space->vmas)) != NULL) {
+		struct vma *v = (struct vma *)((uint8_t *)node -
+			__builtin_offsetof(struct vma, rb));
+		rb_erase(&space->vmas, node);
+		kfree(v);
 	}
 
 	paging_destroy_user_half(space->pml4);

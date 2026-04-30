@@ -94,6 +94,7 @@ C_SRCS := \
     kernel/drivers/pit.c \
     kernel/drivers/rtc.c \
     kernel/drivers/kbd.c \
+    kernel/drivers/scandata.c \
     kernel/drivers/pci.c \
     kernel/drivers/ata.c \
     kernel/drivers/acpi.c \

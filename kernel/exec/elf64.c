@@ -388,6 +388,20 @@ int elf64_load_image(struct addr_space *space, const struct exec_image *image,
     if (err) {
       goto fail_unmap;
     }
+
+    /*
+     * map_zeroed_user_pages() recorded the VMA with the temporary
+     * writable flags we used during segment copying. Now that the
+     * page tables carry the final protection, patch the VMA to
+     * match so that future VMA consumers (the #PF handler, any
+     * audit code) see the correct permissions.
+     */
+    {
+      struct vma *seg_vma = vma_find(&space->vmas, start);
+      if (seg_vma) {
+        seg_vma->flags = final_flags;
+      }
+    }
   }
 
   if (info) {
@@ -405,7 +419,6 @@ fail_unmap:
 int elf64_setup_initial_stack(struct addr_space *space, uint64_t *stack_out) {
   uint64_t guard = USER_STACK_TOP - USER_STACK_SIZE - PAGE_SIZE;
   uint64_t base = guard + PAGE_SIZE;
-  uint64_t pages = USER_STACK_SIZE / PAGE_SIZE;
   uint64_t stack = USER_STACK_TOP - 16;
   int err;
 
@@ -422,9 +435,9 @@ int elf64_setup_initial_stack(struct addr_space *space, uint64_t *stack_out) {
   uint64_t zero[2] = {0, 0};
   err = write_to_space(space, stack, zero, sizeof(zero));
   if (err) {
+    vmm_unmap(space, base, (USER_STACK_TOP - base) / PAGE_SIZE);
     return err;
   }
-  (void)pages;
 
   *stack_out = stack;
   return 0;

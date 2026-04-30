@@ -3,9 +3,12 @@
  *
  * Initializes the i8042 keyboard controller: disable ports, flush,
  * self-test, enable port 1, set scancode set 1, and install an IRQ
- * handler on vector 33 (IOAPIC ISA IRQ 1). Scancodes are translated
- * via a static US-QWERTY layout table into key events queued in a
- * ring buffer.
+ * handler on vector 33 (IOAPIC ISA IRQ 1).
+ *
+ * Raw scancodes are translated to keycodes via the hardware-agnostic
+ * scandata layer, then to ASCII for the char_device ring buffer.
+ * The 0xE0 extended-key prefix is tracked so navigation keys, arrow
+ * keys, and right-hand modifiers are decoded correctly.
  *
  * The driver exposes a struct char_device for line-buffered reads
  * (one ASCII byte per key-down of printable keys).
@@ -21,7 +24,9 @@
 #include <jnu/idt.h>
 #include <jnu/io.h>
 #include <jnu/kbd.h>
+#include <jnu/keycode.h>
 #include <jnu/klog.h>
+#include <jnu/scandata.h>
 #include <jnu/spinlock.h>
 #include <jnu/types.h>
 
@@ -48,7 +53,10 @@
 
 #define KBD_SELF_TEST_OK 0x55
 
-/* Ring buffer for decoded ASCII characters. */
+/* ------------------------------------------------------------------ */
+/* Ring buffer for decoded ASCII characters                            */
+/* ------------------------------------------------------------------ */
+
 #define KBD_RING_SIZE 64
 
 static char kbd_ring[KBD_RING_SIZE];
@@ -56,52 +64,10 @@ static size_t kbd_ring_head;
 static size_t kbd_ring_tail;
 static struct spinlock kbd_lock = SPINLOCK_INITIALIZER;
 
-/* Scancode set 1 → ASCII (unshifted). */
-static const char sc_unshift[128] = {
-    [0x01] = 0x1B, [0x02] = '1', [0x03] = '2',  [0x04] = '3',  [0x05] = '4',
-    [0x06] = '5',  [0x07] = '6', [0x08] = '7',  [0x09] = '8',  [0x0A] = '9',
-    [0x0B] = '0',  [0x0C] = '-', [0x0D] = '=',  [0x0E] = '\b', [0x0F] = '\t',
-    [0x10] = 'q',  [0x11] = 'w', [0x12] = 'e',  [0x13] = 'r',  [0x14] = 't',
-    [0x15] = 'y',  [0x16] = 'u', [0x17] = 'i',  [0x18] = 'o',  [0x19] = 'p',
-    [0x1A] = '[',  [0x1B] = ']', [0x1C] = '\n', [0x1E] = 'a',  [0x1F] = 's',
-    [0x20] = 'd',  [0x21] = 'f', [0x22] = 'g',  [0x23] = 'h',  [0x24] = 'j',
-    [0x25] = 'k',  [0x26] = 'l', [0x27] = ';',  [0x28] = '\'', [0x29] = '`',
-    [0x2B] = '\\', [0x2C] = 'z', [0x2D] = 'x',  [0x2E] = 'c',  [0x2F] = 'v',
-    [0x30] = 'b',  [0x31] = 'n', [0x32] = 'm',  [0x33] = ',',  [0x34] = '.',
-    [0x35] = '/',  [0x39] = ' ',
-};
-
-/* Scancode set 1 → ASCII (shifted). */
-static const char sc_shift[128] = {
-    [0x02] = '!', [0x03] = '@',  [0x04] = '#',  [0x05] = '$',  [0x06] = '%',
-    [0x07] = '^', [0x08] = '&',  [0x09] = '*',  [0x0A] = '(',  [0x0B] = ')',
-    [0x0C] = '_', [0x0D] = '+',  [0x0E] = '\b', [0x0F] = '\t', [0x10] = 'Q',
-    [0x11] = 'W', [0x12] = 'E',  [0x13] = 'R',  [0x14] = 'T',  [0x15] = 'Y',
-    [0x16] = 'U', [0x17] = 'I',  [0x18] = 'O',  [0x19] = 'P',  [0x1A] = '{',
-    [0x1B] = '}', [0x1C] = '\n', [0x1E] = 'A',  [0x1F] = 'S',  [0x20] = 'D',
-    [0x21] = 'F', [0x22] = 'G',  [0x23] = 'H',  [0x24] = 'J',  [0x25] = 'K',
-    [0x26] = 'L', [0x27] = ':',  [0x28] = '"',  [0x29] = '~',  [0x2B] = '|',
-    [0x2C] = 'Z', [0x2D] = 'X',  [0x2E] = 'C',  [0x2F] = 'V',  [0x30] = 'B',
-    [0x31] = 'N', [0x32] = 'M',  [0x33] = '<',  [0x34] = '>',  [0x35] = '?',
-    [0x39] = ' ',
-};
-
-/* Modifier state. */
-static bool shift_held;
-static bool ctrl_held;
-static bool caps_on;
-
-#define SC_LSHIFT_MAKE 0x2A
-#define SC_RSHIFT_MAKE 0x36
-#define SC_LSHIFT_BREAK 0xAA
-#define SC_RSHIFT_BREAK 0xB6
-#define SC_LCTRL_MAKE 0x1D
-#define SC_LCTRL_BREAK 0x9D
-#define SC_CAPS_MAKE 0x3A
-
 static void ring_put(char c) {
   uint64_t flags = spin_lock_irqsave(&kbd_lock);
   size_t next = (kbd_ring_head + 1) % KBD_RING_SIZE;
+
   if (next != kbd_ring_tail) {
     kbd_ring[kbd_ring_head] = c;
     kbd_ring_head = next;
@@ -109,53 +75,117 @@ static void ring_put(char c) {
   spin_unlock_irqrestore(&kbd_lock, flags);
 }
 
-static void kbd_irq_handler(struct cpu_state *st) {
-  (void)st;
-  uint8_t sc = inb(KBD_DATA_PORT);
+/* ------------------------------------------------------------------ */
+/* Modifier state and 0xE0 prefix tracking                             */
+/* ------------------------------------------------------------------ */
 
-  switch (sc) {
-  case SC_LSHIFT_MAKE:
-  case SC_RSHIFT_MAKE:
-    shift_held = true;
+static bool shift_held;
+static bool ctrl_held;
+static bool alt_held;
+static bool caps_on;
+static bool e0_pending;
+
+/*
+ * Build the current modifier bitmask for key_event / ASCII translation.
+ */
+static uint8_t current_modifiers(void) {
+  uint8_t mods = 0;
+
+  if (shift_held) {
+    mods |= KMOD_SHIFT;
+  }
+  if (ctrl_held) {
+    mods |= KMOD_CTRL;
+  }
+  if (alt_held) {
+    mods |= KMOD_ALT;
+  }
+  if (caps_on) {
+    mods |= KMOD_CAPSLOCK;
+  }
+  return mods;
+}
+
+/* ------------------------------------------------------------------ */
+/* IRQ handler                                                         */
+/* ------------------------------------------------------------------ */
+
+static void kbd_irq_handler(struct cpu_state *st) {
+  uint8_t sc = inb(KBD_DATA_PORT);
+  uint16_t keycode;
+  bool release;
+  bool is_e0;
+
+  (void)st;
+
+  /* 0xE0 prefix: set flag and wait for the real scancode byte. */
+  if (sc == 0xE0) {
+    e0_pending = true;
     goto done;
-  case SC_LSHIFT_BREAK:
-  case SC_RSHIFT_BREAK:
-    shift_held = false;
+  }
+
+  is_e0 = e0_pending;
+  e0_pending = false;
+
+  /* Bit 7 set = break (release) code. */
+  release = (sc & 0x80u) != 0;
+  keycode = scandata_sc1_to_keycode(sc, is_e0);
+
+  if (keycode == KEY_NONE) {
     goto done;
-  case SC_LCTRL_MAKE:
-    ctrl_held = true;
+  }
+
+  /* Update modifier state on make/break. */
+  switch (keycode) {
+  case KEY_LSHIFT:
+  case KEY_RSHIFT:
+    shift_held = !release;
     goto done;
-  case SC_LCTRL_BREAK:
-    ctrl_held = false;
+  case KEY_LCTRL:
+  case KEY_RCTRL:
+    ctrl_held = !release;
     goto done;
-  case SC_CAPS_MAKE:
-    caps_on = !caps_on;
+  case KEY_LALT:
+  case KEY_RALT:
+    alt_held = !release;
+    goto done;
+  case KEY_CAPSLOCK:
+    if (!release) {
+      caps_on = !caps_on;
+    }
+    goto done;
+  case KEY_NUMLOCK:
+  case KEY_SCROLLLOCK:
+    /* Tracked but not acted on in v0.0.2. */
     goto done;
   default:
     break;
   }
 
-  if (sc & 0x80u)
+  /* Only key-down events produce characters. */
+  if (release) {
     goto done;
-
-  char c = shift_held ? sc_shift[sc & 0x7Fu] : sc_unshift[sc & 0x7Fu];
-
-  if (caps_on && c >= 'a' && c <= 'z')
-    c = (char)(c - 32);
-
-  if (c) {
-    if (ctrl_held && c >= 'a' && c <= 'z')
-      c = (char)(c - 'a' + 1);
-    ring_put(c);
-    pr_debug("kbd: sc=0x%02x char='%c'\n", (unsigned)sc, (c >= 0x20) ? c : '.');
   }
+
+	{
+		uint8_t mods = current_modifiers();
+		char c = scandata_keycode_to_ascii(keycode, mods);
+
+		pr_debug("kbd: sc=0x%02x kc=%s char='%c'\n", (unsigned)sc,
+		         scandata_keycode_name(keycode), (c >= 0x20 && c <= 0x7E) ? c : '.');
+
+		if (c) {
+			ring_put(c);
+		}
+	}
 
 done:
   apic_eoi();
 }
 
-/* ---- i8042 helpers --------------------------------------------------------
- */
+/* ------------------------------------------------------------------ */
+/* i8042 helpers                                                       */
+/* ------------------------------------------------------------------ */
 
 static void kbd_wait_input(void) {
   for (int t = 100000; (inb(KBD_STATUS_PORT) & KBD_STATUS_IBF) && t; t--)
@@ -187,14 +217,16 @@ static uint8_t kbd_read(void) {
   return inb(KBD_DATA_PORT);
 }
 
-/* ---- char_device ----------------------------------------------------------
- */
+/* ------------------------------------------------------------------ */
+/* char_device interface                                               */
+/* ------------------------------------------------------------------ */
 
 static ssize_t kbd_cdev_read(struct char_device *dev, void *buf, size_t len) {
   (void)dev;
   char *p = buf;
   size_t n = 0;
   uint64_t flags = spin_lock_irqsave(&kbd_lock);
+
   while (n < len && kbd_ring_tail != kbd_ring_head) {
     p[n++] = kbd_ring[kbd_ring_tail];
     kbd_ring_tail = (kbd_ring_tail + 1) % KBD_RING_SIZE;
@@ -223,8 +255,9 @@ static struct char_device kbd_cdev = {
 
 static bool kbd_ready;
 
-/* ---- public ---------------------------------------------------------------
- */
+/* ------------------------------------------------------------------ */
+/* Public API                                                          */
+/* ------------------------------------------------------------------ */
 
 void kbd_init(void) {
   kbd_cmd(KBD_CMD_DISABLE_P1);
@@ -239,7 +272,7 @@ void kbd_init(void) {
   kbd_cmd(KBD_CMD_READ_CONFIG);
   uint8_t cfg = kbd_read();
   cfg |= 0x01u;
-  cfg |= 0x40u; /* Enable translation from set 2 to set 1 */
+  cfg |= 0x40u; /* Enable translation from set 2 to set 1. */
   cfg &= (uint8_t)~0x10u;
   kbd_cmd(KBD_CMD_WRITE_CONFIG);
   kbd_data(cfg);
@@ -248,7 +281,7 @@ void kbd_init(void) {
 
   kbd_data(KB_CMD_SET_SCANCODE);
   (void)kbd_read();
-  kbd_data(0x02); /* Tell keyboard to use set 2, i8042 translates to set 1 */
+  kbd_data(0x02); /* Tell keyboard to use set 2, i8042 translates. */
   (void)kbd_read();
 
   kbd_data(KB_CMD_ENABLE_SCAN);

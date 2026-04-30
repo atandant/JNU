@@ -101,6 +101,13 @@ int hpet_init(uint64_t rsdp_phys, uint64_t hhdm_offset)
 	}
 
 	paging_ensure_hhdm(virt_to_phys((void *)hdr), hdr->length);
+
+	if (hdr->length < sizeof(struct acpi_hpet)) {
+		pr_warn("hpet: ACPI HPET table truncated (length %u < %zu)\n",
+			hdr->length, sizeof(struct acpi_hpet));
+		return -ENODEV;
+	}
+
 	const struct acpi_hpet *tbl = (const struct acpi_hpet *)hdr;
 
 	/* Only memory-mapped I/O (address_space_id == 0) is supported. */
@@ -111,6 +118,10 @@ int hpet_init(uint64_t rsdp_phys, uint64_t hhdm_offset)
 	}
 
 	uint64_t base_phys = tbl->address;
+	if (!base_phys) {
+		pr_warn("hpet: MMIO base address is zero\n");
+		return -ENODEV;
+	}
 	paging_ensure_hhdm(base_phys, PAGE_SIZE);
 	hpet_mmio = (volatile uint64_t *)phys_to_virt(base_phys);
 
