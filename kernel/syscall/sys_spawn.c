@@ -6,25 +6,26 @@
  */
 
 #include <jnu/errno.h>
+#include <jnu/klog.h>
 #include <jnu/process.h>
+#include <jnu/string.h>
 #include <jnu/syscall.h>
 
-int64_t sys_spawn(const char *upath, char *const *uargv)
-{
-	char path[JNU_PATH_MAX];
-	int pid;
-	int err;
+int64_t sys_spawn(const char *upath, char *const *uargv) {
+  char path[JNU_PATH_MAX];
+  int pid;
+  int err;
 
-	(void)uargv;
+  (void)uargv;
 
-	err = syscall_copy_path(path, upath);
-	if (err) {
-		return err;
-	}
+  err = syscall_copy_path(path, upath);
+  if (err) {
+    return err;
+  }
 
-	err = process_spawn(path, uargv, &pid);
-	if (err) {
-		return err;
-	}
-	return pid;
+  err = process_spawn(path, uargv, &pid);
+  if (err) {
+    return err;
+  }
+  return pid;
 }

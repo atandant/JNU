@@ -49,7 +49,6 @@
                     --OpenAI--
                     GPT 5.5
                     GPT 5.4 (in some cases)
-                    o1 / o3
                     --Google--
                     Gemini 3.5 Pro
                     Gemini 3.1 Pro (High)
@@ -74,9 +73,6 @@
                     --Anthropic--
                     Sonnet 4.6
                     Sonnet 4.5
-                    --OpenAI--
-                    GPT-4o
-                    GPT-4.5
                     --Google--
                     Gemini 3.1 Pro
                     Gemini 2.5 Pro
@@ -93,10 +89,10 @@
 
     How to Build and Setup the Kernel:
             --Prerequisites--
-        Build host: Windows 11 + WSL2 (Ubuntu 22.04+).
+        Build host: Windows 11 + WSL2 (Ubuntu 22.04+ or any Linux Distro).
 
         In WSL, install the required toolchain:
-            sudo apt install clang lld nasm make xorriso mtools
+            sudo apt(pacman/dnf) install clang lld nasm make xorriso mtools
 
         For font generation (run once on host or inside WSL):
             pip install pillow

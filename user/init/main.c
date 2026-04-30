@@ -80,11 +80,23 @@ int main(int argc, char **argv) {
   child = spawn("/bin/hello", 0);
   if (child >= 0) {
     (void)waitpid(child, &status);
+  } else {
+    puts("JNU init: spawn /bin/hello failed\n");
+  }
+
+  child = spawn("/bin/fuzz", 0);
+  if (child >= 0) {
+    (void)waitpid(child, &status);
+  } else {
+    puts("JNU init: spawn /bin/fuzz failed\n");
   }
 
   child = spawn("/hello", 0);
   if (child >= 0) {
     (void)waitpid(child, &status);
+  } else {
+    puts("JNU init: spawn /hello failed\n");
   }
+
   return 0;
 }

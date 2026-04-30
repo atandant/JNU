@@ -32,6 +32,14 @@ struct task {
 	struct task		*run_next;
 	struct task		*all_next;
 	const char		*name;
+	/*
+	 * Wake counter to close the missed-wakeup race between
+	 * sched_wake() and sched_sleep_current(). When a waker calls
+	 * sched_wake() while the target is still RUNNING (about to
+	 * sleep), it bumps wake_pending. sched_sleep_current()
+	 * consumes the credit instead of blocking.
+	 */
+	unsigned int		wake_pending;
 };
 
 typedef void (*kernel_thread_fn)(void *arg);

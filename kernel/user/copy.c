@@ -163,7 +163,17 @@ int copy_string_from_user(char *dst, const char *usrc, size_t max)
 
 	while (done < max) {
 		uintptr_t curr = (uintptr_t)usrc + done;
-		size_t to_page_end = PAGE_SIZE - (curr & ~PAGE_MASK);
+		/*
+		 * Bytes remaining in the page that contains `curr`. The
+		 * in-page offset is `curr & PAGE_MASK` (PAGE_MASK is the
+		 * low-bit offset mask, not the page-base mask), so the
+		 * distance to the next page boundary is PAGE_SIZE minus
+		 * that offset. Validating page-by-page is required: if a
+		 * NUL terminates the string before the next page, the
+		 * next page may legitimately be unmapped and we must not
+		 * fault on it.
+		 */
+		size_t to_page_end = PAGE_SIZE - (curr & PAGE_MASK);
 		size_t chunk = max - done;
 		int err;
 

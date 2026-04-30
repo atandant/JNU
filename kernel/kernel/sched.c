@@ -99,6 +99,17 @@ static void switch_to(struct task *next)
 	struct task *prev = current;
 
 	if (prev == next) {
+		/*
+		 * schedule_locked() may push us to the runq, find no
+		 * other runnable task, and pop us right back. We left
+		 * the state at TASK_RUNNABLE during the push; restore
+		 * it to TASK_RUNNING so the next preempt cycle sees us
+		 * as a real runnable task and pushes us again. Without
+		 * this fix the task is silently dropped on the floor
+		 * the moment any other task becomes runnable.
+		 */
+		next->state = TASK_RUNNING;
+		quantum_left = SCHED_QUANTUM_TICKS;
 		return;
 	}
 
@@ -155,7 +166,10 @@ static void user_thread_entry(void *arg)
 {
 	struct process *proc = arg;
 
-	spin_unlock_irqrestore(&sched_lock, 1ull << 9);
+	/*
+	 * kernel_thread_entry() already released sched_lock before
+	 * calling us — do NOT unlock it again here.
+	 */
 
 	vmm_switch_to(proc->space);
 	arch_syscall_set_kernel_stack((uint64_t)(uintptr_t)proc->main_task->kstack_top);
@@ -332,6 +346,20 @@ void sched_exit_current(int status)
 void sched_sleep_current(void)
 {
 	uint64_t flags = spin_lock_irqsave(&sched_lock);
+
+	/*
+	 * Consume any wake credit posted before we got the lock. This
+	 * is the missed-wakeup guard: a waker that ran between the
+	 * caller's predicate check and this point bumped wake_pending
+	 * but found us still RUNNING, so it skipped the runq push.
+	 * Without consuming the credit here we would block forever.
+	 */
+	if (current->wake_pending > 0) {
+		current->wake_pending--;
+		spin_unlock_irqrestore(&sched_lock, flags);
+		return;
+	}
+
 	current->state = TASK_SLEEPING;
 	schedule_locked();
 	spin_unlock_irqrestore(&sched_lock, flags);
@@ -346,7 +374,14 @@ void sched_wake(struct task *task)
 	}
 
 	flags = spin_lock_irqsave(&sched_lock);
+	/*
+	 * Always post a wake credit. If the target is already sleeping
+	 * we additionally make it runnable; if it is racing toward
+	 * sched_sleep_current() the credit will be consumed there.
+	 */
+	task->wake_pending++;
 	if (task->state == TASK_SLEEPING) {
+		task->wake_pending--;
 		task->state = TASK_RUNNABLE;
 		runq_push(task);
 	}
@@ -355,14 +390,31 @@ void sched_wake(struct task *task)
 
 void sched_tick(void)
 {
+	uint64_t flags;
+
 	tick_count++;
 	if (quantum_left > 0) {
 		quantum_left--;
 	}
-	if (quantum_left == 0) {
-		preempt_pending++;
-		quantum_left = SCHED_QUANTUM_TICKS;
+	if (quantum_left != 0) {
+		return;
 	}
+
+	/*
+	 * Quantum expired. Preempt the current task. We are in IRQ
+	 * context with interrupts disabled, so sched_lock cannot be
+	 * held by anyone else on this single-CPU build (every holder
+	 * disables interrupts before acquiring it). The IRQ frame on
+	 * the current kernel stack becomes part of the saved state of
+	 * the preempted task; when this task is scheduled back in,
+	 * context_switch returns here and we ride the same IRQ frame
+	 * back out through isr.S.
+	 */
+	preempt_pending++;
+	quantum_left = SCHED_QUANTUM_TICKS;
+	flags = spin_lock_irqsave(&sched_lock);
+	schedule_locked();
+	spin_unlock_irqrestore(&sched_lock, flags);
 }
 
 static void selftest_thread(void *arg)

@@ -12,6 +12,7 @@
 #include <jnu/elf64.h>
 #include <jnu/errno.h>
 #include <jnu/exec.h>
+#include <jnu/klog.h>
 #include <jnu/paging.h>
 #include <jnu/pmm.h>
 #include <jnu/string.h>
@@ -102,6 +103,7 @@ int elf64_validate_image(const struct exec_image *image,
 	uint64_t low = USER_TOP;
 	uint64_t high = 0;
 	int loads = 0;
+	bool entry_in_exec = false;
 	int err;
 
 	err = image_read_exact(image, 0, &eh, sizeof(eh));
@@ -147,10 +149,24 @@ int elf64_validate_image(const struct exec_image *image,
 		if (end > high) {
 			high = end;
 		}
+		/*
+		 * Entry must land in an executable segment. Without this
+		 * check, a crafted ELF could set e_entry inside a
+		 * writable, non-executable segment and still be accepted
+		 * because the entry only had to fall within [low, high).
+		 * That would defeat W^X: the first instruction the CPU
+		 * fetches would come from a page we mapped non-X.
+		 * (On x86_64 with NX honored that would just trap, but
+		 * the validator should still reject the image up front.)
+		 */
+		if ((ph.p_flags & PF_X) &&
+		    eh.e_entry >= ph.p_vaddr && eh.e_entry < end) {
+			entry_in_exec = true;
+		}
 		loads++;
 	}
 
-	if (loads == 0 || eh.e_entry < low || eh.e_entry >= high) {
+	if (loads == 0 || !entry_in_exec) {
 		return -ENOEXEC;
 	}
 
@@ -172,6 +188,43 @@ static uint64_t page_up(uint64_t v)
 	return (v + PAGE_MASK) & ~PAGE_MASK;
 }
 
+/*
+ * Write `len` bytes from kernel `src` to virtual address `va` in the
+ * given address space, bypassing copy_to_user.  We look up the PTE
+ * to find the physical page, then memcpy through the HHDM.  This is
+ * needed because copy_to_user validates against the *current*
+ * process's address space, which is the parent during process_spawn.
+ */
+static int write_to_space(struct addr_space *space, uint64_t va,
+			  const void *src, size_t len)
+{
+	const uint8_t *p = src;
+
+	while (len > 0) {
+		uint64_t pte;
+		paddr_t pa;
+		size_t page_off = va & PAGE_MASK;
+		size_t chunk = PAGE_SIZE - page_off;
+		int err;
+
+		if (chunk > len) {
+			chunk = len;
+		}
+
+		err = paging_get_flags(space, va, &pte);
+		if (err) {
+			return err;
+		}
+		pa = (pte & PTE_ADDR_MASK) + page_off;
+		memcpy(phys_to_virt(pa), p, chunk);
+
+		va  += chunk;
+		p   += chunk;
+		len -= chunk;
+	}
+	return 0;
+}
+
 static uint32_t phdr_vma_flags(const struct elf64_phdr *ph)
 {
 	uint32_t flags = VMA_READ | VMA_USER;
@@ -189,21 +242,37 @@ static int map_zeroed_user_pages(struct addr_space *space,
 				 uint64_t start, uint64_t end,
 				 uint32_t flags)
 {
-	for (uint64_t va = start; va < end; va += PAGE_SIZE) {
+	uint64_t va;
+
+	for (va = start; va < end; va += PAGE_SIZE) {
 		paddr_t pa = pmm_alloc_user_page();
 		int err;
 
 		if (!pa) {
-			return -ENOMEM;
+			goto fail_partial;
 		}
 
 		err = vmm_map(space, va, pa, 1, flags);
 		if (err) {
 			pmm_free_pages(pa, 0);
-			return err;
+			goto fail_partial;
 		}
 	}
 	return 0;
+
+fail_partial:
+	/*
+	 * Undo every page we successfully mapped in this call. Without
+	 * this, a partial map would leak both the physical pages and
+	 * the residual user-visible mappings — and the higher-level
+	 * unmap-on-error path in elf64_load_image() would silently
+	 * skip these pages because it tracks ranges per segment, not
+	 * per attempted mapping.
+	 */
+	if (va > start) {
+		vmm_unmap(space, start, (va - start) / PAGE_SIZE);
+	}
+	return -ENOMEM;
 }
 
 int elf64_load_image(struct addr_space *space, const struct exec_image *image,
@@ -211,13 +280,21 @@ int elf64_load_image(struct addr_space *space, const struct exec_image *image,
 {
 	struct elf64_ehdr eh;
 	struct elf64_phdr ph;
+	struct exec_load_info local_info;
+	uint64_t mapped_low = USER_TOP;
+	uint64_t mapped_high = 0;
 	int err;
 
 	if (!space) {
 		return -EINVAL;
 	}
 
-	err = elf64_validate_image(image, info);
+	/*
+	 * Always validate into a local info first so we have low/high
+	 * available for the cleanup path even if the caller passed
+	 * NULL for `info`.
+	 */
+	err = elf64_validate_image(image, &local_info);
 	if (err) {
 		return err;
 	}
@@ -232,10 +309,13 @@ int elf64_load_image(struct addr_space *space, const struct exec_image *image,
 		uint64_t start;
 		uint64_t end;
 		uint32_t final_flags;
+		uint64_t remaining;
+		uint64_t file_off;
+		uint64_t curr_va;
 
 		err = image_read_exact(image, off, &ph, sizeof(ph));
 		if (err) {
-			return err;
+			goto fail_unmap;
 		}
 		if (ph.p_type != PT_LOAD) {
 			continue;
@@ -248,12 +328,25 @@ int elf64_load_image(struct addr_space *space, const struct exec_image *image,
 		err = map_zeroed_user_pages(space, start, end,
 					    VMA_READ | VMA_WRITE | VMA_USER);
 		if (err) {
-			return err;
+			goto fail_unmap;
 		}
 
-		uint64_t remaining = ph.p_filesz;
-		uint64_t file_off = ph.p_offset;
-		uint64_t curr_va = ph.p_vaddr;
+		/*
+		 * Track the union of every successfully mapped range so
+		 * the failure path can unmap all of them in one shot.
+		 * Per spec §3.1 the ELF loader must not leak pages on
+		 * partial failure.
+		 */
+		if (start < mapped_low) {
+			mapped_low = start;
+		}
+		if (end > mapped_high) {
+			mapped_high = end;
+		}
+
+		remaining = ph.p_filesz;
+		file_off = ph.p_offset;
+		curr_va = ph.p_vaddr;
 
 		while (remaining > 0) {
 			uint8_t buf[PAGE_SIZE];
@@ -261,12 +354,12 @@ int elf64_load_image(struct addr_space *space, const struct exec_image *image,
 
 			err = image_read_exact(image, file_off, buf, chunk);
 			if (err) {
-				return err;
+				goto fail_unmap;
 			}
 
-			err = copy_to_user((void *)curr_va, buf, chunk);
+			err = write_to_space(space, curr_va, buf, chunk);
 			if (err) {
-				return err;
+				goto fail_unmap;
 			}
 
 			file_off += chunk;
@@ -277,11 +370,21 @@ int elf64_load_image(struct addr_space *space, const struct exec_image *image,
 		err = vmm_protect(space, start,
 				  (end - start) / PAGE_SIZE, final_flags);
 		if (err) {
-			return err;
+			goto fail_unmap;
 		}
 	}
 
+	if (info) {
+		*info = local_info;
+	}
 	return 0;
+
+fail_unmap:
+	if (mapped_high > mapped_low) {
+		vmm_unmap(space, mapped_low,
+			  (mapped_high - mapped_low) / PAGE_SIZE);
+	}
+	return err;
 }
 
 int elf64_setup_initial_stack(struct addr_space *space, uint64_t *stack_out)
@@ -303,7 +406,7 @@ int elf64_setup_initial_stack(struct addr_space *space, uint64_t *stack_out)
 	}
 
 	uint64_t zero[2] = {0, 0};
-	err = copy_to_user((void *)stack, zero, sizeof(zero));
+	err = write_to_space(space, stack, zero, sizeof(zero));
 	if (err) {
 		return err;
 	}
