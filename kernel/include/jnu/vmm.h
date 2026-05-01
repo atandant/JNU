@@ -13,22 +13,22 @@
 #include <jnu/rbtree.h>
 #include <jnu/types.h>
 
-#define VMA_READ		(1u << 0)
-#define VMA_WRITE		(1u << 1)
-#define VMA_EXEC		(1u << 2)
-#define VMA_USER		(1u << 3)
+#define VMA_READ (1u << 0)
+#define VMA_WRITE (1u << 1)
+#define VMA_EXEC (1u << 2)
+#define VMA_USER (1u << 3)
 
 struct vma {
-	struct rb_node	rb;
-	vaddr_t		start;
-	vaddr_t		end;	/* exclusive */
-	uint32_t	flags;
+	struct rb_node rb;
+	vaddr_t start;
+	vaddr_t end; /* exclusive */
+	uint32_t flags;
 };
 
 struct addr_space {
-	uint64_t	*pml4;		/* HHDM-virt pointer */
-	paddr_t		pml4_phys;
-	struct rb_root	vmas;
+	uint64_t *pml4; /* HHDM-virt pointer */
+	paddr_t pml4_phys;
+	struct rb_root vmas;
 };
 
 void vmm_init(void);
@@ -41,8 +41,8 @@ void vmm_destroy_space(struct addr_space *space);
  * Map `pages` × 4 KiB starting at `virt` to `phys` in `space`. Updates
  * both the page tables and the VMA tree. Returns 0 / -errno.
  */
-int vmm_map(struct addr_space *space, vaddr_t virt, paddr_t phys,
-	    size_t pages, uint32_t flags);
+int vmm_map(struct addr_space *space, vaddr_t virt, paddr_t phys, size_t pages,
+	    uint32_t flags);
 
 int vmm_unmap(struct addr_space *space, vaddr_t virt, size_t pages);
 

@@ -15,17 +15,13 @@
 #include <jnu/spinlock.h>
 #include <jnu/types.h>
 
-void spin_lock_init(struct spinlock *lock)
-{
-	lock->locked = 0;
-}
+void spin_lock_init(struct spinlock *lock) { lock->locked = 0; }
 
 uint64_t spin_lock_irqsave(struct spinlock *lock)
 {
 	uint64_t flags;
 
-	__asm__ __volatile__ ("pushfq; popq %0; cli"
-			      : "=r"(flags) :: "memory");
+	__asm__ __volatile__("pushfq; popq %0; cli" : "=r"(flags)::"memory");
 
 	if (lock->locked) {
 		/*
@@ -47,8 +43,8 @@ void spin_unlock_irqrestore(struct spinlock *lock, uint64_t flags)
 	}
 	lock->locked = 0;
 
-	if (flags & (1ull << 9)) {	/* IF was set */
-		__asm__ __volatile__ ("sti" ::: "memory");
+	if (flags & (1ull << 9)) { /* IF was set */
+		__asm__ __volatile__("sti" ::: "memory");
 	}
 }
 
@@ -65,12 +61,12 @@ int spinlock_selftest(void)
 	 * Ensure repeated lock/unlock cycles preserve the IRQ-flag
 	 * save/restore even when called from an IRQ-disabled context.
 	 */
-	__asm__ __volatile__ ("cli");
+	__asm__ __volatile__("cli");
 	f = spin_lock_irqsave(&l);
 	spin_unlock_irqrestore(&l, f);
 	/* Caller's expectation is IRQs still disabled. */
 
-	__asm__ __volatile__ ("sti");
+	__asm__ __volatile__("sti");
 	f = spin_lock_irqsave(&l);
 	spin_unlock_irqrestore(&l, f);
 

@@ -23,19 +23,19 @@
  */
 struct cpu_state {
 	/* Pushed by isr_common, in this order: */
-	uint64_t	r15, r14, r13, r12, r11, r10, r9, r8;
-	uint64_t	rbp, rdi, rsi, rdx, rcx, rbx, rax;
+	uint64_t r15, r14, r13, r12, r11, r10, r9, r8;
+	uint64_t rbp, rdi, rsi, rdx, rcx, rbx, rax;
 
 	/* Pushed by the per-vector stub: */
-	uint64_t	vector;
-	uint64_t	error_code;	/* fake 0 if the CPU did not push one */
+	uint64_t vector;
+	uint64_t error_code; /* fake 0 if the CPU did not push one */
 
 	/* Pushed by the CPU: */
-	uint64_t	rip;
-	uint64_t	cs;
-	uint64_t	rflags;
-	uint64_t	rsp;
-	uint64_t	ss;
+	uint64_t rip;
+	uint64_t cs;
+	uint64_t rflags;
+	uint64_t rsp;
+	uint64_t ss;
 };
 
 typedef void (*irq_handler_t)(struct cpu_state *st);
@@ -51,5 +51,6 @@ void idt_set_handler(uint8_t vector, irq_handler_t handler);
 /* Common dispatch entry from isr.S. */
 void interrupt_dispatch(struct cpu_state *st);
 
-/* Architectural-exception (vectors 0–31) entry, called from interrupt_dispatch. */
+/* Architectural-exception (vectors 0–31) entry, called from interrupt_dispatch.
+ */
 void exceptions_handle(struct cpu_state *st);

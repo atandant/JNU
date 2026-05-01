@@ -13,7 +13,7 @@
 
 #include <jnu/types.h>
 
-#define PIT_FREQUENCY_HZ	100
+#define PIT_FREQUENCY_HZ 100
 
 /*
  * Initialize PIT channel 0 at 100 Hz and install the timer IRQ handler

@@ -68,7 +68,8 @@ static const char *skip_slash(const char *p)
 	return p;
 }
 
-static int next_component(const char *path, char *comp, size_t max_len, const char **next_path)
+static int next_component(const char *path, char *comp, size_t max_len,
+			  const char **next_path)
 {
 	path = skip_slash(path);
 	if (!*path) {
@@ -118,20 +119,21 @@ int vfs_open(const char *path, struct vfs_inode **out)
 			curr->mnt->ops->close(curr);
 			return -ENOTDIR;
 		}
-		
+
 		if (!(curr->mode & 0111)) {
 			curr->mnt->ops->close(curr);
 			return -EACCES;
 		}
-		
-		if (strcmp(comp, "..") == 0 && curr->ino == root_mount.root->ino) {
+
+		if (strcmp(comp, "..") == 0 &&
+		    curr->ino == root_mount.root->ino) {
 			continue;
 		}
 
 		struct vfs_inode *next = NULL;
 		err = curr->mnt->ops->lookup(curr, comp, &next);
 		curr->mnt->ops->close(curr);
-		
+
 		if (err)
 			return err;
 
@@ -178,31 +180,32 @@ int vfs_selftest(void)
 	struct vfs_inode *ino;
 	int err = vfs_open("/test.txt", &ino);
 	if (err) {
-		pr_err("vfs_selftest: could not open /test.txt (err=%d)\n", err);
+		pr_err("vfs_selftest: could not open /test.txt (err=%d)\n",
+		       err);
 		return err;
 	}
-	
+
 	if (ino->is_dir) {
 		pr_err("vfs_selftest: /test.txt is a directory\n");
 		vfs_close(ino);
 		return -EISDIR;
 	}
-	
+
 	char buf[32];
 	memset(buf, 0, sizeof(buf));
 	ssize_t n = vfs_read(ino, 0, sizeof(buf) - 1, buf);
 	vfs_close(ino);
-	
+
 	if (n < 0) {
 		pr_err("vfs_selftest: read failed (err=%d)\n", (int)n);
 		return (int)n;
 	}
-	
+
 	if (strncmp(buf, "Hello from JNU", 14) != 0) {
 		pr_err("vfs_selftest: unexpected content: '%s'\n", buf);
 		return -EIO;
 	}
-	
+
 	pr_info("vfs_selftest: read test.txt [ OK ]\n");
 	return 0;
 }

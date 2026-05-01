@@ -37,6 +37,6 @@ struct char_ops {
 };
 
 struct char_device {
-	const char		*name;
-	const struct char_ops	*ops;
+	const char *name;
+	const struct char_ops *ops;
 };

@@ -19,7 +19,7 @@
 #include <jnu/syscall.h>
 #include <jnu/usercopy.h>
 
-#define WRITE_CHUNK	128
+#define WRITE_CHUNK 128
 
 int64_t sys_write(int fd, const void *ubuf, size_t len)
 {
@@ -43,8 +43,7 @@ int64_t sys_write(int fd, const void *ubuf, size_t len)
 			chunk = WRITE_CHUNK;
 		}
 
-		err = copy_from_user(buf, (const uint8_t *)ubuf + done,
-				     chunk);
+		err = copy_from_user(buf, (const uint8_t *)ubuf + done, chunk);
 		if (err) {
 			return done ? (int64_t)done : err;
 		}

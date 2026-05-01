@@ -15,7 +15,7 @@
 #include <jnu/string.h>
 #include <jnu/types.h>
 
-#define MAX_BLOCK_DEVICES	8
+#define MAX_BLOCK_DEVICES 8
 
 static struct block_device *bdevs[MAX_BLOCK_DEVICES];
 static size_t bdev_count;
@@ -38,8 +38,7 @@ int block_register(struct block_device *bdev)
 
 	bdevs[bdev_count++] = bdev;
 	pr_info("block: registered '%s' (%llu sectors, %u bytes/sector)\n",
-		bdev->name,
-		(unsigned long long)bdev->sector_count,
+		bdev->name, (unsigned long long)bdev->sector_count,
 		(unsigned)bdev->sector_size);
 	return 0;
 }
@@ -53,8 +52,7 @@ struct block_device *block_lookup(const char *name)
 	return NULL;
 }
 
-int block_read(struct block_device *bdev, uint64_t lba,
-	       size_t count, void *buf)
+int block_read(struct block_device *bdev, uint64_t lba, size_t count, void *buf)
 {
 	if (!bdev || !bdev->ops || !bdev->ops->read)
 		return -EINVAL;

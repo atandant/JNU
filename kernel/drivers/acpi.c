@@ -16,10 +16,7 @@
 static uint64_t acpi_hhdm;
 static const struct acpi_rsdp *cached_rsdp;
 
-static void *hhdm(uint64_t pa)
-{
-	return (void *)(uintptr_t)(pa + acpi_hhdm);
-}
+static void *hhdm(uint64_t pa) { return (void *)(uintptr_t)(pa + acpi_hhdm); }
 
 bool acpi_checksum_ok(const void *p, size_t len)
 {
@@ -61,12 +58,11 @@ const struct acpi_sdt_header *acpi_find_table(const char *sig)
 		paging_ensure_hhdm(cached_rsdp->xsdt_address,
 				   sizeof(struct acpi_sdt_header));
 		const struct acpi_sdt_header *xsdt =
-			hhdm(cached_rsdp->xsdt_address);
+		    hhdm(cached_rsdp->xsdt_address);
 		paging_ensure_hhdm(cached_rsdp->xsdt_address, xsdt->length);
 		size_t n = (xsdt->length - sizeof(*xsdt)) / 8;
 		const uint64_t *ptrs =
-			(const uint64_t *)((const uint8_t *)xsdt +
-					   sizeof(*xsdt));
+		    (const uint64_t *)((const uint8_t *)xsdt + sizeof(*xsdt));
 		for (size_t i = 0; i < n; i++) {
 			paging_ensure_hhdm(ptrs[i],
 					   sizeof(struct acpi_sdt_header));
@@ -79,12 +75,11 @@ const struct acpi_sdt_header *acpi_find_table(const char *sig)
 		paging_ensure_hhdm(cached_rsdp->rsdt_address,
 				   sizeof(struct acpi_sdt_header));
 		const struct acpi_sdt_header *rsdt =
-			hhdm(cached_rsdp->rsdt_address);
+		    hhdm(cached_rsdp->rsdt_address);
 		paging_ensure_hhdm(cached_rsdp->rsdt_address, rsdt->length);
 		size_t n = (rsdt->length - sizeof(*rsdt)) / 4;
 		const uint32_t *ptrs =
-			(const uint32_t *)((const uint8_t *)rsdt +
-					   sizeof(*rsdt));
+		    (const uint32_t *)((const uint8_t *)rsdt + sizeof(*rsdt));
 		for (size_t i = 0; i < n; i++) {
 			paging_ensure_hhdm(ptrs[i],
 					   sizeof(struct acpi_sdt_header));

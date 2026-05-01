@@ -13,11 +13,11 @@
 #include <jnu/types.h>
 
 struct initramfs_file {
-	const char	*name;
-	size_t		name_len;
-	const void	*data;
-	size_t		size;
-	uint32_t	mode;
+	const char *name;
+	size_t name_len;
+	const void *data;
+	size_t size;
+	uint32_t mode;
 };
 
 int initramfs_init(void *base, size_t len);

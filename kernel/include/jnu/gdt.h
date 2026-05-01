@@ -25,18 +25,18 @@
 
 #include <jnu/types.h>
 
-#define GDT_NULL		0x00
-#define GDT_KERNEL_CS		0x08
-#define GDT_KERNEL_DS		0x10
-#define GDT_USER_DS		0x18
-#define GDT_USER_CS		0x20
-#define GDT_TSS			0x28	/* 16-byte system descriptor */
+#define GDT_NULL 0x00
+#define GDT_KERNEL_CS 0x08
+#define GDT_KERNEL_DS 0x10
+#define GDT_USER_DS 0x18
+#define GDT_USER_CS 0x20
+#define GDT_TSS 0x28 /* 16-byte system descriptor */
 
-#define IST_NONE		0
-#define IST_DF			1
-#define IST_NMI			2
-#define IST_MC			3
-#define IST_PF			4
+#define IST_NONE 0
+#define IST_DF 1
+#define IST_NMI 2
+#define IST_MC 3
+#define IST_PF 4
 
 void gdt_init(void);
 

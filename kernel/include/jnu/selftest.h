@@ -14,8 +14,8 @@
 #include <jnu/types.h>
 
 struct selftest {
-	const char	*name;
-	int		(*run)(void);
+	const char *name;
+	int (*run)(void);
 };
 
 /*

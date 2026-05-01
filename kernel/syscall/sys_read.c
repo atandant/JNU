@@ -13,7 +13,7 @@
 #include <jnu/syscall.h>
 #include <jnu/usercopy.h>
 
-#define READ_CHUNK	256
+#define READ_CHUNK 256
 
 static ssize_t file_read_at(struct file *file, uint64_t off, void *buf,
 			    size_t len)

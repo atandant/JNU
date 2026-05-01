@@ -30,25 +30,25 @@ extern uint64_t isr_table[256];
 void exceptions_handle(struct cpu_state *st);
 
 struct __packed idt_entry {
-	uint16_t	off_lo;
-	uint16_t	selector;
-	uint8_t		ist;		/* low 3 bits */
-	uint8_t		type_attr;	/* P | DPL | 0 | type */
-	uint16_t	off_mid;
-	uint32_t	off_hi;
-	uint32_t	zero;
+	uint16_t off_lo;
+	uint16_t selector;
+	uint8_t ist;	   /* low 3 bits */
+	uint8_t type_attr; /* P | DPL | 0 | type */
+	uint16_t off_mid;
+	uint32_t off_hi;
+	uint32_t zero;
 };
 
 struct __packed idt_descriptor {
-	uint16_t	limit;
-	uint64_t	base;
+	uint16_t limit;
+	uint64_t base;
 };
 
 static struct idt_entry idt[256] __aligned(16);
 
-#define IDT_TYPE_INT_GATE	0x0E
-#define IDT_PRESENT		(1u << 7)
-#define IDT_DPL0		(0u << 5)
+#define IDT_TYPE_INT_GATE 0x0E
+#define IDT_PRESENT (1u << 7)
+#define IDT_DPL0 (0u << 5)
 
 static irq_handler_t handlers[256];
 
@@ -56,13 +56,13 @@ static void set_gate(uint8_t vec, uint64_t handler, uint8_t ist)
 {
 	struct idt_entry *e = &idt[vec];
 
-	e->off_lo	= (uint16_t)(handler & 0xFFFF);
-	e->selector	= GDT_KERNEL_CS;
-	e->ist		= (uint8_t)(ist & 0x07);
-	e->type_attr	= (uint8_t)(IDT_PRESENT | IDT_DPL0 | IDT_TYPE_INT_GATE);
-	e->off_mid	= (uint16_t)((handler >> 16) & 0xFFFF);
-	e->off_hi	= (uint32_t)(handler >> 32);
-	e->zero		= 0;
+	e->off_lo = (uint16_t)(handler & 0xFFFF);
+	e->selector = GDT_KERNEL_CS;
+	e->ist = (uint8_t)(ist & 0x07);
+	e->type_attr = (uint8_t)(IDT_PRESENT | IDT_DPL0 | IDT_TYPE_INT_GATE);
+	e->off_mid = (uint16_t)((handler >> 16) & 0xFFFF);
+	e->off_hi = (uint32_t)(handler >> 32);
+	e->zero = 0;
 }
 
 void idt_set_handler(uint8_t vector, irq_handler_t handler)
@@ -79,22 +79,31 @@ void idt_init(void)
 		uint8_t ist = IST_NONE;
 
 		switch (i) {
-		case 8:		ist = IST_DF;  break;
-		case 2:		ist = IST_NMI; break;
-		case 18:	ist = IST_MC;  break;
-		case 14:	ist = IST_PF;  break;
-		default:	break;
+		case 8:
+			ist = IST_DF;
+			break;
+		case 2:
+			ist = IST_NMI;
+			break;
+		case 18:
+			ist = IST_MC;
+			break;
+		case 14:
+			ist = IST_PF;
+			break;
+		default:
+			break;
 		}
 
 		set_gate((uint8_t)i, isr_table[i], ist);
 	}
 
 	struct idt_descriptor idtr = {
-		.limit	= sizeof(idt) - 1,
-		.base	= (uint64_t)(uintptr_t)idt,
+	    .limit = sizeof(idt) - 1,
+	    .base = (uint64_t)(uintptr_t)idt,
 	};
 
-	__asm__ __volatile__ ("lidt %0" :: "m"(idtr));
+	__asm__ __volatile__("lidt %0" ::"m"(idtr));
 
 	pr_info("idt: 256 vectors loaded\n");
 }

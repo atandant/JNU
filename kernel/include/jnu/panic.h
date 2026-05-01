@@ -13,7 +13,7 @@
 
 #include <jnu/compiler.h>
 
-struct cpu_state;	/* defined in <jnu/idt.h> */
+struct cpu_state; /* defined in <jnu/idt.h> */
 
 __noreturn void panic(const char *fmt, ...) __printf(1, 2);
 

@@ -28,82 +28,79 @@
 
 static uint64_t apic_hhdm;
 
-static void *hhdm(uint64_t pa)
-{
-	return (void *)(uintptr_t)(pa + apic_hhdm);
-}
+static void *hhdm(uint64_t pa) { return (void *)(uintptr_t)(pa + apic_hhdm); }
 
 /* ------------------------------------------------------------------------- */
 /* ACPI structures                                                            */
 /* ------------------------------------------------------------------------- */
 
 struct __packed acpi_madt {
-	struct acpi_sdt_header	hdr;
-	uint32_t		lapic_address;
-	uint32_t		flags;
+	struct acpi_sdt_header hdr;
+	uint32_t lapic_address;
+	uint32_t flags;
 	/* variable-length list of entries follows */
 };
 
-#define MADT_TYPE_LAPIC			0
-#define MADT_TYPE_IOAPIC		1
-#define MADT_TYPE_INT_OVERRIDE		2
-#define MADT_TYPE_LAPIC_ADDR_OVERRIDE	5
+#define MADT_TYPE_LAPIC 0
+#define MADT_TYPE_IOAPIC 1
+#define MADT_TYPE_INT_OVERRIDE 2
+#define MADT_TYPE_LAPIC_ADDR_OVERRIDE 5
 
 struct __packed madt_entry_hdr {
-	uint8_t		type;
-	uint8_t		length;
+	uint8_t type;
+	uint8_t length;
 };
 
 struct __packed madt_lapic {
-	struct madt_entry_hdr	h;
-	uint8_t			processor_id;
-	uint8_t			apic_id;
-	uint32_t		flags;
+	struct madt_entry_hdr h;
+	uint8_t processor_id;
+	uint8_t apic_id;
+	uint32_t flags;
 };
 
 struct __packed madt_ioapic {
-	struct madt_entry_hdr	h;
-	uint8_t			id;
-	uint8_t			reserved;
-	uint32_t		address;
-	uint32_t		gsi_base;
+	struct madt_entry_hdr h;
+	uint8_t id;
+	uint8_t reserved;
+	uint32_t address;
+	uint32_t gsi_base;
 };
 
 struct __packed madt_int_override {
-	struct madt_entry_hdr	h;
-	uint8_t			bus;
-	uint8_t			source;
-	uint32_t		gsi;
-	uint16_t		flags;
+	struct madt_entry_hdr h;
+	uint8_t bus;
+	uint8_t source;
+	uint32_t gsi;
+	uint16_t flags;
 };
 
 struct __packed madt_lapic_addr_override {
-	struct madt_entry_hdr	h;
-	uint16_t		reserved;
-	uint64_t		address;
+	struct madt_entry_hdr h;
+	uint16_t reserved;
+	uint64_t address;
 };
 
 /* ------------------------------------------------------------------------- */
 /* State                                                                      */
 /* ------------------------------------------------------------------------- */
 
-#define MAX_LAPICS	32
-#define MAX_IOAPICS	8
-#define MAX_OVERRIDES	16
+#define MAX_LAPICS 32
+#define MAX_IOAPICS 8
+#define MAX_OVERRIDES 16
 
 struct ioapic {
-	uint8_t		id;
-	uint32_t	gsi_base;
-	uint32_t	gsi_count;
-	uint64_t	mmio_phys;
+	uint8_t id;
+	uint32_t gsi_base;
+	uint32_t gsi_count;
+	uint64_t mmio_phys;
 	volatile uint32_t *mmio;
 };
 
 struct override {
-	uint8_t		isa_irq;
-	uint32_t	gsi;
-	uint16_t	flags;
-	bool		used;
+	uint8_t isa_irq;
+	uint32_t gsi;
+	uint16_t flags;
+	bool used;
 };
 
 static uint64_t lapic_phys;
@@ -122,8 +119,6 @@ static size_t lapic_count;
 /* RSDP / SDT walking                                                         */
 /* ------------------------------------------------------------------------- */
 
-
-
 /* ------------------------------------------------------------------------- */
 /* MADT parse                                                                 */
 /* ------------------------------------------------------------------------- */
@@ -137,7 +132,7 @@ static void parse_madt(const struct acpi_madt *madt)
 
 	while (p < end) {
 		const struct madt_entry_hdr *h =
-			(const struct madt_entry_hdr *)p;
+		    (const struct madt_entry_hdr *)p;
 		if (h->length == 0) {
 			break;
 		}
@@ -164,11 +159,10 @@ static void parse_madt(const struct acpi_madt *madt)
 			break;
 		}
 		case MADT_TYPE_INT_OVERRIDE: {
-			const struct madt_int_override *e =
-				(const void *)p;
+			const struct madt_int_override *e = (const void *)p;
 			if (override_count < MAX_OVERRIDES) {
 				struct override *o =
-					&overrides[override_count++];
+				    &overrides[override_count++];
 				o->isa_irq = e->source;
 				o->gsi = e->gsi;
 				o->flags = e->flags;
@@ -178,12 +172,12 @@ static void parse_madt(const struct acpi_madt *madt)
 		}
 		case MADT_TYPE_LAPIC_ADDR_OVERRIDE: {
 			const struct madt_lapic_addr_override *e =
-				(const void *)p;
+			    (const void *)p;
 			lapic_phys = e->address;
 			break;
 		}
 		default:
-			break;	/* spec §2.9: unknown entries are info */
+			break; /* spec §2.9: unknown entries are info */
 		}
 
 		p += h->length;
@@ -194,19 +188,16 @@ static void parse_madt(const struct acpi_madt *madt)
 /* LAPIC                                                                      */
 /* ------------------------------------------------------------------------- */
 
-#define LAPIC_REG_ID		0x020
-#define LAPIC_REG_EOI		0x0B0
-#define LAPIC_REG_SVR		0x0F0
+#define LAPIC_REG_ID 0x020
+#define LAPIC_REG_EOI 0x0B0
+#define LAPIC_REG_SVR 0x0F0
 
-static uint32_t lapic_read(uint32_t off)
-{
-	return lapic_mmio[off / 4];
-}
+static uint32_t lapic_read(uint32_t off) { return lapic_mmio[off / 4]; }
 
 static void lapic_write(uint32_t off, uint32_t val)
 {
 	lapic_mmio[off / 4] = val;
-	(void)lapic_read(LAPIC_REG_ID);	/* serializing read */
+	(void)lapic_read(LAPIC_REG_ID); /* serializing read */
 }
 
 void apic_eoi(void)
@@ -216,10 +207,7 @@ void apic_eoi(void)
 	}
 }
 
-volatile uint32_t *lapic_mmio_base(void)
-{
-	return lapic_mmio;
-}
+volatile uint32_t *lapic_mmio_base(void) { return lapic_mmio; }
 
 static void lapic_init(void)
 {
@@ -242,8 +230,7 @@ static void lapic_init(void)
 	/* SVR: vector 0xFF, enable bit (8). */
 	lapic_write(LAPIC_REG_SVR, 0x100u | VEC_SPURIOUS);
 
-	pr_info("apic: LAPIC at phys 0x%lx, id=%u\n",
-		(unsigned long)lapic_phys,
+	pr_info("apic: LAPIC at phys 0x%lx, id=%u\n", (unsigned long)lapic_phys,
 		(unsigned)(lapic_read(LAPIC_REG_ID) >> 24));
 }
 
@@ -251,10 +238,10 @@ static void lapic_init(void)
 /* IOAPIC                                                                     */
 /* ------------------------------------------------------------------------- */
 
-#define IOAPIC_REG_VER		0x01
-#define IOAPIC_REG_REDTBL	0x10
+#define IOAPIC_REG_VER 0x01
+#define IOAPIC_REG_REDTBL 0x10
 
-#define IOAPIC_REDIR_MASK	(1u << 16)
+#define IOAPIC_REDIR_MASK (1u << 16)
 
 static uint32_t ioapic_read(struct ioapic *io, uint32_t reg)
 {
@@ -268,8 +255,7 @@ static void ioapic_write(struct ioapic *io, uint32_t reg, uint32_t val)
 	io->mmio[4] = val;
 }
 
-static void ioapic_set_redir(struct ioapic *io, uint32_t pin,
-			     uint64_t entry)
+static void ioapic_set_redir(struct ioapic *io, uint32_t pin, uint64_t entry)
 {
 	ioapic_write(io, IOAPIC_REG_REDTBL + pin * 2,
 		     (uint32_t)(entry & 0xFFFFFFFFu));
@@ -281,8 +267,7 @@ static struct ioapic *ioapic_for_gsi(uint32_t gsi, uint32_t *pin)
 {
 	for (size_t i = 0; i < ioapic_count; i++) {
 		struct ioapic *io = &ioapics[i];
-		if (gsi >= io->gsi_base &&
-		    gsi <  io->gsi_base + io->gsi_count) {
+		if (gsi >= io->gsi_base && gsi < io->gsi_base + io->gsi_count) {
 			*pin = gsi - io->gsi_base;
 			return io;
 		}
@@ -300,7 +285,7 @@ static void resolve_isa(uint8_t isa_irq, uint32_t *gsi, uint16_t *flags)
 		}
 	}
 	*gsi = isa_irq;
-	*flags = 0;	/* edge, active-high */
+	*flags = 0; /* edge, active-high */
 }
 
 static void ioapic_init_all(void)
@@ -312,13 +297,11 @@ static void ioapic_init_all(void)
 		io->gsi_count = maxred + 1;
 
 		for (uint32_t pin = 0; pin < io->gsi_count; pin++) {
-			ioapic_set_redir(io, pin,
-					 (uint64_t)IOAPIC_REDIR_MASK);
+			ioapic_set_redir(io, pin, (uint64_t)IOAPIC_REDIR_MASK);
 		}
 
 		pr_info("apic: IOAPIC %u at phys 0x%lx, gsi %u..%u\n",
-			(unsigned)io->id,
-			(unsigned long)io->mmio_phys,
+			(unsigned)io->id, (unsigned long)io->mmio_phys,
 			(unsigned)io->gsi_base,
 			(unsigned)(io->gsi_base + io->gsi_count - 1));
 	}

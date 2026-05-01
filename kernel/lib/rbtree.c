@@ -12,10 +12,7 @@
 #include <jnu/rbtree.h>
 #include <jnu/types.h>
 
-void rb_init(struct rb_root *root)
-{
-	root->root = NULL;
-}
+void rb_init(struct rb_root *root) { root->root = NULL; }
 
 void rb_link_node(struct rb_node *node, struct rb_node *parent,
 		  struct rb_node **slot)
@@ -297,8 +294,8 @@ void rb_erase(struct rb_root *root, struct rb_node *z)
 #include <jnu/klog.h>
 
 struct rb_test_node {
-	struct rb_node	rb;
-	uint64_t	key;
+	struct rb_node rb;
+	uint64_t key;
 };
 
 static void rb_test_insert(struct rb_root *r, struct rb_test_node *n)
@@ -307,8 +304,7 @@ static void rb_test_insert(struct rb_root *r, struct rb_test_node *n)
 	struct rb_node *parent = NULL;
 
 	while (*slot) {
-		struct rb_test_node *cur =
-			(struct rb_test_node *)(*slot);
+		struct rb_test_node *cur = (struct rb_test_node *)(*slot);
 		parent = *slot;
 		slot = (n->key < cur->key) ? &(*slot)->left : &(*slot)->right;
 	}
@@ -337,7 +333,7 @@ static int validate_walk(const struct rb_root *r, size_t expected)
 	return 0;
 }
 
-#define RBTEST_N	256
+#define RBTEST_N 256
 
 static struct rb_test_node rbtest_nodes[RBTEST_N];
 

@@ -18,20 +18,21 @@
 struct slab_page;
 
 struct kmem_cache {
-	const char		*name;
-	size_t			object_size;
-	size_t			align;
-	size_t			objects_per_slab;
-	struct slab_page	*partial;
-	struct slab_page	*full;
-	uint64_t		alloc_count;
-	uint64_t		free_count;
-	struct spinlock		lock;
+	const char *name;
+	size_t object_size;
+	size_t align;
+	size_t objects_per_slab;
+	struct slab_page *partial;
+	struct slab_page *full;
+	uint64_t alloc_count;
+	uint64_t free_count;
+	struct spinlock lock;
 };
 
 void slab_init(void);
 
-struct kmem_cache *kmem_cache_create(const char *name, size_t size, size_t align);
+struct kmem_cache *kmem_cache_create(const char *name, size_t size,
+				     size_t align);
 
 void *kmem_cache_alloc(struct kmem_cache *cache);
 

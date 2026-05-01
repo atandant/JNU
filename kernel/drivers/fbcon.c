@@ -22,30 +22,30 @@
 
 #include <jnu/fbcon.h>
 #include <jnu/klog.h>
-#include <jnu/string.h>
 #include <jnu/spinlock.h>
+#include <jnu/string.h>
 #include <jnu/types.h>
 
 #include "font_data.h"
 
-#define GLYPH_W		8
-#define GLYPH_H		16
+#define GLYPH_W 8
+#define GLYPH_H 16
 
-#define COLOR_FG	0x00C0C0C0u	/* light gray */
-#define COLOR_BG	0x00000000u	/* black */
+#define COLOR_FG 0x00C0C0C0u /* light gray */
+#define COLOR_BG 0x00000000u /* black */
 
 static struct {
-	uint32_t	*pixels;	/* HHDM-mapped */
-	uint32_t	width;
-	uint32_t	height;
-	uint32_t	pitch_px;	/* bytes-per-row / 4 */
-	uint32_t	cols;
-	uint32_t	rows;
-	uint32_t	cur_col;
-	uint32_t	cur_row;
-	bool		ready;
+	uint32_t *pixels; /* HHDM-mapped */
+	uint32_t width;
+	uint32_t height;
+	uint32_t pitch_px; /* bytes-per-row / 4 */
+	uint32_t cols;
+	uint32_t rows;
+	uint32_t cur_col;
+	uint32_t cur_row;
+	bool ready;
 	struct spinlock lock;
-} fb = { .lock = SPINLOCK_INITIALIZER };
+} fb = {.lock = SPINLOCK_INITIALIZER};
 
 static void put_pixel(uint32_t x, uint32_t y, uint32_t color)
 {
@@ -73,8 +73,8 @@ static void blit_glyph(uint32_t col, uint32_t row, char c)
 	for (uint32_t gy = 0; gy < GLYPH_H; gy++) {
 		uint8_t bits = glyph[gy];
 		for (uint32_t gx = 0; gx < GLYPH_W; gx++) {
-			uint32_t color = (bits & (0x80u >> gx))
-				? COLOR_FG : COLOR_BG;
+			uint32_t color =
+			    (bits & (0x80u >> gx)) ? COLOR_FG : COLOR_BG;
 			put_pixel(px + gx, py + gy, color);
 		}
 	}
@@ -179,7 +179,7 @@ void fbcon_write(const char *buf, size_t len)
 		return;
 	}
 
-	for (size_t i = 0; i < len; ) {
+	for (size_t i = 0; i < len;) {
 		size_t skip = skip_ansi(buf + i, len - i);
 		if (skip) {
 			i += skip;
@@ -192,9 +192,9 @@ void fbcon_write(const char *buf, size_t len)
 }
 
 static struct klog_backend fbcon_backend = {
-	.name  = "fbcon",
-	.flags = 0,	/* no ANSI on framebuffer */
-	.write = fbcon_write,
+    .name = "fbcon",
+    .flags = 0, /* no ANSI on framebuffer */
+    .write = fbcon_write,
 };
 
 int fbcon_init(const struct fbcon_info *info)
@@ -206,15 +206,15 @@ int fbcon_init(const struct fbcon_info *info)
 		return -1;
 	}
 
-	fb.pixels   = (uint32_t *)info->addr;
-	fb.width    = (uint32_t)info->width;
-	fb.height   = (uint32_t)info->height;
+	fb.pixels = (uint32_t *)info->addr;
+	fb.width = (uint32_t)info->width;
+	fb.height = (uint32_t)info->height;
 	fb.pitch_px = (uint32_t)(info->pitch / 4);
-	fb.cols     = fb.width  / GLYPH_W;
-	fb.rows     = fb.height / GLYPH_H;
-	fb.cur_col  = 0;
-	fb.cur_row  = 0;
-	fb.ready    = true;
+	fb.cols = fb.width / GLYPH_W;
+	fb.rows = fb.height / GLYPH_H;
+	fb.cur_col = 0;
+	fb.cur_row = 0;
+	fb.ready = true;
 
 	clear_screen();
 	klog_register(&fbcon_backend);

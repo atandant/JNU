@@ -18,9 +18,9 @@
 
 enum klog_level {
 	KLOG_PANIC = 0,
-	KLOG_ERR   = 1,
-	KLOG_WARN  = 2,
-	KLOG_INFO  = 3,
+	KLOG_ERR = 1,
+	KLOG_WARN = 2,
+	KLOG_INFO = 3,
 	KLOG_DEBUG = 4,
 };
 
@@ -28,12 +28,12 @@ enum klog_level {
  * Backend capabilities. ANSI color is opt-in; only backends that set
  * KLOG_BACKEND_ANSI receive escape sequences for KLOG_ERR / KLOG_WARN.
  */
-#define KLOG_BACKEND_ANSI	(1u << 0)
+#define KLOG_BACKEND_ANSI (1u << 0)
 
 struct klog_backend {
-	const char	*name;
-	uint32_t	flags;
-	void		(*write)(const char *buf, size_t len);
+	const char *name;
+	uint32_t flags;
+	void (*write)(const char *buf, size_t len);
 	struct klog_backend *next;
 };
 
@@ -56,16 +56,15 @@ void klog_raw_write(enum klog_level level, const char *buf, size_t len);
 void klog_panic_write(const char *buf, size_t len);
 
 /* Drain the last `n` ring-buffer lines into `cb` (used by panic). */
-void klog_drain_tail(size_t n,
-		     void (*cb)(const char *line, size_t len));
+void klog_drain_tail(size_t n, void (*cb)(const char *line, size_t len));
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
-#define pr_panic(fmt, ...)	printk(KLOG_PANIC, fmt, ##__VA_ARGS__)
-#define pr_err(fmt, ...)	printk(KLOG_ERR,   fmt, ##__VA_ARGS__)
-#define pr_warn(fmt, ...)	printk(KLOG_WARN,  fmt, ##__VA_ARGS__)
-#define pr_info(fmt, ...)	printk(KLOG_INFO,  fmt, ##__VA_ARGS__)
-#define pr_debug(fmt, ...)	printk(KLOG_DEBUG, fmt, ##__VA_ARGS__)
+#define pr_panic(fmt, ...) printk(KLOG_PANIC, fmt, ##__VA_ARGS__)
+#define pr_err(fmt, ...) printk(KLOG_ERR, fmt, ##__VA_ARGS__)
+#define pr_warn(fmt, ...) printk(KLOG_WARN, fmt, ##__VA_ARGS__)
+#define pr_info(fmt, ...) printk(KLOG_INFO, fmt, ##__VA_ARGS__)
+#define pr_debug(fmt, ...) printk(KLOG_DEBUG, fmt, ##__VA_ARGS__)
 #pragma GCC diagnostic pop
 
 /*

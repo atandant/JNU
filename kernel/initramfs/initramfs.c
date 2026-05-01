@@ -62,15 +62,12 @@ int initramfs_init(void *base, size_t len)
 	}
 
 	initrd_ready = true;
-	pr_info("initramfs: loaded %u entries (%u bytes)\n",
-		(unsigned)files, (unsigned)initrd_len);
+	pr_info("initramfs: loaded %u entries (%u bytes)\n", (unsigned)files,
+		(unsigned)initrd_len);
 	return 0;
 }
 
-bool initramfs_ready(void)
-{
-	return initrd_ready;
-}
+bool initramfs_ready(void) { return initrd_ready; }
 
 int initramfs_lookup(const char *path, struct initramfs_file *out)
 {
@@ -125,15 +122,37 @@ ssize_t initramfs_read_at(const struct initramfs_file *file, uint64_t off,
 
 int initramfs_selftest(void)
 {
-	static const char archive[] =
-		"070701" "00000000" "000081A4" "00000000" "00000000"
-		"00000001" "00000000" "00000002" "00000000" "00000000"
-		"00000000" "00000000" "00000005" "00000000"
-		"init\0\0" "OK\0\0"
-		"070701" "00000000" "00000000" "00000000" "00000000"
-		"00000001" "00000000" "00000000" "00000000" "00000000"
-		"00000000" "00000000" "0000000B" "00000000"
-		"TRAILER!!!\0\0\0\0";
+	static const char archive[] = "070701"
+				      "00000000"
+				      "000081A4"
+				      "00000000"
+				      "00000000"
+				      "00000001"
+				      "00000000"
+				      "00000002"
+				      "00000000"
+				      "00000000"
+				      "00000000"
+				      "00000000"
+				      "00000005"
+				      "00000000"
+				      "init\0\0"
+				      "OK\0\0"
+				      "070701"
+				      "00000000"
+				      "00000000"
+				      "00000000"
+				      "00000000"
+				      "00000001"
+				      "00000000"
+				      "00000000"
+				      "00000000"
+				      "00000000"
+				      "00000000"
+				      "00000000"
+				      "0000000B"
+				      "00000000"
+				      "TRAILER!!!\0\0\0\0";
 	const void *save_base = initrd_base;
 	size_t save_len = initrd_len;
 	bool save_ready = initrd_ready;

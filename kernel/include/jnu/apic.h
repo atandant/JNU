@@ -15,12 +15,12 @@
 #include <jnu/types.h>
 
 /* Vector layout, per §2.4. */
-#define VEC_TIMER		32	/* PIT (jiffies in v0.0.1; legacy in v0.0.2) */
-#define VEC_KBD			33
-#define VEC_COM1		34
-#define VEC_LAPIC_TIMER		48	/* LAPIC timer scheduler tick (v0.0.2) */
-#define VEC_RESCHED_IPI		254
-#define VEC_SPURIOUS		255
+#define VEC_TIMER 32 /* PIT (jiffies in v0.0.1; legacy in v0.0.2) */
+#define VEC_KBD 33
+#define VEC_COM1 34
+#define VEC_LAPIC_TIMER 48 /* LAPIC timer scheduler tick (v0.0.2) */
+#define VEC_RESCHED_IPI 254
+#define VEC_SPURIOUS 255
 
 void apic_init(uint64_t rsdp_phys, uint64_t hhdm_offset);
 

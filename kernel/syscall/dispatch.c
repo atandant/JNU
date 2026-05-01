@@ -49,7 +49,7 @@ int64_t syscall_dispatch(const struct syscall_args *args)
 
 int syscall_selftest(void)
 {
-	struct syscall_args args = { .nr = JNU_SYS_MAX + 1 };
+	struct syscall_args args = {.nr = JNU_SYS_MAX + 1};
 	int64_t ret = syscall_dispatch(&args);
 
 	return ret == -ENOSYS ? 0 : -EINVAL;

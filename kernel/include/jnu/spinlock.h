@@ -15,10 +15,10 @@
 #include <jnu/types.h>
 
 struct spinlock {
-	volatile uint32_t	locked;
+	volatile uint32_t locked;
 };
 
-#define SPINLOCK_INITIALIZER	{ .locked = 0 }
+#define SPINLOCK_INITIALIZER {.locked = 0}
 
 void spin_lock_init(struct spinlock *lock);
 

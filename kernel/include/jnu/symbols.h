@@ -14,8 +14,8 @@
 #include <jnu/types.h>
 
 struct ksymbol {
-	uint64_t	addr;
-	const char	*name;
+	uint64_t addr;
+	const char *name;
 };
 
 extern const struct ksymbol jnu_symbols[];

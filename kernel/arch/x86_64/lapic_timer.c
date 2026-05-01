@@ -44,43 +44,43 @@
 #include <jnu/types.h>
 
 /* LAPIC register offsets (bytes from MMIO base). */
-#define LAPIC_REG_LVT_TIMER		0x320
-#define LAPIC_REG_INIT_COUNT		0x380
-#define LAPIC_REG_CURRENT_COUNT		0x390
-#define LAPIC_REG_DIVIDE_CONFIG		0x3E0
+#define LAPIC_REG_LVT_TIMER 0x320
+#define LAPIC_REG_INIT_COUNT 0x380
+#define LAPIC_REG_CURRENT_COUNT 0x390
+#define LAPIC_REG_DIVIDE_CONFIG 0x3E0
 
 /* LVT timer fields. */
-#define LVT_VECTOR_MASK			0xFFu
-#define LVT_DELIVERY_STATUS		(1u << 12)
-#define LVT_MASKED			(1u << 16)
-#define LVT_TIMER_MODE_ONESHOT		(0u << 17)
-#define LVT_TIMER_MODE_PERIODIC		(1u << 17)
-#define LVT_TIMER_MODE_TSC_DEADLINE	(2u << 17)
-#define LVT_TIMER_MODE_MASK		(3u << 17)
+#define LVT_VECTOR_MASK 0xFFu
+#define LVT_DELIVERY_STATUS (1u << 12)
+#define LVT_MASKED (1u << 16)
+#define LVT_TIMER_MODE_ONESHOT (0u << 17)
+#define LVT_TIMER_MODE_PERIODIC (1u << 17)
+#define LVT_TIMER_MODE_TSC_DEADLINE (2u << 17)
+#define LVT_TIMER_MODE_MASK (3u << 17)
 
 /*
  * Divide configuration register encoding.  The architectural format
  * splits the divisor across bits {3,1,0}; 0xB = divide-by-1, which we
  * always use to keep math simple.
  */
-#define LAPIC_DCR_DIV_1			0xBu
+#define LAPIC_DCR_DIV_1 0xBu
 
 /* IA32_TSC_DEADLINE MSR. */
-#define MSR_IA32_TSC_DEADLINE		0x6E0u
+#define MSR_IA32_TSC_DEADLINE 0x6E0u
 
 /* CPUID.01h:ECX bit 24 = TSC-deadline supported. */
-#define CPUID_01_ECX_TSC_DEADLINE	(1u << 24)
+#define CPUID_01_ECX_TSC_DEADLINE (1u << 24)
 
 /* Calibration window for periodic mode (microseconds). */
-#define LAPIC_CAL_WINDOW_US		10000u
+#define LAPIC_CAL_WINDOW_US 10000u
 
 /* ------------------------------------------------------------------------- */
 /* State                                                                      */
 /* ------------------------------------------------------------------------- */
 
-static bool		use_deadline;
-static uint32_t		bus_init_count;	/* periodic-mode reload value */
-static uint64_t		tsc_per_tick;	/* deadline-mode increment */
+static bool use_deadline;
+static uint32_t bus_init_count; /* periodic-mode reload value */
+static uint64_t tsc_per_tick;	/* deadline-mode increment */
 static volatile uint64_t timer_ticks;
 
 /* ------------------------------------------------------------------------- */
@@ -92,10 +92,7 @@ static inline volatile uint32_t *lapic_reg(uint32_t off)
 	return lapic_mmio_base() + (off / 4);
 }
 
-static inline uint32_t lapic_read(uint32_t off)
-{
-	return *lapic_reg(off);
-}
+static inline uint32_t lapic_read(uint32_t off) { return *lapic_reg(off); }
 
 static inline void lapic_write(uint32_t off, uint32_t val)
 {
@@ -105,9 +102,9 @@ static inline void lapic_write(uint32_t off, uint32_t val)
 static bool cpu_has_tsc_deadline(void)
 {
 	uint32_t a, b, c, d;
-	__asm__ __volatile__ ("cpuid"
-			      : "=a"(a), "=b"(b), "=c"(c), "=d"(d)
-			      : "a"(1u), "c"(0u));
+	__asm__ __volatile__("cpuid"
+			     : "=a"(a), "=b"(b), "=c"(c), "=d"(d)
+			     : "a"(1u), "c"(0u));
 	return (c & CPUID_01_ECX_TSC_DEADLINE) != 0;
 }
 
@@ -120,7 +117,7 @@ static void tsc_busy_wait_us(uint32_t us)
 	uint64_t per_us = cpu_current()->tsc_per_us;
 	uint64_t target = cpu_rdtsc() + (uint64_t)us * per_us;
 	while (cpu_rdtsc() < target) {
-		__asm__ __volatile__ ("pause");
+		__asm__ __volatile__("pause");
 	}
 }
 
@@ -187,18 +184,17 @@ static uint32_t calibrate_periodic(void)
 	 * Compute it the long way so changing either constant stays
 	 * correct.
 	 */
-	uint64_t reload = (uint64_t)elapsed * 1000000ull /
-			  ((uint64_t)LAPIC_CAL_WINDOW_US *
-			   (uint64_t)LAPIC_TIMER_HZ);
+	uint64_t reload =
+	    (uint64_t)elapsed * 1000000ull /
+	    ((uint64_t)LAPIC_CAL_WINDOW_US * (uint64_t)LAPIC_TIMER_HZ);
 	if (reload == 0 || reload > 0xFFFFFFFFull) {
 		panic("lapic_timer: implausible reload value");
 	}
 
-	uint64_t bus_hz = (uint64_t)elapsed * 1000000ull /
-			  (uint64_t)LAPIC_CAL_WINDOW_US;
+	uint64_t bus_hz =
+	    (uint64_t)elapsed * 1000000ull / (uint64_t)LAPIC_CAL_WINDOW_US;
 	pr_info("lapic_timer: bus ~%lu MHz, reload=%lu (periodic, %u Hz)\n",
-		(unsigned long)(bus_hz / 1000000ull),
-		(unsigned long)reload,
+		(unsigned long)(bus_hz / 1000000ull), (unsigned long)reload,
 		(unsigned)LAPIC_TIMER_HZ);
 
 	return (uint32_t)reload;
@@ -234,17 +230,15 @@ void lapic_timer_init(void)
 
 		/* Serialize: SDM requires an mfence between the LVT
 		 * update and the first IA32_TSC_DEADLINE write. */
-		__asm__ __volatile__ ("mfence" ::: "memory");
+		__asm__ __volatile__("mfence" ::: "memory");
 
 		uint64_t per_us = cpu_current()->tsc_per_us;
 		tsc_per_tick = per_us * (1000000ull / LAPIC_TIMER_HZ);
-		wrmsr(MSR_IA32_TSC_DEADLINE,
-		      cpu_rdtsc() + tsc_per_tick);
+		wrmsr(MSR_IA32_TSC_DEADLINE, cpu_rdtsc() + tsc_per_tick);
 
 		pr_info("lapic_timer: TSC-deadline mode, "
 			"%lu TSC/tick, %u Hz\n",
-			(unsigned long)tsc_per_tick,
-			(unsigned)LAPIC_TIMER_HZ);
+			(unsigned long)tsc_per_tick, (unsigned)LAPIC_TIMER_HZ);
 	} else {
 		bus_init_count = calibrate_periodic();
 		lapic_write(LAPIC_REG_DIVIDE_CONFIG, LAPIC_DCR_DIV_1);
@@ -254,15 +248,9 @@ void lapic_timer_init(void)
 	}
 }
 
-bool lapic_timer_is_deadline_mode(void)
-{
-	return use_deadline;
-}
+bool lapic_timer_is_deadline_mode(void) { return use_deadline; }
 
-uint64_t lapic_timer_ticks(void)
-{
-	return timer_ticks;
-}
+uint64_t lapic_timer_ticks(void) { return timer_ticks; }
 
 int lapic_timer_selftest(void)
 {
@@ -280,11 +268,11 @@ int lapic_timer_selftest(void)
 	uint64_t per_us = cpu_current()->tsc_per_us;
 	uint64_t deadline = cpu_rdtsc() + 50000ull * per_us;
 
-	__asm__ __volatile__ ("sti");
+	__asm__ __volatile__("sti");
 	while (timer_ticks - before < 2 && cpu_rdtsc() < deadline) {
-		__asm__ __volatile__ ("pause");
+		__asm__ __volatile__("pause");
 	}
-	__asm__ __volatile__ ("cli");
+	__asm__ __volatile__("cli");
 
 	if (timer_ticks - before < 2) {
 		pr_err("lapic_timer: selftest saw only %lu tick(s) in 50 ms\n",

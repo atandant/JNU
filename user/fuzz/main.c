@@ -23,30 +23,30 @@
 #include <jnu_syscall.h>
 
 /* errno values the kernel returns negated. Mirror jnu/errno.h. */
-#define E_PERM	1
-#define E_NOENT	2
-#define E_IO	5
-#define E_BADF	9
+#define E_PERM 1
+#define E_NOENT 2
+#define E_IO 5
+#define E_BADF 9
 #define E_NOMEM 12
 #define E_FAULT 14
-#define E_BUSY	16
+#define E_BUSY 16
 #define E_EXIST 17
 #define E_NODEV 19
 #define E_NOTDIR 20
-#define E_ISDIR	21
-#define E_INVAL	22
-#define E_MFILE	24
-#define E_NOSYS	38
+#define E_ISDIR 21
+#define E_INVAL 22
+#define E_MFILE 24
+#define E_NOSYS 38
 #define E_NAMETOOLONG 36
 #define E_NOEXEC 8
-#define E_CHILD	10
+#define E_CHILD 10
 
 /* Half-canonical kernel address. Any deref by the kernel should fail. */
-#define KERNEL_ADDR_HHDM	0xffff800000000000ull
-#define KERNEL_ADDR_TEXT	0xffffffff80000000ull
+#define KERNEL_ADDR_HHDM 0xffff800000000000ull
+#define KERNEL_ADDR_TEXT 0xffffffff80000000ull
 
 /* User canonical top — mirrors USER_TOP in the kernel. */
-#define USER_TOP_GUESS		0x0000800000000000ull
+#define USER_TOP_GUESS 0x0000800000000000ull
 
 /* ------------------------------------------------------------------------- */
 /* Tiny print helpers                                                         */
@@ -55,14 +55,12 @@
 static size_t ustrlen(const char *s)
 {
 	size_t n = 0;
-	while (s[n]) n++;
+	while (s[n])
+		n++;
 	return n;
 }
 
-static void puts_(const char *s)
-{
-	(void)write(1, s, ustrlen(s));
-}
+static void puts_(const char *s) { (void)write(1, s, ustrlen(s)); }
 
 static void put_long(long v)
 {
@@ -85,7 +83,8 @@ static void put_long(long v)
 			u /= 10;
 		}
 	}
-	if (neg && i > 0) buf[--i] = '-';
+	if (neg && i > 0)
+		buf[--i] = '-';
 	(void)write(1, &buf[i], sizeof(buf) - i);
 }
 
@@ -140,14 +139,11 @@ static void report(const char *name, long rc, int expect_negative)
 
 static void attack_bad_syscall_numbers(void)
 {
-	report("syscall(0xdead)",
-	       jnu_syscall0(0xdead), 1);
-	report("syscall(-1)",
-	       jnu_syscall0(-1), 1);
-	report("syscall(INT64_MAX)",
-	       jnu_syscall0((long)0x7fffffffffffffffL), 1);
-	report("syscall(11) // first unimpl",
-	       jnu_syscall0(11), 1);
+	report("syscall(0xdead)", jnu_syscall0(0xdead), 1);
+	report("syscall(-1)", jnu_syscall0(-1), 1);
+	report("syscall(INT64_MAX)", jnu_syscall0((long)0x7fffffffffffffffL),
+	       1);
+	report("syscall(11) // first unimpl", jnu_syscall0(11), 1);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -159,8 +155,7 @@ static void attack_user_ptr_validation(void)
 	char dummy[16];
 
 	/* write() with NULL buffer */
-	report("write(1, NULL, 1)",
-	       write(1, (const void *)0, 1), 1);
+	report("write(1, NULL, 1)", write(1, (const void *)0, 1), 1);
 
 	/* write() into the kernel half */
 	report("write(1, kernel_hhdm, 1)",
@@ -178,8 +173,7 @@ static void attack_user_ptr_validation(void)
 	       write(1, (const void *)(USER_TOP_GUESS - 1), 16), 1);
 
 	/* write() with absurdly large length - SIZE_MAX */
-	report("write(1, &dummy, SIZE_MAX)",
-	       write(1, dummy, (size_t)-1), 1);
+	report("write(1, &dummy, SIZE_MAX)", write(1, dummy, (size_t)-1), 1);
 
 	/* read() into the kernel half - tries to make kernel write us */
 	report("read(0, kernel_text, 16)",
@@ -195,16 +189,13 @@ static void attack_fd_abuse(void)
 	char buf[8];
 
 	/* fd 0 is "stdin" - should not be readable since nothing wired it */
-	report("read(0, &buf, 8)",
-	       read(0, buf, sizeof(buf)), 1);
+	report("read(0, &buf, 8)", read(0, buf, sizeof(buf)), 1);
 
 	/* fd that has never been opened */
-	report("read(7, &buf, 8)",
-	       read(7, buf, sizeof(buf)), 1);
+	report("read(7, &buf, 8)", read(7, buf, sizeof(buf)), 1);
 
 	/* negative fd */
-	report("read(-1, &buf, 8)",
-	       read(-1, buf, sizeof(buf)), 1);
+	report("read(-1, &buf, 8)", read(-1, buf, sizeof(buf)), 1);
 
 	/* INT_MIN fd */
 	report("read(INT_MIN, &buf, 8)",
@@ -215,16 +206,13 @@ static void attack_fd_abuse(void)
 	       read((int)0x7fffffff, buf, sizeof(buf)), 1);
 
 	/* close on never-opened fd */
-	report("close(42)",
-	       close(42), 1);
+	report("close(42)", close(42), 1);
 
 	/* close on negative fd */
-	report("close(-99)",
-	       close(-99), 1);
+	report("close(-99)", close(-99), 1);
 
 	/* write to bad fd 5 (unopened) — sys_write rejects fd != 1 && != 2 */
-	report("write(5, ..)",
-	       write(5, "x", 1), 1);
+	report("write(5, ..)", write(5, "x", 1), 1);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -245,16 +233,13 @@ static void attack_lseek_extremes(void)
 	       lseek(fd, (int64_t)0x8000000000000000L, SEEK_SET), 1);
 	report("lseek(fd, INT64_MAX, SEEK_SET)",
 	       lseek(fd, (int64_t)0x7fffffffffffffffL, SEEK_SET), 1);
-	report("lseek(fd, -1, SEEK_SET)",
-	       lseek(fd, -1, SEEK_SET), 1);
-	report("lseek(fd, 0, 99)  // bogus whence",
-	       lseek(fd, 0, 99), 1);
+	report("lseek(fd, -1, SEEK_SET)", lseek(fd, -1, SEEK_SET), 1);
+	report("lseek(fd, 0, 99)  // bogus whence", lseek(fd, 0, 99), 1);
 	report("lseek(fd, INT64_MAX, SEEK_END)  // overflow",
 	       lseek(fd, (int64_t)0x7fffffffffffffffL, SEEK_END), 1);
 	report("lseek(fd, INT64_MAX, SEEK_CUR)  // overflow",
 	       lseek(fd, (int64_t)0x7fffffffffffffffL, SEEK_CUR), 1);
-	report("lseek(-1, 0, SEEK_SET)  // bad fd",
-	       lseek(-1, 0, SEEK_SET), 1);
+	report("lseek(-1, 0, SEEK_SET)  // bad fd", lseek(-1, 0, SEEK_SET), 1);
 	(void)close(fd);
 }
 
@@ -278,16 +263,14 @@ static void attack_string_paths(void)
 	}
 	giant_path[sizeof(giant_path) - 1] = '\0';
 
-	report("open(8KiB-path)",
-	       open(giant_path, 0), 1);
+	report("open(8KiB-path)", open(giant_path, 0), 1);
 
 	/* path pointer in kernel half */
-	report("open(kernel_text, 0)",
-	       open((const char *)KERNEL_ADDR_TEXT, 0), 1);
+	report("open(kernel_text, 0)", open((const char *)KERNEL_ADDR_TEXT, 0),
+	       1);
 
 	/* NULL path */
-	report("open(NULL, 0)",
-	       open((const char *)0, 0), 1);
+	report("open(NULL, 0)", open((const char *)0, 0), 1);
 
 	/* path right at USER_TOP-1 (no room for any byte) */
 	report("open(USER_TOP-1, 0)",
@@ -300,8 +283,7 @@ static void attack_string_paths(void)
 
 static void attack_spawn_wait(void)
 {
-	report("spawn(NULL)",
-	       spawn((const char *)0, (char *const *)0), 1);
+	report("spawn(NULL)", spawn((const char *)0, (char *const *)0), 1);
 	report("spawn(kernel_text)",
 	       spawn((const char *)KERNEL_ADDR_TEXT, (char *const *)0), 1);
 	report("spawn(\"/no/such/path\")",
@@ -309,12 +291,9 @@ static void attack_spawn_wait(void)
 
 	/* waitpid for a pid that does not exist */
 	int st = 0;
-	report("waitpid(99999, &st)",
-	       waitpid(99999, &st), 1);
-	report("waitpid(-1, &st) // no children",
-	       waitpid(-1, &st), 1);
-	report("waitpid(0, &st) // illegal",
-	       waitpid(0, &st), 1);
+	report("waitpid(99999, &st)", waitpid(99999, &st), 1);
+	report("waitpid(-1, &st) // no children", waitpid(-1, &st), 1);
+	report("waitpid(0, &st) // illegal", waitpid(0, &st), 1);
 
 	/* waitpid with a status pointer in kernel space */
 	report("waitpid(99999, kernel_text)",
@@ -329,16 +308,11 @@ static void attack_fstat(void)
 {
 	struct jnu_stat st;
 
-	report("fstat(-1, &st)",
-	       fstat(-1, &st), 1);
-	report("fstat(0, &st)",
-	       fstat(0, &st), 1);
-	report("fstat(99, &st)",
-	       fstat(99, &st), 1);
-	report("fstat(1, NULL)",
-	       fstat(1, (void *)0), 1);
-	report("fstat(1, kernel_text)",
-	       fstat(1, (void *)KERNEL_ADDR_TEXT), 1);
+	report("fstat(-1, &st)", fstat(-1, &st), 1);
+	report("fstat(0, &st)", fstat(0, &st), 1);
+	report("fstat(99, &st)", fstat(99, &st), 1);
+	report("fstat(1, NULL)", fstat(1, (void *)0), 1);
+	report("fstat(1, kernel_text)", fstat(1, (void *)KERNEL_ADDR_TEXT), 1);
 }
 
 /* ------------------------------------------------------------------------- */

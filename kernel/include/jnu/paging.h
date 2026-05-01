@@ -13,27 +13,27 @@
 
 #include <jnu/types.h>
 
-#define PAGE_SHIFT		12
-#define PAGE_SIZE		(1ull << PAGE_SHIFT)
-#define PAGE_MASK		(PAGE_SIZE - 1)
+#define PAGE_SHIFT 12
+#define PAGE_SIZE (1ull << PAGE_SHIFT)
+#define PAGE_MASK (PAGE_SIZE - 1)
 
-#define PAGE_HUGE_SHIFT		21
-#define PAGE_HUGE_SIZE		(1ull << PAGE_HUGE_SHIFT)
+#define PAGE_HUGE_SHIFT 21
+#define PAGE_HUGE_SIZE (1ull << PAGE_HUGE_SHIFT)
 
-#define PTE_PRESENT		(1ull << 0)
-#define PTE_WRITE		(1ull << 1)
-#define PTE_USER		(1ull << 2)
-#define PTE_PWT			(1ull << 3)
-#define PTE_PCD			(1ull << 4)
-#define PTE_ACCESSED		(1ull << 5)
-#define PTE_DIRTY		(1ull << 6)
-#define PTE_HUGE		(1ull << 7)
-#define PTE_GLOBAL		(1ull << 8)
-#define PTE_NX			(1ull << 63)
+#define PTE_PRESENT (1ull << 0)
+#define PTE_WRITE (1ull << 1)
+#define PTE_USER (1ull << 2)
+#define PTE_PWT (1ull << 3)
+#define PTE_PCD (1ull << 4)
+#define PTE_ACCESSED (1ull << 5)
+#define PTE_DIRTY (1ull << 6)
+#define PTE_HUGE (1ull << 7)
+#define PTE_GLOBAL (1ull << 8)
+#define PTE_NX (1ull << 63)
 
-#define PTE_ADDR_MASK		0x000FFFFFFFFFF000ull
+#define PTE_ADDR_MASK 0x000FFFFFFFFFF000ull
 
-struct addr_space;	/* forward; defined in <jnu/vmm.h> */
+struct addr_space; /* forward; defined in <jnu/vmm.h> */
 
 /*
  * Create the kernel-side initial PML4 by stealing one PMM page, copy the
@@ -72,14 +72,14 @@ void paging_destroy_user_half(uint64_t *pml4);
 /* Flush a single virtual page from the TLB. */
 static inline void paging_invlpg(vaddr_t v)
 {
-	__asm__ __volatile__ ("invlpg (%0)" :: "r"(v) : "memory");
+	__asm__ __volatile__("invlpg (%0)" ::"r"(v) : "memory");
 }
 
 /* Read CR2, the faulting address for #PF. */
 static inline uint64_t paging_read_cr2(void)
 {
 	uint64_t v;
-	__asm__ __volatile__ ("mov %%cr2, %0" : "=r"(v));
+	__asm__ __volatile__("mov %%cr2, %0" : "=r"(v));
 	return v;
 }
 

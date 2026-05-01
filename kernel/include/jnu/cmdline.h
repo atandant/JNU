@@ -13,9 +13,9 @@
 
 #include <jnu/types.h>
 
-#define CMDLINE_MAX_ENTRIES	32
-#define CMDLINE_MAX_KEY		32
-#define CMDLINE_MAX_VALUE	64
+#define CMDLINE_MAX_ENTRIES 32
+#define CMDLINE_MAX_KEY 32
+#define CMDLINE_MAX_VALUE 64
 
 /*
  * Parse `s` into the internal table. Idempotent: callable once at boot.

@@ -20,13 +20,13 @@
 #include <jnu/compiler.h>
 #include <jnu/cpu.h>
 #include <jnu/klog.h>
-#include <jnu/string.h>
 #include <jnu/spinlock.h>
+#include <jnu/string.h>
 #include <jnu/types.h>
 
 /* Compile-time floor: messages with level > KLOG_BUILD_LEVEL are dropped. */
 #ifndef KLOG_BUILD_LEVEL
-#define KLOG_BUILD_LEVEL	KLOG_DEBUG
+#define KLOG_BUILD_LEVEL KLOG_DEBUG
 #endif
 
 static struct spinlock printk_lock = SPINLOCK_INITIALIZER;
@@ -36,9 +36,9 @@ static struct spinlock printk_lock = SPINLOCK_INITIALIZER;
 /* ------------------------------------------------------------------------- */
 
 struct fmt_buf {
-	char	*buf;
-	size_t	cap;	/* total bytes, including NUL */
-	size_t	len;	/* bytes written so far, not counting NUL */
+	char *buf;
+	size_t cap; /* total bytes, including NUL */
+	size_t len; /* bytes written so far, not counting NUL */
 };
 
 static void fb_putc(struct fmt_buf *fb, char c)
@@ -97,7 +97,7 @@ static void fmt_uint(struct fmt_buf *fb, uint64_t v, unsigned base,
 static void fmt_int(struct fmt_buf *fb, int64_t v, int width, bool zero_pad)
 {
 	if (v < 0) {
-		uint64_t u = (uint64_t)(-(v + 1)) + 1;	/* avoid INT_MIN UB */
+		uint64_t u = (uint64_t)(-(v + 1)) + 1; /* avoid INT_MIN UB */
 		fb_putc(fb, '-');
 		if (width > 0) {
 			width--;
@@ -110,7 +110,7 @@ static void fmt_int(struct fmt_buf *fb, int64_t v, int width, bool zero_pad)
 
 int vsnprintf(char *buf, size_t size, const char *fmt, __builtin_va_list ap)
 {
-	struct fmt_buf fb = { .buf = buf, .cap = size, .len = 0 };
+	struct fmt_buf fb = {.buf = buf, .cap = size, .len = 0};
 
 	while (*fmt) {
 		char c = *fmt++;
@@ -122,7 +122,7 @@ int vsnprintf(char *buf, size_t size, const char *fmt, __builtin_va_list ap)
 
 		bool zero_pad = false;
 		int width = 0;
-		int longness = 0;	/* 0 = int, 1 = long, 2 = long long */
+		int longness = 0; /* 0 = int, 1 = long, 2 = long long */
 
 		if (*fmt == '0') {
 			zero_pad = true;
@@ -169,9 +169,8 @@ int vsnprintf(char *buf, size_t size, const char *fmt, __builtin_va_list ap)
 		case 'x':
 		case 'X': {
 			uint64_t v;
-			const char *digits = (c == 'X')
-				? "0123456789ABCDEF"
-				: "0123456789abcdef";
+			const char *digits = (c == 'X') ? "0123456789ABCDEF"
+							: "0123456789abcdef";
 			if (longness >= 2) {
 				v = __builtin_va_arg(ap, unsigned long long);
 			} else if (longness == 1) {
@@ -183,8 +182,7 @@ int vsnprintf(char *buf, size_t size, const char *fmt, __builtin_va_list ap)
 			break;
 		}
 		case 'p': {
-			uintptr_t v = (uintptr_t)
-				__builtin_va_arg(ap, void *);
+			uintptr_t v = (uintptr_t)__builtin_va_arg(ap, void *);
 			fb_puts(&fb, "0x");
 			fmt_uint(&fb, v, 16, "0123456789abcdef", 16, true);
 			break;
@@ -241,11 +239,11 @@ int snprintf(char *buf, size_t size, const char *fmt, ...)
 /* Ring buffer                                                                */
 /* ------------------------------------------------------------------------- */
 
-#define KLOG_RING_SIZE		(64 * 1024)
+#define KLOG_RING_SIZE (64 * 1024)
 
 static char ring_buf[KLOG_RING_SIZE];
-static size_t ring_head;	/* next write index */
-static size_t ring_count;	/* number of valid bytes in the ring */
+static size_t ring_head;  /* next write index */
+static size_t ring_count; /* number of valid bytes in the ring */
 
 static void ring_write(const char *s, size_t n)
 {
@@ -258,8 +256,7 @@ static void ring_write(const char *s, size_t n)
 	}
 }
 
-void klog_drain_tail(size_t n,
-		     void (*cb)(const char *line, size_t len))
+void klog_drain_tail(size_t n, void (*cb)(const char *line, size_t len))
 {
 	if (ring_count == 0 || n == 0) {
 		return;
@@ -269,7 +266,8 @@ void klog_drain_tail(size_t n,
 	 * Walk backward through the ring counting newlines; collect at
 	 * most `n` lines. Then walk forward emitting each.
 	 */
-	size_t start = (ring_head + KLOG_RING_SIZE - ring_count) % KLOG_RING_SIZE;
+	size_t start =
+	    (ring_head + KLOG_RING_SIZE - ring_count) % KLOG_RING_SIZE;
 	size_t total_lines = 0;
 	for (size_t i = 0; i < ring_count; i++) {
 		size_t idx = (start + i) % KLOG_RING_SIZE;
@@ -328,11 +326,16 @@ void klog_register(struct klog_backend *be)
 static const char *level_tag(enum klog_level lvl)
 {
 	switch (lvl) {
-	case KLOG_PANIC: return "PANIC";
-	case KLOG_ERR:   return "ERROR";
-	case KLOG_WARN:  return "WARN ";
-	case KLOG_INFO:  return "INFO ";
-	case KLOG_DEBUG: return "DEBUG";
+	case KLOG_PANIC:
+		return "PANIC";
+	case KLOG_ERR:
+		return "ERROR";
+	case KLOG_WARN:
+		return "WARN ";
+	case KLOG_INFO:
+		return "INFO ";
+	case KLOG_DEBUG:
+		return "DEBUG";
 	}
 	return "?????";
 }
@@ -341,9 +344,12 @@ static const char *ansi_open(enum klog_level lvl)
 {
 	switch (lvl) {
 	case KLOG_PANIC:
-	case KLOG_ERR:	return "\x1b[31m";	/* red */
-	case KLOG_WARN:	return "\x1b[33m";	/* yellow */
-	default:	return NULL;
+	case KLOG_ERR:
+		return "\x1b[31m"; /* red */
+	case KLOG_WARN:
+		return "\x1b[33m"; /* yellow */
+	default:
+		return NULL;
 	}
 }
 
@@ -352,14 +358,16 @@ static const char *ansi_close(enum klog_level lvl)
 	switch (lvl) {
 	case KLOG_PANIC:
 	case KLOG_ERR:
-	case KLOG_WARN:	return "\x1b[0m";
-	default:	return NULL;
+	case KLOG_WARN:
+		return "\x1b[0m";
+	default:
+		return NULL;
 	}
 }
 
 static void backends_write(enum klog_level lvl, const char *s, size_t n)
 {
-	const char *open  = ansi_open(lvl);
+	const char *open = ansi_open(lvl);
 	const char *close = ansi_close(lvl);
 
 	for (struct klog_backend *be = backends; be; be = be->next) {
@@ -411,15 +419,12 @@ void vprintk(enum klog_level level, const char *fmt, __builtin_va_list ap)
 	 * Format `[ssss.uuuuuu] LEVEL `.
 	 */
 	uint64_t us = cpu_us_since_boot();
-	uint64_t s  = us / 1000000ull;
-	uint64_t u  = us % 1000000ull;
-	hlen = snprintf(line, sizeof(line),
-			"[%5lu.%06lu] %s ",
-			(unsigned long)s, (unsigned long)u,
-			level_tag(level));
+	uint64_t s = us / 1000000ull;
+	uint64_t u = us % 1000000ull;
+	hlen = snprintf(line, sizeof(line), "[%5lu.%06lu] %s ",
+			(unsigned long)s, (unsigned long)u, level_tag(level));
 
-	int blen = vsnprintf(line + hlen, sizeof(line) - (size_t)hlen,
-			     fmt, ap);
+	int blen = vsnprintf(line + hlen, sizeof(line) - (size_t)hlen, fmt, ap);
 	(void)blen;
 
 	size_t total = strnlen(line, sizeof(line));

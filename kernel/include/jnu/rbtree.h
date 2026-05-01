@@ -13,22 +13,22 @@
 #include <jnu/types.h>
 
 enum rb_color {
-	RB_RED   = 0,
+	RB_RED = 0,
 	RB_BLACK = 1,
 };
 
 struct rb_node {
-	struct rb_node	*parent;
-	struct rb_node	*left;
-	struct rb_node	*right;
-	enum rb_color	color;
+	struct rb_node *parent;
+	struct rb_node *left;
+	struct rb_node *right;
+	enum rb_color color;
 };
 
 struct rb_root {
-	struct rb_node	*root;
+	struct rb_node *root;
 };
 
-#define RB_ROOT			((struct rb_root){ .root = NULL })
+#define RB_ROOT ((struct rb_root){.root = NULL})
 
 void rb_init(struct rb_root *root);
 

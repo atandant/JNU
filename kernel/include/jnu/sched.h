@@ -20,18 +20,18 @@ enum task_state {
 struct process;
 
 struct task {
-	int			tid;
-	int			pid;
-	enum task_state		state;
-	struct context		ctx;
-	void			*kstack_base;
-	void			*kstack_top;
-	struct process		*process;
-	struct task		*parent;
-	int			exit_status;
-	struct task		*run_next;
-	struct task		*all_next;
-	const char		*name;
+	int tid;
+	int pid;
+	enum task_state state;
+	struct context ctx;
+	void *kstack_base;
+	void *kstack_top;
+	struct process *process;
+	struct task *parent;
+	int exit_status;
+	struct task *run_next;
+	struct task *all_next;
+	const char *name;
 	/*
 	 * Wake counter to close the missed-wakeup race between
 	 * sched_wake() and sched_sleep_current(). When a waker calls
@@ -39,15 +39,15 @@ struct task {
 	 * sleep), it bumps wake_pending. sched_sleep_current()
 	 * consumes the credit instead of blocking.
 	 */
-	unsigned int		wake_pending;
+	unsigned int wake_pending;
 };
 
 typedef void (*kernel_thread_fn)(void *arg);
 
 void sched_init(void);
 struct task *sched_current(void);
-int sched_create_kernel_thread(const char *name, kernel_thread_fn fn,
-			       void *arg, struct task **out);
+int sched_create_kernel_thread(const char *name, kernel_thread_fn fn, void *arg,
+			       struct task **out);
 int sched_create_user_task(const char *name, struct process *proc,
 			   struct task **out);
 void sched_yield(void);

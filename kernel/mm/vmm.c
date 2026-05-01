@@ -12,8 +12,8 @@
 
 #include <jnu/compiler.h>
 #include <jnu/errno.h>
-#include <jnu/kmalloc.h>
 #include <jnu/klog.h>
+#include <jnu/kmalloc.h>
 #include <jnu/paging.h>
 #include <jnu/pmm.h>
 #include <jnu/rbtree.h>
@@ -27,25 +27,28 @@ static struct addr_space kernel_space;
 static uint64_t vma_to_pte_flags(uint32_t f)
 {
 	uint64_t pte = 0;
-	if (f & VMA_WRITE) { pte |= PTE_WRITE; }
-	if (f & VMA_USER)  { pte |= PTE_USER; }
-	if (!(f & VMA_EXEC)) { pte |= PTE_NX; }
+	if (f & VMA_WRITE) {
+		pte |= PTE_WRITE;
+	}
+	if (f & VMA_USER) {
+		pte |= PTE_USER;
+	}
+	if (!(f & VMA_EXEC)) {
+		pte |= PTE_NX;
+	}
 	return pte;
 }
 
 void vmm_init(void)
 {
-	kernel_space.pml4      = paging_kernel_pml4();
+	kernel_space.pml4 = paging_kernel_pml4();
 	kernel_space.pml4_phys = virt_to_phys(kernel_space.pml4);
 	rb_init(&kernel_space.vmas);
 
 	pr_info("vmm: kernel address space initialized\n");
 }
 
-struct addr_space *vmm_kernel_space(void)
-{
-	return &kernel_space;
-}
+struct addr_space *vmm_kernel_space(void) { return &kernel_space; }
 
 struct addr_space *vmm_create_space(void)
 {
@@ -83,8 +86,9 @@ void vmm_destroy_space(struct addr_space *space)
 	 * Without this walk, every process exit leaks all VMA nodes.
 	 */
 	while ((node = rb_first(&space->vmas)) != NULL) {
-		struct vma *v = (struct vma *)((uint8_t *)node -
-			__builtin_offsetof(struct vma, rb));
+		struct vma *v =
+		    (struct vma *)((uint8_t *)node -
+				   __builtin_offsetof(struct vma, rb));
 		rb_erase(&space->vmas, node);
 		kfree(v);
 	}
@@ -94,11 +98,10 @@ void vmm_destroy_space(struct addr_space *space)
 	kfree(space);
 }
 
-int vmm_map(struct addr_space *space, vaddr_t virt, paddr_t phys,
-	    size_t pages, uint32_t flags)
+int vmm_map(struct addr_space *space, vaddr_t virt, paddr_t phys, size_t pages,
+	    uint32_t flags)
 {
-	int err = paging_map(space, virt, phys, pages,
-			     vma_to_pte_flags(flags));
+	int err = paging_map(space, virt, phys, pages, vma_to_pte_flags(flags));
 	if (err) {
 		return err;
 	}
@@ -113,14 +116,13 @@ int vmm_unmap(struct addr_space *space, vaddr_t virt, size_t pages)
 int vmm_protect(struct addr_space *space, vaddr_t virt, size_t pages,
 		uint32_t new_flags)
 {
-	return paging_protect(space, virt, pages,
-			      vma_to_pte_flags(new_flags));
+	return paging_protect(space, virt, pages, vma_to_pte_flags(new_flags));
 }
 
 void vmm_switch_to(struct addr_space *space)
 {
 	paddr_t cr3 = space ? space->pml4_phys : kernel_space.pml4_phys;
-	__asm__ __volatile__ ("mov %0, %%cr3" :: "r"(cr3) : "memory");
+	__asm__ __volatile__("mov %0, %%cr3" ::"r"(cr3) : "memory");
 }
 
 /* ------------------------------------------------------------------------- */
@@ -134,7 +136,7 @@ void vmm_switch_to(struct addr_space *space)
  * exception-fixup table; the spec's harder selftest is recorded as a
  * Phase 3 task in the comments below.
  */
-#define VMM_TEST_VA	0xFFFFA00000010000ull
+#define VMM_TEST_VA 0xFFFFA00000010000ull
 
 int vmm_selftest(void)
 {
@@ -144,8 +146,8 @@ int vmm_selftest(void)
 		return -ENOMEM;
 	}
 
-	int err = vmm_map(&kernel_space, VMM_TEST_VA, pa, 1,
-			  VMA_READ | VMA_WRITE);
+	int err =
+	    vmm_map(&kernel_space, VMM_TEST_VA, pa, 1, VMA_READ | VMA_WRITE);
 	if (err) {
 		pmm_free_pages(pa, 0);
 		return err;

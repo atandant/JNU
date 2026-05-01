@@ -13,7 +13,7 @@
 
 #include <jnu/types.h>
 
-#define USER_TOP	0x0000800000000000ull
+#define USER_TOP 0x0000800000000000ull
 
 bool user_range_ok(const void *uaddr, size_t len);
 int user_range_mapped(const void *uaddr, size_t len, bool write);

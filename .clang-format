@@ -1,0 +1,10 @@
+BasedOnStyle: LLVM
+UseTab: Always
+IndentWidth: 8
+TabWidth: 8
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+  AfterControlStatement: false
+AllowShortIfStatementsOnASingleLine: false
+IndentCaseLabels: false

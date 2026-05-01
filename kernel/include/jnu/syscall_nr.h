@@ -7,16 +7,16 @@
 
 #pragma once
 
-#define JNU_SYS_exit		0
-#define JNU_SYS_write		1
-#define JNU_SYS_read		2
-#define JNU_SYS_open		3
-#define JNU_SYS_close		4
-#define JNU_SYS_lseek		5
-#define JNU_SYS_getpid		6
-#define JNU_SYS_yield		7
-#define JNU_SYS_fstat		8
-#define JNU_SYS_spawn		9
-#define JNU_SYS_waitpid		10
+#define JNU_SYS_exit 0
+#define JNU_SYS_write 1
+#define JNU_SYS_read 2
+#define JNU_SYS_open 3
+#define JNU_SYS_close 4
+#define JNU_SYS_lseek 5
+#define JNU_SYS_getpid 6
+#define JNU_SYS_yield 7
+#define JNU_SYS_fstat 8
+#define JNU_SYS_spawn 9
+#define JNU_SYS_waitpid 10
 
-#define JNU_SYS_MAX		10
+#define JNU_SYS_MAX 10

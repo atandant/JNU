@@ -14,11 +14,11 @@
 #include <jnu/types.h>
 
 struct fbcon_info {
-	void		*addr;		/* HHDM-mapped framebuffer base */
-	uint64_t	width;		/* pixels */
-	uint64_t	height;		/* pixels */
-	uint64_t	pitch;		/* bytes per scanline */
-	uint16_t	bpp;		/* bits per pixel; 32 expected */
+	void *addr;	 /* HHDM-mapped framebuffer base */
+	uint64_t width;	 /* pixels */
+	uint64_t height; /* pixels */
+	uint64_t pitch;	 /* bytes per scanline */
+	uint16_t bpp;	 /* bits per pixel; 32 expected */
 };
 
 /*

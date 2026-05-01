@@ -9,7 +9,7 @@
 
 #include <jnu/types.h>
 
-#define JNU_PATH_MAX	256
+#define JNU_PATH_MAX 256
 
 struct syscall_args {
 	uint64_t nr;

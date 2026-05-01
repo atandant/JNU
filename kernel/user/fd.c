@@ -5,15 +5,12 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/fd.h>
 #include <jnu/errno.h>
+#include <jnu/fd.h>
 #include <jnu/kmalloc.h>
 #include <jnu/string.h>
 
-void fd_table_init(struct fd_table *table)
-{
-	memset(table, 0, sizeof(*table));
-}
+void fd_table_init(struct fd_table *table) { memset(table, 0, sizeof(*table)); }
 
 int fd_alloc(struct fd_table *table, struct file *file)
 {

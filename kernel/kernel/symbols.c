@@ -20,9 +20,7 @@
 #include <jnu/symbols.h>
 #include <jnu/types.h>
 
-const struct ksymbol jnu_symbols[] = {
-	{ 0, "" }
-};
+const struct ksymbol jnu_symbols[] = {{0, ""}};
 
 const size_t jnu_symbols_count = 0;
 

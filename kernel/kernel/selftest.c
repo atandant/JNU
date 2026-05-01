@@ -14,6 +14,7 @@
 #include <jnu/initramfs.h>
 #include <jnu/klog.h>
 #include <jnu/lapic_timer.h>
+#include <jnu/minix.h>
 #include <jnu/pci.h>
 #include <jnu/pmm.h>
 #include <jnu/process.h>
@@ -22,30 +23,29 @@
 #include <jnu/selftest.h>
 #include <jnu/slab.h>
 #include <jnu/spinlock.h>
+#include <jnu/syscall.h>
 #include <jnu/types.h>
 #include <jnu/usercopy.h>
-#include <jnu/syscall.h>
 #include <jnu/vfs.h>
-#include <jnu/minix.h>
 #include <jnu/vmm.h>
 
 static const struct selftest tests[] = {
-	{ "spinlock",	spinlock_selftest },
-	{ "rbtree",	rbtree_selftest   },
-	{ "pmm",	pmm_selftest      },
-	{ "vmm",	vmm_selftest      },
-	{ "slab",	slab_selftest     },
-	{ "initramfs",	initramfs_selftest },
-	{ "usercopy",	usercopy_selftest },
-	{ "sched",	sched_selftest    },
-	{ "lapic_timer",lapic_timer_selftest },
-	{ "process",	process_selftest  },
-	{ "elf64",	elf64_selftest    },
-	{ "syscall",	syscall_selftest  },
-	{ "pci",	pci_selftest      },
-	{ "ata",	ata_selftest      },
-	{ "vfs",	vfs_selftest      },
-	{ "minix",	minix_selftest    },
+    {"spinlock", spinlock_selftest},
+    {"rbtree", rbtree_selftest},
+    {"pmm", pmm_selftest},
+    {"vmm", vmm_selftest},
+    {"slab", slab_selftest},
+    {"initramfs", initramfs_selftest},
+    {"usercopy", usercopy_selftest},
+    {"sched", sched_selftest},
+    {"lapic_timer", lapic_timer_selftest},
+    {"process", process_selftest},
+    {"elf64", elf64_selftest},
+    {"syscall", syscall_selftest},
+    {"pci", pci_selftest},
+    {"ata", ata_selftest},
+    {"vfs", vfs_selftest},
+    {"minix", minix_selftest},
 };
 
 int selftest_run_all(void)
@@ -59,8 +59,8 @@ int selftest_run_all(void)
 		if (err == 0) {
 			pr_info("selftest: %s [ OK ]\n", tests[i].name);
 		} else {
-			pr_err("selftest: %s [FAIL] err=%d\n",
-			       tests[i].name, err);
+			pr_err("selftest: %s [FAIL] err=%d\n", tests[i].name,
+			       err);
 			failures++;
 		}
 	}
@@ -69,8 +69,8 @@ int selftest_run_all(void)
 		pr_info("selftest: all %u green\n",
 			(unsigned)(sizeof(tests) / sizeof(tests[0])));
 	} else {
-		pr_err("selftest: %d failure%s\n",
-		       failures, failures == 1 ? "" : "s");
+		pr_err("selftest: %d failure%s\n", failures,
+		       failures == 1 ? "" : "s");
 	}
 
 	return failures;

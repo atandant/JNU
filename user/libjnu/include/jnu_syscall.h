@@ -13,21 +13,21 @@ typedef signed long int64_t;
 typedef unsigned long uint64_t;
 typedef unsigned int uint32_t;
 
-#define JNU_SYS_exit		0
-#define JNU_SYS_write		1
-#define JNU_SYS_read		2
-#define JNU_SYS_open		3
-#define JNU_SYS_close		4
-#define JNU_SYS_lseek		5
-#define JNU_SYS_getpid		6
-#define JNU_SYS_yield		7
-#define JNU_SYS_fstat		8
-#define JNU_SYS_spawn		9
-#define JNU_SYS_waitpid		10
+#define JNU_SYS_exit 0
+#define JNU_SYS_write 1
+#define JNU_SYS_read 2
+#define JNU_SYS_open 3
+#define JNU_SYS_close 4
+#define JNU_SYS_lseek 5
+#define JNU_SYS_getpid 6
+#define JNU_SYS_yield 7
+#define JNU_SYS_fstat 8
+#define JNU_SYS_spawn 9
+#define JNU_SYS_waitpid 10
 
-#define SEEK_SET	0
-#define SEEK_CUR	1
-#define SEEK_END	2
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
 
 struct jnu_stat {
 	uint64_t ino;

@@ -24,17 +24,17 @@
 #include <jnu/types.h>
 
 /* 8254 PIT oscillator frequency: 1.193182 MHz. */
-#define PIT_BASE_HZ		1193182u
+#define PIT_BASE_HZ 1193182u
 
 /* I/O ports. */
-#define PIT_CH0_DATA		0x40
-#define PIT_CMD			0x43
+#define PIT_CH0_DATA 0x40
+#define PIT_CMD 0x43
 
 /*
  * Reload value for ~100 Hz:
  * 1193182 / 100 = 11931 (0x2E9B), giving ~100.006 Hz — close enough.
  */
-#define PIT_RELOAD		(PIT_BASE_HZ / PIT_FREQUENCY_HZ)
+#define PIT_RELOAD (PIT_BASE_HZ / PIT_FREQUENCY_HZ)
 
 static volatile uint64_t jiffies;
 
@@ -65,16 +65,13 @@ void pit_init(void)
 		(unsigned)PIT_FREQUENCY_HZ, (unsigned)PIT_RELOAD);
 }
 
-uint64_t pit_get_ticks(void)
-{
-	return jiffies;
-}
+uint64_t pit_get_ticks(void) { return jiffies; }
 
 void pit_sleep_ms(uint32_t ms)
 {
-	uint64_t target = jiffies + ((uint64_t)ms * PIT_FREQUENCY_HZ +
-				     999u) / 1000u;
+	uint64_t target =
+	    jiffies + ((uint64_t)ms * PIT_FREQUENCY_HZ + 999u) / 1000u;
 	while (jiffies < target) {
-		__asm__ __volatile__ ("sti; hlt; cli");
+		__asm__ __volatile__("sti; hlt; cli");
 	}
 }

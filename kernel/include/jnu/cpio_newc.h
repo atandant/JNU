@@ -12,21 +12,21 @@
 
 #include <jnu/types.h>
 
-#define CPIO_NEWC_MAGIC		"070701"
-#define CPIO_NEWC_HEADER_SIZE	110
-#define CPIO_NEWC_TRAILER	"TRAILER!!!"
+#define CPIO_NEWC_MAGIC "070701"
+#define CPIO_NEWC_HEADER_SIZE 110
+#define CPIO_NEWC_TRAILER "TRAILER!!!"
 
-#define CPIO_MODE_TYPE_MASK	0170000u
-#define CPIO_MODE_REG		0100000u
-#define CPIO_MODE_DIR		0040000u
+#define CPIO_MODE_TYPE_MASK 0170000u
+#define CPIO_MODE_REG 0100000u
+#define CPIO_MODE_DIR 0040000u
 
 struct cpio_newc_entry {
-	const char	*name;
-	size_t		name_len;
-	const void	*data;
-	size_t		data_len;
-	uint32_t	mode;
-	size_t		next_off;
+	const char *name;
+	size_t name_len;
+	const void *data;
+	size_t data_len;
+	uint32_t mode;
+	size_t next_off;
 };
 
 int cpio_newc_next(const void *archive, size_t archive_len, size_t off,

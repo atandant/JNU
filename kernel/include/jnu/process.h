@@ -19,17 +19,17 @@ enum process_state {
 };
 
 struct process {
-	int			pid;
-	enum process_state	state;
-	struct task		*main_task;
-	struct process		*parent;
-	struct process		*first_child;
-	struct process		*next_sibling;
-	int			exit_status;
-	struct fd_table		fds;
-	struct addr_space	*space;
-	uint64_t		user_entry;
-	uint64_t		user_stack;
+	int pid;
+	enum process_state state;
+	struct task *main_task;
+	struct process *parent;
+	struct process *first_child;
+	struct process *next_sibling;
+	int exit_status;
+	struct fd_table fds;
+	struct addr_space *space;
+	uint64_t user_entry;
+	uint64_t user_stack;
 };
 
 int process_alloc_pid(void);

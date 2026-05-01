@@ -14,12 +14,12 @@
 #include <jnu/types.h>
 
 struct cpu {
-	uint32_t	id;		/* APIC id of this CPU */
-	uint64_t	tsc_per_us;	/* TSC ticks per microsecond */
-	bool		has_smep;
-	bool		has_smap;
-	bool		has_nx;
-	bool		has_apic;
+	uint32_t id;	     /* APIC id of this CPU */
+	uint64_t tsc_per_us; /* TSC ticks per microsecond */
+	bool has_smep;
+	bool has_smap;
+	bool has_nx;
+	bool has_apic;
 };
 
 /*
@@ -42,7 +42,7 @@ struct cpu *cpu_current(void);
 static inline uint64_t cpu_rdtsc(void)
 {
 	uint32_t lo, hi;
-	__asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
+	__asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
 	return ((uint64_t)hi << 32) | lo;
 }
 
@@ -53,7 +53,7 @@ uint64_t cpu_us_since_boot(void);
 static inline uint64_t rdmsr(uint32_t msr)
 {
 	uint32_t lo, hi;
-	__asm__ __volatile__ ("rdmsr" : "=a"(lo), "=d"(hi) : "c"(msr));
+	__asm__ __volatile__("rdmsr" : "=a"(lo), "=d"(hi) : "c"(msr));
 	return ((uint64_t)hi << 32) | lo;
 }
 
@@ -61,17 +61,17 @@ static inline void wrmsr(uint32_t msr, uint64_t v)
 {
 	uint32_t lo = (uint32_t)v;
 	uint32_t hi = (uint32_t)(v >> 32);
-	__asm__ __volatile__ ("wrmsr" :: "a"(lo), "d"(hi), "c"(msr));
+	__asm__ __volatile__("wrmsr" ::"a"(lo), "d"(hi), "c"(msr));
 }
 
-#define MSR_EFER		0xC0000080
-#define MSR_GS_BASE		0xC0000101
-#define MSR_KERNEL_GS_BASE	0xC0000102
-#define MSR_APIC_BASE		0x0000001B
+#define MSR_EFER 0xC0000080
+#define MSR_GS_BASE 0xC0000101
+#define MSR_KERNEL_GS_BASE 0xC0000102
+#define MSR_APIC_BASE 0x0000001B
 
-#define EFER_NXE		(1ull << 11)
+#define EFER_NXE (1ull << 11)
 
-#define CR0_WP			(1ull << 16)
-#define CR4_PGE			(1ull << 7)
-#define CR4_SMEP		(1ull << 20)
-#define CR4_SMAP		(1ull << 21)
+#define CR0_WP (1ull << 16)
+#define CR4_PGE (1ull << 7)
+#define CR4_SMEP (1ull << 20)
+#define CR4_SMAP (1ull << 21)

@@ -23,70 +23,72 @@
  * (open("/dev/kbd") + read()) without granting char drivers direct
  * access to user pointers.  Future device nodes register here.
  */
-static struct char_device *resolve_dev_chardev(const char *path) {
-  if (strcmp(path, "/dev/kbd") == 0) {
-    return kbd_get_chardev();
-  }
-  return NULL;
+static struct char_device *resolve_dev_chardev(const char *path)
+{
+	if (strcmp(path, "/dev/kbd") == 0) {
+		return kbd_get_chardev();
+	}
+	return NULL;
 }
 
-int64_t sys_open(const char *upath, int flags) {
-  char path[JNU_PATH_MAX];
-  struct task *task;
-  struct file *file;
-  struct char_device *cdev;
-  int err;
+int64_t sys_open(const char *upath, int flags)
+{
+	char path[JNU_PATH_MAX];
+	struct task *task;
+	struct file *file;
+	struct char_device *cdev;
+	int err;
 
-  if (flags != 0) {
-    return -EINVAL;
-  }
+	if (flags != 0) {
+		return -EINVAL;
+	}
 
-  err = syscall_copy_path(path, upath);
-  if (err) {
-    return err;
-  }
+	err = syscall_copy_path(path, upath);
+	if (err) {
+		return err;
+	}
 
-  task = sched_current();
-  if (!task || !task->process) {
-    return -EINVAL;
-  }
+	task = sched_current();
+	if (!task || !task->process) {
+		return -EINVAL;
+	}
 
-  file = kzalloc(sizeof(*file));
-  if (!file) {
-    return -ENOMEM;
-  }
+	file = kzalloc(sizeof(*file));
+	if (!file) {
+		return -ENOMEM;
+	}
 
-  cdev = resolve_dev_chardev(path);
-  if (cdev) {
-    file->type = JNU_FILE_CHARDEV;
-    file->u.chardev = cdev;
-    goto alloc_fd;
-  }
+	cdev = resolve_dev_chardev(path);
+	if (cdev) {
+		file->type = JNU_FILE_CHARDEV;
+		file->u.chardev = cdev;
+		goto alloc_fd;
+	}
 
-  err = initramfs_lookup(path, &file->u.initramfs);
-  if (!err) {
-    file->type = JNU_FILE_INITRAMFS;
-    goto alloc_fd;
-  }
+	err = initramfs_lookup(path, &file->u.initramfs);
+	if (!err) {
+		file->type = JNU_FILE_INITRAMFS;
+		goto alloc_fd;
+	}
 
-  err = vfs_open(path, &file->u.vfs);
-  if (err) {
-    goto fail_file;
-  }
-  file->type = JNU_FILE_VFS;
+	err = vfs_open(path, &file->u.vfs);
+	if (err) {
+		goto fail_file;
+	}
+	file->type = JNU_FILE_VFS;
 
 alloc_fd:
-  err = fd_alloc(&task->process->fds, file);
-  if (err < 0) {
-    goto fail_backing;
-  }
-  return err;
+	err = fd_alloc(&task->process->fds, file);
+	if (err < 0) {
+		goto fail_backing;
+	}
+	return err;
 
 fail_backing:
-  if (file->type == JNU_FILE_VFS) {
-    vfs_close(file->u.vfs);
-  }
+	if (file->type == JNU_FILE_VFS) {
+		vfs_close(file->u.vfs);
+	}
 fail_file:
-  kfree(file);
-  return err;
+	kfree(file);
+	return err;
 }

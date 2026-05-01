@@ -5,11 +5,11 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/errno.h>
 #include <jnu/arch_syscall.h>
+#include <jnu/errno.h>
 #include <jnu/gdt.h>
-#include <jnu/kmalloc.h>
 #include <jnu/klog.h>
+#include <jnu/kmalloc.h>
 #include <jnu/paging.h>
 #include <jnu/pmm.h>
 #include <jnu/process.h>
@@ -20,13 +20,13 @@
 #include <jnu/usermode.h>
 #include <jnu/vmm.h>
 
-#define KSTACK_ORDER	2
-#define KSTACK_SIZE	PMM_ORDER_SIZE(KSTACK_ORDER)
+#define KSTACK_ORDER 2
+#define KSTACK_SIZE PMM_ORDER_SIZE(KSTACK_ORDER)
 #define SCHED_QUANTUM_TICKS 1
 
 struct thread_boot {
-	kernel_thread_fn	fn;
-	void			*arg;
+	kernel_thread_fn fn;
+	void *arg;
 };
 
 static struct spinlock sched_lock = SPINLOCK_INITIALIZER;
@@ -77,7 +77,8 @@ static void all_tasks_add(struct task *task)
 	all_tasks = task;
 }
 
-static void task_prepare_stack(struct task *task, kernel_thread_fn fn, void *arg)
+static void task_prepare_stack(struct task *task, kernel_thread_fn fn,
+			       void *arg)
 {
 	uintptr_t sp = (uintptr_t)task->kstack_top;
 	struct thread_boot *boot;
@@ -118,8 +119,9 @@ static void switch_to(struct task *next)
 	quantum_left = SCHED_QUANTUM_TICKS;
 	tss_set_rsp0((uint64_t)(uintptr_t)next->kstack_top);
 	arch_syscall_set_kernel_stack((uint64_t)(uintptr_t)next->kstack_top);
-	vmm_switch_to((next->process && next->process->space) ?
-		      next->process->space : vmm_kernel_space());
+	vmm_switch_to((next->process && next->process->space)
+			  ? next->process->space
+			  : vmm_kernel_space());
 
 	context_switch(&prev->ctx, &next->ctx);
 }
@@ -172,7 +174,8 @@ static void user_thread_entry(void *arg)
 	 */
 
 	vmm_switch_to(proc->space);
-	arch_syscall_set_kernel_stack((uint64_t)(uintptr_t)proc->main_task->kstack_top);
+	arch_syscall_set_kernel_stack(
+	    (uint64_t)(uintptr_t)proc->main_task->kstack_top);
 	(void)usermode_enter(proc->user_entry, proc->user_stack);
 	sched_exit_current(127);
 }
@@ -190,7 +193,8 @@ void sched_init(void)
 	__asm__ __volatile__("mov %%rsp, %0" : "=r"(rsp_now));
 	boot_task.kstack_top = (void *)((rsp_now + 0xFFFull) & ~0xFFFull);
 	boot_task.process = process_create_kernel(&boot_task);
-	arch_syscall_set_kernel_stack((uint64_t)(uintptr_t)boot_task.kstack_top);
+	arch_syscall_set_kernel_stack(
+	    (uint64_t)(uintptr_t)boot_task.kstack_top);
 	current = &boot_task;
 	all_tasks_add(&boot_task);
 
@@ -199,13 +203,14 @@ void sched_init(void)
 	idle_task.pid = 0;
 	idle_task.state = TASK_RUNNABLE;
 	idle_task.name = "idle";
-	idle_task.kstack_base = phys_to_virt(pmm_alloc_zeroed_pages(KSTACK_ORDER));
+	idle_task.kstack_base =
+	    phys_to_virt(pmm_alloc_zeroed_pages(KSTACK_ORDER));
 	idle_task.kstack_top = (uint8_t *)idle_task.kstack_base + KSTACK_SIZE;
 	task_prepare_stack(&idle_task, idle_loop, NULL);
 	all_tasks_add(&idle_task);
 
-	pr_info("sched: boot tid=%d pid=%d, idle tid=%d\n",
-		boot_task.tid, boot_task.pid, idle_task.tid);
+	pr_info("sched: boot tid=%d pid=%d, idle tid=%d\n", boot_task.tid,
+		boot_task.pid, idle_task.tid);
 }
 
 int sched_create_user_task(const char *name, struct process *proc,
@@ -257,13 +262,10 @@ fail_task:
 	return err;
 }
 
-struct task *sched_current(void)
-{
-	return current;
-}
+struct task *sched_current(void) { return current; }
 
-int sched_create_kernel_thread(const char *name, kernel_thread_fn fn,
-			       void *arg, struct task **out)
+int sched_create_kernel_thread(const char *name, kernel_thread_fn fn, void *arg,
+			       struct task **out)
 {
 	struct task *task;
 	paddr_t stack_pa;

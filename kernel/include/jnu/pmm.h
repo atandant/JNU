@@ -14,21 +14,21 @@
 
 #include <jnu/types.h>
 
-#define PMM_MAX_ORDER		11
-#define PMM_ORDER_SIZE(o)	(1ull << (12 + (o)))
+#define PMM_MAX_ORDER 11
+#define PMM_ORDER_SIZE(o) (1ull << (12 + (o)))
 
 enum pmm_zone {
-	PMM_ZONE_DMA	= 0,	/* < 16 MiB */
-	PMM_ZONE_NORMAL	= 1,
+	PMM_ZONE_DMA = 0, /* < 16 MiB */
+	PMM_ZONE_NORMAL = 1,
 	PMM_ZONE_NR
 };
 
 struct pmm_stats {
-	uint64_t	total_pages;
-	uint64_t	free_pages;
-	uint64_t	free_by_order[PMM_MAX_ORDER];
-	uint64_t	zone_total[PMM_ZONE_NR];
-	uint64_t	zone_free[PMM_ZONE_NR];
+	uint64_t total_pages;
+	uint64_t free_pages;
+	uint64_t free_by_order[PMM_MAX_ORDER];
+	uint64_t zone_total[PMM_ZONE_NR];
+	uint64_t zone_free[PMM_ZONE_NR];
 };
 
 struct limine_memmap_response;

@@ -19,7 +19,8 @@ static struct vma *node_to_vma(struct rb_node *n)
 	if (!n) {
 		return NULL;
 	}
-	return (struct vma *)((uint8_t *)n - __builtin_offsetof(struct vma, rb));
+	return (struct vma *)((uint8_t *)n -
+			      __builtin_offsetof(struct vma, rb));
 }
 
 int vma_insert(struct rb_root *root, struct vma *v)
@@ -61,7 +62,4 @@ struct vma *vma_find(const struct rb_root *root, vaddr_t addr)
 	return NULL;
 }
 
-void vma_remove(struct rb_root *root, struct vma *v)
-{
-	rb_erase(root, &v->rb);
-}
+void vma_remove(struct rb_root *root, struct vma *v) { rb_erase(root, &v->rb); }

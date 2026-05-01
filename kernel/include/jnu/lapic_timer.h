@@ -32,7 +32,7 @@
  * Scheduler tick rate. Spec §2.7 mandates a 10 ms quantum; we run the
  * tick at 100 Hz and the scheduler counts ticks toward its quantum.
  */
-#define LAPIC_TIMER_HZ		100
+#define LAPIC_TIMER_HZ 100
 
 /*
  * Initialize the LAPIC timer at LAPIC_TIMER_HZ. Must run after

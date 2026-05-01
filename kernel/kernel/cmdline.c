@@ -14,25 +14,21 @@
 #include <jnu/string.h>
 #include <jnu/types.h>
 
-#define CMDLINE_BUF_SIZE	1024
+#define CMDLINE_BUF_SIZE 1024
 
 struct cmdline_entry {
-	char	key[CMDLINE_MAX_KEY];
-	char	value[CMDLINE_MAX_VALUE];
-	bool	used;
+	char key[CMDLINE_MAX_KEY];
+	char value[CMDLINE_MAX_VALUE];
+	bool used;
 };
 
 static char raw[CMDLINE_BUF_SIZE];
 static struct cmdline_entry table[CMDLINE_MAX_ENTRIES];
 static size_t entry_count;
 
-static bool is_space(char c)
-{
-	return c == ' ' || c == '\t';
-}
+static bool is_space(char c) { return c == ' ' || c == '\t'; }
 
-static void store_pair(const char *k, size_t klen,
-		       const char *v, size_t vlen)
+static void store_pair(const char *k, size_t klen, const char *v, size_t vlen)
 {
 	if (entry_count >= CMDLINE_MAX_ENTRIES) {
 		return;

@@ -31,36 +31,36 @@
  * only the HPET-specific body fields live here.
  */
 struct __packed acpi_hpet {
-	struct acpi_sdt_header	hdr;
-	uint32_t		event_timer_block_id;
-	uint8_t			address_space_id;
-	uint8_t			register_bit_width;
-	uint8_t			register_bit_offset;
-	uint8_t			reserved1;
-	uint64_t		address;
-	uint8_t			hpet_number;
-	uint16_t		minimum_tick;
-	uint8_t			page_protection;
+	struct acpi_sdt_header hdr;
+	uint32_t event_timer_block_id;
+	uint8_t address_space_id;
+	uint8_t register_bit_width;
+	uint8_t register_bit_offset;
+	uint8_t reserved1;
+	uint64_t address;
+	uint8_t hpet_number;
+	uint16_t minimum_tick;
+	uint8_t page_protection;
 };
 
 /* ------------------------------------------------------------------ */
 /* HPET MMIO registers (Table 2 of the HPET spec)                    */
 /* ------------------------------------------------------------------ */
 
-#define HPET_REG_CAP		0x000	/* General Capabilities and ID */
-#define HPET_REG_CFG		0x010	/* General Configuration */
-#define HPET_REG_STATUS		0x020	/* General Interrupt Status */
-#define HPET_REG_COUNTER	0x0F0	/* Main Counter Value */
+#define HPET_REG_CAP 0x000     /* General Capabilities and ID */
+#define HPET_REG_CFG 0x010     /* General Configuration */
+#define HPET_REG_STATUS 0x020  /* General Interrupt Status */
+#define HPET_REG_COUNTER 0x0F0 /* Main Counter Value */
 
-#define HPET_CFG_ENABLE	(1ull << 0)
-#define HPET_CFG_LEGACY	(1ull << 1)
+#define HPET_CFG_ENABLE (1ull << 0)
+#define HPET_CFG_LEGACY (1ull << 1)
 
 /* ------------------------------------------------------------------ */
 /* State                                                              */
 /* ------------------------------------------------------------------ */
 
 static volatile uint64_t *hpet_mmio;
-static uint64_t hpet_period_fs;	/* femtoseconds per tick (from CAP) */
+static uint64_t hpet_period_fs; /* femtoseconds per tick (from CAP) */
 static bool hpet_ready;
 
 /* ------------------------------------------------------------------ */

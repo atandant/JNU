@@ -9,6 +9,7 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
+#include <jnu/cpu.h>
 #include <jnu/errno.h>
 #include <jnu/paging.h>
 #include <jnu/pmm.h>
@@ -17,7 +18,6 @@
 #include <jnu/string.h>
 #include <jnu/usercopy.h>
 #include <jnu/vmm.h>
-#include <jnu/cpu.h>
 
 static void smap_stac(void)
 {
@@ -206,7 +206,7 @@ int copy_string_from_user(char *dst, const char *usrc, size_t max)
 /* Selftest                                                                   */
 /* ------------------------------------------------------------------------- */
 
-#define USERCOPY_TEST_VA	0x0000000000400000ull
+#define USERCOPY_TEST_VA 0x0000000000400000ull
 
 int usercopy_selftest(void)
 {
@@ -256,8 +256,7 @@ int usercopy_selftest(void)
 		goto fail_unmap;
 	}
 
-	err = copy_string_from_user(dst, (void *)USERCOPY_TEST_VA,
-				    sizeof(dst));
+	err = copy_string_from_user(dst, (void *)USERCOPY_TEST_VA, sizeof(dst));
 	if (err) {
 		goto fail_unmap;
 	}

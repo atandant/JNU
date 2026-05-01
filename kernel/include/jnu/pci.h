@@ -14,16 +14,16 @@
 #include <jnu/types.h>
 
 struct pci_device {
-	uint8_t		bus;
-	uint8_t		dev;
-	uint8_t		func;
-	uint16_t	vendor_id;
-	uint16_t	device_id;
-	uint8_t		class_code;
-	uint8_t		subclass;
-	uint8_t		prog_if;
-	uint8_t		header_type;
-	uint8_t		irq_line;
+	uint8_t bus;
+	uint8_t dev;
+	uint8_t func;
+	uint16_t vendor_id;
+	uint16_t device_id;
+	uint8_t class_code;
+	uint8_t subclass;
+	uint8_t prog_if;
+	uint8_t header_type;
+	uint8_t irq_line;
 };
 
 typedef void (*pci_callback_t)(const struct pci_device *dev, void *ctx);
@@ -43,13 +43,12 @@ void pci_for_each(pci_callback_t cb, void *ctx);
  * Find the first device matching `class`, `subclass`, and `prog_if`.
  * Returns a pointer to the internal device table entry, or NULL.
  */
-const struct pci_device *pci_find_class(uint8_t class_code,
-					uint8_t subclass,
+const struct pci_device *pci_find_class(uint8_t class_code, uint8_t subclass,
 					uint8_t prog_if);
 
 /* Configuration space accessors. */
-uint8_t  pci_read_config_byte(uint8_t bus, uint8_t dev, uint8_t func,
-			      uint8_t offset);
+uint8_t pci_read_config_byte(uint8_t bus, uint8_t dev, uint8_t func,
+			     uint8_t offset);
 uint16_t pci_read_config_word(uint8_t bus, uint8_t dev, uint8_t func,
 			      uint8_t offset);
 uint32_t pci_read_config_dword(uint8_t bus, uint8_t dev, uint8_t func,

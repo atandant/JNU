@@ -21,23 +21,23 @@ struct block_ops {
 	 * Read `count` sectors starting at LBA `lba` into `buf`.
 	 * Returns 0 on success, negative errno on failure.
 	 */
-	int (*read)(struct block_device *bdev, uint64_t lba,
-		    size_t count, void *buf);
+	int (*read)(struct block_device *bdev, uint64_t lba, size_t count,
+		    void *buf);
 
 	/*
 	 * Write `count` sectors starting at LBA `lba` from `buf`.
 	 * v0.0.1: always returns -ENOSYS.
 	 */
-	int (*write)(struct block_device *bdev, uint64_t lba,
-		     size_t count, const void *buf);
+	int (*write)(struct block_device *bdev, uint64_t lba, size_t count,
+		     const void *buf);
 };
 
 struct block_device {
-	const char		*name;		/* e.g. "hda" */
-	uint32_t		sector_size;	/* typically 512 */
-	uint64_t		sector_count;
-	const struct block_ops	*ops;
-	void			*priv;		/* driver-private data */
+	const char *name;     /* e.g. "hda" */
+	uint32_t sector_size; /* typically 512 */
+	uint64_t sector_count;
+	const struct block_ops *ops;
+	void *priv; /* driver-private data */
 };
 
 /*
@@ -55,5 +55,5 @@ struct block_device *block_lookup(const char *name);
  * Read `count` sectors from a block device. Convenience wrapper that
  * calls through bdev->ops->read.
  */
-int block_read(struct block_device *bdev, uint64_t lba,
-	       size_t count, void *buf);
+int block_read(struct block_device *bdev, uint64_t lba, size_t count,
+	       void *buf);

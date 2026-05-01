@@ -14,28 +14,28 @@
 #include <jnu/types.h>
 
 struct __packed acpi_rsdp {
-	char		signature[8];
-	uint8_t		checksum;
-	char		oem_id[6];
-	uint8_t		revision;
-	uint32_t	rsdt_address;
+	char signature[8];
+	uint8_t checksum;
+	char oem_id[6];
+	uint8_t revision;
+	uint32_t rsdt_address;
 	/* v2+ fields */
-	uint32_t	length;
-	uint64_t	xsdt_address;
-	uint8_t		extended_checksum;
-	uint8_t		reserved[3];
+	uint32_t length;
+	uint64_t xsdt_address;
+	uint8_t extended_checksum;
+	uint8_t reserved[3];
 };
 
 struct __packed acpi_sdt_header {
-	char		signature[4];
-	uint32_t	length;
-	uint8_t		revision;
-	uint8_t		checksum;
-	char		oem_id[6];
-	char		oem_table_id[8];
-	uint32_t	oem_revision;
-	uint32_t	creator_id;
-	uint32_t	creator_revision;
+	char signature[4];
+	uint32_t length;
+	uint8_t revision;
+	uint8_t checksum;
+	char oem_id[6];
+	char oem_table_id[8];
+	uint32_t oem_revision;
+	uint32_t creator_id;
+	uint32_t creator_revision;
 };
 
 /*
