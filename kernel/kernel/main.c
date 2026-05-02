@@ -35,6 +35,7 @@
 #include <jnu/elf64.h>
 #include <jnu/exec.h>
 #include <jnu/fbcon.h>
+#include <jnu/execprot.h>
 #include <jnu/gdt.h>
 #include <jnu/hpet.h>
 #include <jnu/idt.h>
@@ -237,79 +238,7 @@ static void bring_up_initramfs(void)
 	}
 }
 
-static ssize_t initramfs_exec_read(void *ctx, uint64_t off, void *buf,
-				   size_t len)
-{
-	return initramfs_read_at(ctx, off, buf, len);
-}
-
-static int validate_initramfs_exec(const char *path,
-				   struct exec_load_info *info)
-{
-	struct initramfs_file file;
-	struct exec_image image;
-	int err;
-
-	err = initramfs_lookup(path, &file);
-	if (err) {
-		return err;
-	}
-
-	image.read_at = initramfs_exec_read;
-	image.size = file.size;
-	image.ctx = &file;
-
-	return elf64_validate_image(&image, info);
-}
-
-static int load_initramfs_exec(struct addr_space *space, const char *path,
-			       struct exec_load_info *info, uint64_t *stack)
-{
-	struct initramfs_file file;
-	struct exec_image image;
-	int err;
-
-	err = initramfs_lookup(path, &file);
-	if (err) {
-		return err;
-	}
-
-	image.read_at = initramfs_exec_read;
-	image.size = file.size;
-	image.ctx = &file;
-
-	err = elf64_load_image(space, &image, info);
-	if (err) {
-		return err;
-	}
-
-	return elf64_setup_initial_stack(space, stack);
-}
-
-static ssize_t vfs_exec_read(void *ctx, uint64_t off, void *buf, size_t len)
-{
-	return vfs_read(ctx, off, len, buf);
-}
-
-static int validate_vfs_exec(const char *path, struct exec_load_info *info)
-{
-	struct vfs_inode *ino;
-	struct exec_image image;
-	int err;
-
-	err = vfs_open(path, &ino);
-	if (err) {
-		return err;
-	}
-
-	image.read_at = vfs_exec_read;
-	image.size = ino->size;
-	image.ctx = ino;
-
-	err = elf64_validate_image(&image, info);
-	vfs_close(ino);
-	return err;
-}
+/* exec code is split: initfs_load.c, initfs_valid.c, vfs_exec.c */
 
 static void load_userspace_probe(void)
 {

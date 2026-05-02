@@ -22,6 +22,7 @@ struct exec_load_info {
 };
 
 struct addr_space;
+struct vfs_inode;
 
 int elf64_validate_image(const struct exec_image *image,
 			 struct exec_load_info *info);

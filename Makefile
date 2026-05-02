@@ -139,6 +139,8 @@ C_SRCS := \
     kernel/fs/minix.c \
     kernel/kernel/cmdline.c \
     kernel/kernel/fork.c \
+    kernel/kernel/initfs_exec.c \
+    kernel/kernel/vfs_exec.c \
     kernel/kernel/panic.c \
     kernel/kernel/sched.c \
     kernel/kernel/selftest.c \
