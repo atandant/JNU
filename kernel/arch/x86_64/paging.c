@@ -38,6 +38,56 @@ static uint64_t read_cr3(void)
 	return v;
 }
 
+/*
+ * Set NX on every writable PTE under PML4 index 511 (the kernel image
+ * range, 0xFFFFFFFF80000000+). The kernel relies on Limine's per-PHDR
+ * permissions for its initial mapping, but spec §2.4 mandates W^X and
+ * a future Limine change or a misconfigured linker script could leave
+ * .data/.bss mapped writable+executable. Walk the kernel image once at
+ * boot and assert W^X by promoting any writable mapping to NX. Read-
+ * only mappings (.text, .rodata) are left untouched so kernel code can
+ * still execute.
+ */
+static void enforce_nx_on_kernel_image(void)
+{
+	unsigned i4 = 511;
+
+	if (!(kernel_pml4[i4] & PTE_PRESENT))
+		return;
+
+	uint64_t *pdpt = phys_to_virt(kernel_pml4[i4] & PTE_ADDR_MASK);
+	for (unsigned i3 = 0; i3 < 512; i3++) {
+		if (!(pdpt[i3] & PTE_PRESENT))
+			continue;
+
+		if (pdpt[i3] & PTE_HUGE) {
+			if (pdpt[i3] & PTE_WRITE)
+				pdpt[i3] |= PTE_NX;
+			continue;
+		}
+
+		uint64_t *pd = phys_to_virt(pdpt[i3] & PTE_ADDR_MASK);
+		for (unsigned i2 = 0; i2 < 512; i2++) {
+			if (!(pd[i2] & PTE_PRESENT))
+				continue;
+
+			if (pd[i2] & PTE_HUGE) {
+				if (pd[i2] & PTE_WRITE)
+					pd[i2] |= PTE_NX;
+				continue;
+			}
+
+			uint64_t *pt = phys_to_virt(pd[i2] & PTE_ADDR_MASK);
+			for (unsigned i1 = 0; i1 < 512; i1++) {
+				if ((pt[i1] & PTE_PRESENT) &&
+				    (pt[i1] & PTE_WRITE)) {
+					pt[i1] |= PTE_NX;
+				}
+			}
+		}
+	}
+}
+
 static void enforce_nx_on_hhdm(void)
 {
 	/*
@@ -86,6 +136,36 @@ static void enforce_nx_on_hhdm(void)
 			     : "memory");
 }
 
+/*
+ * Eagerly populate every kernel-half PML4 slot (256..511) that Limine
+ * left empty. Each cloned process address space gets a shallow copy of
+ * these slots via paging_clone_kernel_half(); if a top-level slot is
+ * ever filled in *after* a process is cloned, that process's PML4 has
+ * a stale 0 there and any kernel access to the new region from that
+ * task triggers a kernel-mode #PF, which exceptions_handle() escalates
+ * to panic(). Pre-populating once at boot means the only mutations
+ * after this point are at PDPT/PD/PT level — those pages are shared by
+ * pointer across every PML4 and stay coherent automatically.
+ */
+static void prepopulate_kernel_pml4(void)
+{
+	for (unsigned i = 256; i < 512; i++) {
+		paddr_t pa;
+
+		if (kernel_pml4[i] & PTE_PRESENT) {
+			continue;
+		}
+		pa = pmm_alloc_pages(0);
+		if (!pa) {
+			panic("paging: out of memory pre-populating kernel "
+			      "PML4 slot %u",
+			      i);
+		}
+		memset(phys_to_virt(pa), 0, PAGE_SIZE);
+		kernel_pml4[i] = pa | PTE_PRESENT | PTE_WRITE;
+	}
+}
+
 void paging_init(uint64_t hhdm)
 {
 	hhdm_offset = hhdm;
@@ -93,6 +173,8 @@ void paging_init(uint64_t hhdm)
 	kernel_pml4 = phys_to_virt(kernel_pml4_phys);
 
 	enforce_nx_on_hhdm();
+	enforce_nx_on_kernel_image();
+	prepopulate_kernel_pml4();
 
 	pr_info("paging: kernel PML4 at phys 0x%lx\n",
 		(unsigned long)kernel_pml4_phys);

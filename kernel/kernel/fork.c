@@ -92,11 +92,17 @@ int process_fork(const struct syscall_frame *frame, int *pid_out)
 	child->has_user_frame = true;
 	child->user_frame = *frame;
 
-	err = sched_create_user_task("fork", child, NULL);
-	if (err) {
-		goto fail_fds;
-	}
-
+	/*
+	 * Splice the child into the parent's children list BEFORE making
+	 * it runnable. sched_create_user_task() pushes the new task onto
+	 * the run queue; if the LAPIC tick preempts us between that push
+	 * and the splice, the child can run, exit (process_exit_current
+	 * tries to wake parent->main_task — fine, parent is still
+	 * RUNNING), and a concurrent process_wait on the parent would
+	 * walk parent->first_child, fail to find the un-spliced ZOMBIE,
+	 * and return -ECHILD while the child dangles forever. Doing the
+	 * splice first under process_tree_lock closes the race.
+	 */
 	{
 		uint64_t flags = spin_lock_irqsave(&process_tree_lock);
 
@@ -105,10 +111,29 @@ int process_fork(const struct syscall_frame *frame, int *pid_out)
 		spin_unlock_irqrestore(&process_tree_lock, flags);
 	}
 
+	err = sched_create_user_task("fork", child, NULL);
+	if (err) {
+		goto fail_unsplice;
+	}
+
 	*pid_out = child->pid;
 	return 0;
 
-fail_fds:
+fail_unsplice:
+	{
+		uint64_t flags = spin_lock_irqsave(&process_tree_lock);
+		struct process **link = &parent->first_child;
+
+		while (*link) {
+			if (*link == child) {
+				*link = child->next_sibling;
+				child->next_sibling = NULL;
+				break;
+			}
+			link = &(*link)->next_sibling;
+		}
+		spin_unlock_irqrestore(&process_tree_lock, flags);
+	}
 	for (int fd = 0; fd < JNU_MAX_FDS; fd++) {
 		file_put(fd_close(&child->fds, fd));
 	}

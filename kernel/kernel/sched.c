@@ -3,6 +3,9 @@
  *
  * Copyright (c) 2026 The JNU Authors.
  * SPDX-License-Identifier: GPL-2.0-only
+ * note to self DO NOT rework this into a new scheduler
+ * defer heavily since this is getting long and complex.
+ * I'd prefer if we did it in another meaningful time.
  */
 
 #include <jnu/arch_syscall.h>

@@ -1,13 +1,16 @@
 /*
  * kernel/syscall/sys_write.c - write syscall.
  *
- * fd 1 (stdout) and fd 2 (stderr) are routed through the regular klog
- * pipeline, NOT klog_panic_write.  The panic path is documented in
- * jnuspec.md §2.11 as "no locks taken, no allocation, no ring-buffer
- * queueing - direct write to backends"; it must remain reachable only
- * from panic() so that the forensic dump is not interleaved with
- * concurrent userspace writes and so userspace cannot bypass logging
- * locks or the ring buffer.
+ * fd 1 (stdout) and fd 2 (stderr) are routed through klog_user_write,
+ * which line-prefixes every chunk with "user[pid=N]: " so userspace
+ * bytes cannot impersonate a kernel-formatted ring-buffer line and
+ * cannot poison the panic-tail dump documented in jnuspec.md §2.11.
+ * Control bytes (other than '\n' and '\t') are scrubbed in the kernel
+ * bounce buffer to keep ANSI escapes off the COM1 backend.
+ *
+ * We continue to avoid klog_panic_write here: that path is reserved
+ * for panic() and must not be reachable from userspace under any
+ * circumstance.
  *
  * Copyright (c) 2026 The JNU Authors.
  * SPDX-License-Identifier: GPL-2.0-only
@@ -15,15 +18,39 @@
 
 #include <jnu/errno.h>
 #include <jnu/klog.h>
+#include <jnu/process.h>
+#include <jnu/sched.h>
 #include <jnu/string.h>
 #include <jnu/syscall.h>
 #include <jnu/usercopy.h>
 
 #define WRITE_CHUNK 128
 
+/*
+ * Strip every byte that could drive a terminal or be confused with a
+ * structural kernel-log byte. We keep '\n' (klog_user_write needs it
+ * for line splitting) and '\t' (harmless on every backend we ship).
+ * Everything else below 0x20, plus DEL (0x7F), becomes '.'.
+ */
+static void sanitize(char *buf, size_t len)
+{
+	for (size_t i = 0; i < len; i++) {
+		unsigned char c = (unsigned char)buf[i];
+
+		if (c == '\n' || c == '\t') {
+			continue;
+		}
+		if (c < 0x20 || c == 0x7F) {
+			buf[i] = '.';
+		}
+	}
+}
+
 int64_t sys_write(int fd, const void *ubuf, size_t len)
 {
 	char buf[WRITE_CHUNK + 1];
+	struct task *task = sched_current();
+	int pid = (task && task->process) ? task->process->pid : 0;
 	enum klog_level level;
 	size_t done = 0;
 
@@ -48,13 +75,8 @@ int64_t sys_write(int fd, const void *ubuf, size_t len)
 			return done ? (int64_t)done : err;
 		}
 
-		/*
-		 * klog_raw_write goes through the normal locked ring-buffer
-		 * path without adding kernel prefixes or forced newlines.
-		 * Using klog_panic_write here would race the panic channel
-		 * and let userspace bypass logging locks.
-		 */
-		klog_raw_write(level, buf, chunk);
+		sanitize(buf, chunk);
+		klog_user_write(level, pid, buf, chunk);
 		done += chunk;
 	}
 

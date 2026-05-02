@@ -97,9 +97,31 @@ void cpu_init(void)
 	uint64_t cr4 = read_cr4() | CR4_PGE;
 	if (has_smep) {
 		cr4 |= CR4_SMEP;
+	} else {
+		/*
+		 * SMEP missing means the CPU will happily fetch and execute
+		 * instructions from a USER page while in ring 0. Combined
+		 * with any kernel-side bug that hands control to a user-
+		 * controlled address (return-to-user), an attacker can
+		 * sidestep the NX hardening above. Log loudly — JNU's user
+		 * pointer validation in user/copy.c is the only remaining
+		 * line of defense on such a CPU.
+		 */
+		pr_warn("cpu: SMEP not present — kernel exec from user "
+			"pages is unblocked at the hardware level\n");
 	}
 	if (has_smap) {
 		cr4 |= CR4_SMAP;
+	} else {
+		/*
+		 * Without SMAP, stac/clac in copy_*_user become no-ops and
+		 * any kernel pointer dereference of a user-mapped page is
+		 * permitted by the CPU. user_range_mapped() still gates
+		 * legal accesses, but a missed bounds check anywhere in the
+		 * kernel becomes an arbitrary-write rather than a #PF.
+		 */
+		pr_warn("cpu: SMAP not present — kernel reads/writes of "
+			"user pages are not trapped by hardware\n");
 	}
 	write_cr4(cr4);
 

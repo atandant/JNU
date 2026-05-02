@@ -149,8 +149,20 @@ static uint32_t minix_bmap(struct vfs_mount *mnt, struct minix_raw_inode *ino,
 	}
 
 check:
-	if (b != 0 && b >= priv->sb.s_nzones) {
-		pr_err("minix: out of bounds block pointer %u\n", b);
+	/*
+	 * Reject block pointers that fall outside the data zone. A
+	 * malicious or corrupt image can otherwise point a regular file
+	 * at the inode table, the inode bitmap, or the zone bitmap, and
+	 * a userspace read() of that file would receive raw FS metadata
+	 * — an information leak across the FS trust boundary. The upper
+	 * bound was already enforced; the lower bound is the missing
+	 * half of the same check.
+	 */
+	if (b != 0 && (b < priv->sb.s_firstdatazone ||
+		       b >= priv->sb.s_nzones)) {
+		pr_err("minix: out of bounds block pointer %u "
+		       "(firstdatazone=%u, nzones=%u)\n",
+		       b, priv->sb.s_firstdatazone, priv->sb.s_nzones);
 		return 0;
 	}
 	return b;
@@ -326,7 +338,15 @@ static ssize_t minix_read(struct vfs_inode *ino, uint64_t offset, size_t len,
 {
 	if (offset >= ino->size)
 		return 0;
-	if (offset + len > ino->size)
+	/*
+	 * Clamp without overflow. The previous form `offset + len > size`
+	 * can wrap when `offset` is near UINT64_MAX (lseek lets userspace
+	 * pick an arbitrary 63-bit value), in which case the clamp is
+	 * skipped and we go on to read `len` bytes from a phantom block
+	 * index. Compare on the difference instead — `offset < size` is
+	 * already established above, so `size - offset` is well-defined.
+	 */
+	if (len > (size_t)(ino->size - offset))
 		len = (size_t)(ino->size - offset);
 
 	struct minix_inode_info *mi = ino->priv;

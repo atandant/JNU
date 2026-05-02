@@ -45,9 +45,21 @@ void vprintk(enum klog_level level, const char *fmt, __builtin_va_list ap);
 
 /*
  * Raw locked write to the ring buffer and backends. Does not format
- * headers or append newlines. Used for user-space stdout/stderr.
+ * headers or append newlines. Internal kernel use only — must NOT be
+ * fed user-controlled bytes (use klog_user_write instead).
  */
 void klog_raw_write(enum klog_level level, const char *buf, size_t len);
+
+/*
+ * Locked write of userspace stdout/stderr bytes. Each line is prefixed
+ * with a non-spoofable "user[pid=N]: " marker so user content cannot
+ * impersonate kernel-formatted lines (e.g. forge a "[ssss.uuuuuu] PANIC"
+ * entry into the ring buffer that the panic path replays). Control
+ * bytes other than '\n' and '\t' are scrubbed to '.' to keep ANSI
+ * escapes and other terminal-control sequences out of the COM1 backend.
+ */
+void klog_user_write(enum klog_level level, int pid, const char *buf,
+		     size_t len);
 
 /*
  * Direct-to-backends panic write path. Bypasses ring buffer and locks.

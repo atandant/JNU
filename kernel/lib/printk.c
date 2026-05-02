@@ -397,6 +397,59 @@ void klog_raw_write(enum klog_level level, const char *buf, size_t len)
 	spin_unlock_irqrestore(&printk_lock, flags);
 }
 
+/*
+ * Userspace bytes follow a stricter contract than klog_raw_write: they
+ * are untrusted and must not be confusable with kernel-formatted log
+ * lines. We therefore (a) prefix every line with "user[pid=N]: " so the
+ * panic ring-buffer drain can't be made to replay a forged
+ * "[ssss.uuuuuu] PANIC ..." entry, and (b) scrub bytes that would let
+ * a process drive an ANSI-aware COM1 console. The scrubbing is done in
+ * place in the caller's bounce buffer; sys_write owns that buffer for
+ * the duration of one syscall.
+ */
+void klog_user_write(enum klog_level level, int pid, const char *buf,
+		     size_t len)
+{
+	char prefix[32];
+	int plen;
+	uint64_t flags;
+	size_t start;
+
+	if (len == 0) {
+		return;
+	}
+
+	plen = snprintf(prefix, sizeof(prefix), "user[pid=%d]: ", pid);
+	if (plen < 0) {
+		plen = 0;
+	}
+
+	flags = spin_lock_irqsave(&printk_lock);
+
+	ring_write(prefix, (size_t)plen);
+	backends_write(level, prefix, (size_t)plen);
+
+	start = 0;
+	for (size_t i = 0; i < len; i++) {
+		if (buf[i] != '\n') {
+			continue;
+		}
+		ring_write(buf + start, i - start + 1);
+		backends_write(level, buf + start, i - start + 1);
+		start = i + 1;
+		if (start < len) {
+			ring_write(prefix, (size_t)plen);
+			backends_write(level, prefix, (size_t)plen);
+		}
+	}
+	if (start < len) {
+		ring_write(buf + start, len - start);
+		backends_write(level, buf + start, len - start);
+	}
+
+	spin_unlock_irqrestore(&printk_lock, flags);
+}
+
 /* ------------------------------------------------------------------------- */
 /* printk                                                                    */
 /* ------------------------------------------------------------------------- */

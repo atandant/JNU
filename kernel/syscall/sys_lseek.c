@@ -60,13 +60,18 @@ int64_t sys_lseek(int fd, int64_t off, int whence)
 	default:
 		return -EINVAL;
 	}
-	/* author here, gemini 3.1 pro added this as a fix to an issue in
-	 * the fuzz test where the lseek test said the kernel or jnulib did
-	 * not reject it. Grep/Rg: Opus 4.7 FIXME(atandant) this bug, could be a
-	 * hack that has subtle edge cases.
+	/*
+	 * Reject signed overflow, negative results, and offsets past EOF.
+	 * The previous code only rejected `next >= INT64_MAX`, which is
+	 * functionally the same as the overflow check and let userspace
+	 * pin file->offset at any 63-bit value. Since v0.0.2 filesystems
+	 * are read-only, capping at file_size() is both safe and what the
+	 * read path expects (minix_read short-circuits at offset >= size,
+	 * but only after a uint64_t + size_t addition that overflows for
+	 * sufficiently large offsets — see kernel/fs/minix.c).
 	 */
 	if (__builtin_add_overflow(base, off, &next) || next < 0 ||
-	    next >= 0x7fffffffffffffffLL) {
+	    next > (int64_t)file_size(file)) {
 		return -EINVAL;
 	}
 
