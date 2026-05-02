@@ -429,6 +429,49 @@ static void selftest_thread(void *arg)
 	}
 }
 
+static void all_tasks_remove(struct task *task)
+{
+	struct task **link = &all_tasks;
+
+	while (*link) {
+		if (*link == task) {
+			*link = task->all_next;
+			task->all_next = NULL;
+			return;
+		}
+		link = &(*link)->all_next;
+	}
+}
+
+void sched_reap_task(struct task *task)
+{
+	uint64_t flags;
+
+	if (!task) {
+		return;
+	}
+	if (task == current) {
+		/*
+		 * Reaping the running task is a kernel bug: we would
+		 * release the very kstack we are executing on. Bail
+		 * loudly rather than silently corrupting the world.
+		 */
+		pr_err("sched_reap_task: refusing to reap the running task "
+		       "tid=%d\n",
+		       task->tid);
+		return;
+	}
+
+	flags = spin_lock_irqsave(&sched_lock);
+	all_tasks_remove(task);
+	spin_unlock_irqrestore(&sched_lock, flags);
+
+	if (task->kstack_base) {
+		pmm_free_pages(virt_to_phys(task->kstack_base), KSTACK_ORDER);
+	}
+	kfree(task);
+}
+
 int sched_selftest(void)
 {
 	volatile int a = 0;

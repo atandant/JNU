@@ -18,5 +18,6 @@
 #define JNU_SYS_fstat 8
 #define JNU_SYS_spawn 9
 #define JNU_SYS_waitpid 10
+#define JNU_SYS_fork 11
 
-#define JNU_SYS_MAX 10
+#define JNU_SYS_MAX 11

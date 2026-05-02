@@ -12,6 +12,8 @@ __pycache__/
 *.pyc
 kernel/drivers/font_data.h
 .venv/
+kernel_heatmap.py
+kernel_objdump.txt
 
 # Auto-generated entries
 # Dependencies

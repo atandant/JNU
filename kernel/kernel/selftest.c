@@ -11,6 +11,7 @@
 
 #include <jnu/ata.h>
 #include <jnu/elf64.h>
+#include <jnu/fd.h>
 #include <jnu/initramfs.h>
 #include <jnu/klog.h>
 #include <jnu/lapic_timer.h>
@@ -40,6 +41,8 @@ static const struct selftest tests[] = {
     {"sched", sched_selftest},
     {"lapic_timer", lapic_timer_selftest},
     {"process", process_selftest},
+    {"file_refcount", file_refcount_selftest},
+    {"clone_space", clone_space_selftest},
     {"elf64", elf64_selftest},
     {"syscall", syscall_selftest},
     {"pci", pci_selftest},

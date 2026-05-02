@@ -143,7 +143,7 @@ static void attack_bad_syscall_numbers(void)
 	report("syscall(-1)", jnu_syscall0(-1), 1);
 	report("syscall(INT64_MAX)", jnu_syscall0((long)0x7fffffffffffffffL),
 	       1);
-	report("syscall(11) // first unimpl", jnu_syscall0(11), 1);
+	report("syscall(99) // first unimpl", jnu_syscall0(99), 1);
 }
 
 /* ------------------------------------------------------------------------- */

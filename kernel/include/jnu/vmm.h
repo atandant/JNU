@@ -38,6 +38,21 @@ struct addr_space *vmm_create_space(void);
 void vmm_destroy_space(struct addr_space *space);
 
 /*
+ * Deep-copy `src` into a freshly allocated address space and return it
+ * via `*out`. Every present user-side PTE in `src` is copied: a new
+ * physical page is allocated, the source page's contents are memcpy'd
+ * into it, and the destination PTE is installed with the same
+ * USER/WRITE/NX bits. The source is not modified. v0.0.2.1 ships full
+ * deep copy; CoW is the v0.0.2.2 release.
+ *
+ * On any allocation failure, every partial mapping in the destination
+ * is unwound and the destination space is destroyed before returning.
+ * Returns 0 / -errno.
+ */
+int vmm_clone_space(struct addr_space *src, struct addr_space **out);
+int clone_space_selftest(void);
+
+/*
  * Map `pages` × 4 KiB starting at `virt` to `phys` in `space`. Updates
  * both the page tables and the VMA tree. Returns 0 / -errno.
  */

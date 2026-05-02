@@ -113,6 +113,7 @@ C_SRCS := \
     kernel/mm/vmm.c \
     kernel/mm/vma.c \
     kernel/mm/slab.c \
+    kernel/mm/clone_space.c \
     kernel/initramfs/cpio_newc.c \
     kernel/initramfs/initramfs.c \
     kernel/exec/elf64.c \
@@ -129,6 +130,7 @@ C_SRCS := \
     kernel/syscall/sys_waitpid.c \
     kernel/syscall/sys_write.c \
     kernel/syscall/sys_yield.c \
+    kernel/syscall/sys_fork.c \
     kernel/user/copy.c \
     kernel/user/fd.c \
     kernel/user/process.c \
@@ -136,6 +138,7 @@ C_SRCS := \
     kernel/fs/vfs.c \
     kernel/fs/minix.c \
     kernel/kernel/cmdline.c \
+    kernel/kernel/fork.c \
     kernel/kernel/panic.c \
     kernel/kernel/sched.c \
     kernel/kernel/selftest.c \

@@ -37,7 +37,8 @@
         For those who want to learn kernel development:
         read the codebase and the following coding style in 
         style.txt (i genuinely forgot to make it, so read jnuspec or
-        jnuspec2.). We allow kernel developers to contribute freely in a scenario where the kernel is maturing and not overly complex.
+        jnuspec2.). We allow kernel developers to contribute freely in a
+        scenario where the kernel is still maturing and not overly complex.
 
             --vibe-coders--
         For those who want to vibe-code new features or additions, here is
@@ -50,17 +51,9 @@
                     --OpenAI--
                     GPT 5.5
                     GPT 5.4 (in some cases)
-                    --Google--
-                    Gemini 3.5 Pro
-                    Gemini 3.1 Pro (High)
-
                 For fast and agile edits:
                     --Anthropic--
                     Haiku 4.5
-                    --Google--
-                    Gemini 3.5 Flash
-                    Gemini 3.1 Flash
-                    Gemini 3 Flash
                     --Meta--
                     Llama 4 70B
                     Llama 4 8B
@@ -76,7 +69,6 @@
                     Sonnet 4.5
                     --Google--
                     Gemini 3.1 Pro
-                    Gemini 2.5 Pro
                     --Open source models--
                     Deepseek V3
         

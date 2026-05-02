@@ -3,6 +3,8 @@
  *
  * Copyright (c) 2026 The JNU Authors.
  * SPDX-License-Identifier: GPL-2.0-only
+ * This syscall is retired, we have released
+ * a modern alternative like fork.
  */
 
 #include <jnu/errno.h>

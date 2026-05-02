@@ -57,6 +57,12 @@ int64_t sys_open(const char *upath, int flags)
 	if (!file) {
 		return -ENOMEM;
 	}
+	/*
+	 * The slot installed by fd_alloc() owns this initial reference;
+	 * fd_alloc itself does NOT bump refcount. file_put on the
+	 * fail-path or sys_close drops it.
+	 */
+	file->refcount = 1;
 
 	cdev = resolve_dev_chardev(path);
 	if (cdev) {
@@ -80,15 +86,15 @@ int64_t sys_open(const char *upath, int flags)
 alloc_fd:
 	err = fd_alloc(&task->process->fds, file);
 	if (err < 0) {
-		goto fail_backing;
+		goto fail_file;
 	}
 	return err;
 
-fail_backing:
-	if (file->type == JNU_FILE_VFS) {
-		vfs_close(file->u.vfs);
-	}
 fail_file:
-	kfree(file);
+	/*
+	 * file_put drives the type-specific teardown (vfs_close, etc.)
+	 * via the same destroy path that sys_close eventually uses.
+	 */
+	file_put(file);
 	return err;
 }

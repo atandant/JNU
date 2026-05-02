@@ -55,4 +55,14 @@ void sched_exit_current(int status);
 void sched_sleep_current(void);
 void sched_wake(struct task *task);
 void sched_tick(void);
+
+/*
+ * Free a TASK_ZOMBIE task. Removes it from `all_tasks`, releases its
+ * kernel stack, and frees the `struct task` itself. The caller MUST
+ * have already detached the task from any process linkage and confirmed
+ * it is not the current task. Calling this on a non-zombie task is a
+ * kernel bug. Used by process_wait's reaping path.
+ */
+void sched_reap_task(struct task *task);
+
 int sched_selftest(void);

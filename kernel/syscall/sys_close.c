@@ -25,6 +25,6 @@ int64_t sys_close(int fd)
 		return -EINVAL;
 	}
 
-	file_destroy(file);
+	file_put(file);
 	return 0;
 }

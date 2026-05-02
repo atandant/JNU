@@ -143,8 +143,6 @@ static void kill_current_user(void)
 {
 	process_exit_current(-1);
 	sched_exit_current(-1);
-
-	/* sched_exit_current() does not return; this is unreachable. */
 	__builtin_unreachable();
 }
 

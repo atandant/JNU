@@ -18,7 +18,13 @@
 #include <jnu/vmm.h>
 
 static int next_pid = 1;
-static struct spinlock process_tree_lock = SPINLOCK_INITIALIZER;
+/*
+ * Visible to kernel/kernel/fork.c so process_fork() can splice the
+ * child into the parent's child list under the same lock that
+ * process_wait/process_exit_current use. Internal to process management
+ * only — no other subsystem touches it.
+ */
+struct spinlock process_tree_lock = SPINLOCK_INITIALIZER;
 
 int process_alloc_pid(void)
 {
@@ -183,7 +189,7 @@ void process_exit_current(int status)
 	}
 
 	for (int fd = 0; fd < JNU_MAX_FDS; fd++) {
-		file_destroy(fd_close(&proc->fds, fd));
+		file_put(fd_close(&proc->fds, fd));
 	}
 
 	flags = spin_lock_irqsave(&process_tree_lock);
@@ -221,6 +227,33 @@ static void unlink_child(struct process *parent, struct process *target)
 	}
 }
 
+/*
+ * Release every resource the child held: the address space (page
+ * tables + user pages), the kernel task (kstack + struct task), and
+ * the process struct itself. Called by process_wait after unlinking
+ * the zombie. The child's fd table was already drained by
+ * process_exit_current; the loop here is a paranoia sweep that no-ops
+ * on an already-empty table.
+ */
+static void process_reap(struct process *child)
+{
+	if (!child) {
+		return;
+	}
+
+	for (int fd = 0; fd < JNU_MAX_FDS; fd++) {
+		file_put(fd_close(&child->fds, fd));
+	}
+	if (child->space && child->space != vmm_kernel_space()) {
+		vmm_destroy_space(child->space);
+	}
+	if (child->main_task) {
+		sched_reap_task(child->main_task);
+	}
+	process_release_pid(child->pid);
+	kfree(child);
+}
+
 int process_wait(int pid, int *status_out)
 {
 	struct task *task = sched_current();
@@ -247,6 +280,14 @@ int process_wait(int pid, int *status_out)
 			}
 			unlink_child(parent, child);
 			spin_unlock_irqrestore(&process_tree_lock, flags);
+
+			/*
+			 * Reap outside the tree lock: vmm_destroy_space
+			 * walks page tables and frees pages, which may
+			 * be slow and must not block IRQ delivery for
+			 * an unbounded time.
+			 */
+			process_reap(child);
 			return child_pid;
 		}
 		spin_unlock_irqrestore(&process_tree_lock, flags);

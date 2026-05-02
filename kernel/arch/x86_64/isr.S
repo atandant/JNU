@@ -59,7 +59,7 @@ isr_common:
 	; If the trap came from user (cs & 3 == 3), swap GS so kernel
 	; reads the kernel per-CPU pointer. v0.0.1 has no userspace
 	; yet, but the path is wired now to keep the IDT side complete.
-	mov rax, [rsp + 15*8 + 8 + 8]	; saved CS
+	mov rax, [rsp + 15*8 + 24]	; saved CS
 	test rax, 3
 	jz .no_swap_in
 	swapgs
@@ -69,7 +69,7 @@ isr_common:
 	mov rdi, rsp			; pointer to struct cpu_state
 	call interrupt_dispatch
 
-	mov rax, [rsp + 15*8 + 8 + 8]	; saved CS
+	mov rax, [rsp + 15*8 + 24]	; saved CS
 	test rax, 3
 	jz .no_swap_out
 	swapgs

@@ -42,6 +42,8 @@ int64_t syscall_dispatch(const struct syscall_args *args)
 				 (char *const *)args->arg1);
 	case JNU_SYS_waitpid:
 		return sys_waitpid((int)args->arg0, (int *)args->arg1);
+	case JNU_SYS_fork:
+		return sys_fork(args);
 	default:
 		return -ENOSYS;
 	}
