@@ -80,7 +80,8 @@ The following are explicitly out of scope for v0.0.2:
 | Networking                      | v0.0.3+       |
 | AHCI / SATA                     | v0.0.3+       |
 | HPET                            | v0.0.3+       |
-| MINIX write support             | v0.0.2.1+     |
+| Copy-on-write fork              | v0.0.2.2+     |
+| MINIX write support             | v0.0.3+       |
 | SMP / IPIs / TLB shootdown      | v0.0.4+       |
 | Loadable modules                | v0.0.5+       |
 

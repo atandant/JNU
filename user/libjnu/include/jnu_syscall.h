@@ -22,9 +22,11 @@ typedef unsigned int uint32_t;
 #define JNU_SYS_getpid 6
 #define JNU_SYS_yield 7
 #define JNU_SYS_fstat 8
+/* 9 is retired; it was JNU_SYS_spawn. */
 #define JNU_SYS_spawn 9
 #define JNU_SYS_waitpid 10
 #define JNU_SYS_fork 11
+#define JNU_SYS_execve 12
 
 #define SEEK_SET 0
 #define SEEK_CUR 1
@@ -43,13 +45,14 @@ long jnu_syscall2(long nr, long a0, long a1);
 long jnu_syscall3(long nr, long a0, long a1, long a2);
 
 int close(int fd);
+int execve(const char *path, char *const argv[], char *const envp[]);
 void exit(int status) __attribute__((noreturn));
 int fstat(int fd, void *st);
+int fork(void);
 int getpid(void);
 int64_t lseek(int fd, int64_t off, int whence);
 int open(const char *path, int flags);
 ssize_t read(int fd, void *buf, size_t len);
-int spawn(const char *path, char *const argv[]);
 int waitpid(int pid, int *status);
 ssize_t write(int fd, const void *buf, size_t len);
 int yield(void);

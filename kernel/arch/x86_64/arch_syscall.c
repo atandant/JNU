@@ -43,6 +43,7 @@ extern void syscall_entry(void);
 struct syscall_scratch {
 	uint64_t user_rsp;
 	uint64_t kernel_rsp;
+	int64_t current_nr;
 };
 
 static struct syscall_scratch boot_scratch;
@@ -56,6 +57,10 @@ void arch_syscall_set_kernel_stack(uint64_t stack_top)
 	 */
 	boot_scratch.kernel_rsp = stack_top;
 }
+
+void arch_syscall_set_current_nr(int64_t nr) { boot_scratch.current_nr = nr; }
+
+int64_t arch_syscall_current_nr(void) { return boot_scratch.current_nr; }
 
 void arch_syscall_init(void)
 {

@@ -176,7 +176,11 @@ static void user_thread_entry(void *arg)
 	vmm_switch_to(proc->space);
 	arch_syscall_set_kernel_stack(
 	    (uint64_t)(uintptr_t)proc->main_task->kstack_top);
-	(void)usermode_enter(proc->user_entry, proc->user_stack);
+	if (proc->has_user_frame) {
+		(void)usermode_enter_fork_frame(&proc->user_frame);
+	} else {
+		(void)usermode_enter(proc->user_entry, proc->user_stack);
+	}
 	sched_exit_current(127);
 }
 

@@ -29,12 +29,13 @@
 #include <jnu/process.h>
 #include <jnu/sched.h>
 #include <jnu/spinlock.h>
+#include <jnu/syscall.h>
 #include <jnu/types.h>
 #include <jnu/vmm.h>
 
 extern struct spinlock process_tree_lock;
 
-int process_fork(uint64_t user_rip, uint64_t user_rsp, int *pid_out)
+int process_fork(const struct syscall_frame *frame, int *pid_out)
 {
 	struct task *parent_task = sched_current();
 	struct process *parent;
@@ -45,7 +46,7 @@ int process_fork(uint64_t user_rip, uint64_t user_rsp, int *pid_out)
 	if (!pid_out || !parent_task || !parent_task->process) {
 		return -EINVAL;
 	}
-	if (!user_rip || !user_rsp) {
+	if (!frame || !frame->user.rip || !frame->user.rsp) {
 		return -EINVAL;
 	}
 
@@ -86,8 +87,10 @@ int process_fork(uint64_t user_rip, uint64_t user_rsp, int *pid_out)
 	 * The userspace fork() wrapper sees rax = 0 and returns 0 to
 	 * the caller in the child; the parent path returns child->pid.
 	 */
-	child->user_entry = user_rip;
-	child->user_stack = user_rsp;
+	child->user_entry = frame->user.rip;
+	child->user_stack = frame->user.rsp;
+	child->has_user_frame = true;
+	child->user_frame = *frame;
 
 	err = sched_create_user_task("fork", child, NULL);
 	if (err) {

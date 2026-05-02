@@ -8,6 +8,7 @@
 #pragma once
 
 #include <jnu/fd.h>
+#include <jnu/syscall.h>
 #include <jnu/types.h>
 #include <jnu/vmm.h>
 
@@ -30,13 +31,14 @@ struct process {
 	struct addr_space *space;
 	uint64_t user_entry;
 	uint64_t user_stack;
+	bool has_user_frame;
+	struct syscall_frame user_frame;
 };
 
 int process_alloc_pid(void);
 void process_release_pid(int pid);
 
 struct process *process_create_kernel(struct task *task);
-int process_spawn(const char *path, char *const *argv, int *pid_out);
 void process_exit_current(int status);
 int process_wait(int pid, int *status_out);
 void process_destroy(struct process *proc);
@@ -51,6 +53,6 @@ void process_destroy(struct process *proc);
  * call: the child wakes up directly in userspace with the forged
  * register file. Returns 0 / -errno.
  */
-int process_fork(uint64_t user_rip, uint64_t user_rsp, int *pid_out);
+int process_fork(const struct syscall_frame *frame, int *pid_out);
 
 int process_selftest(void);

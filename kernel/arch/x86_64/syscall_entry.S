@@ -37,7 +37,12 @@ syscall_entry:
 	mov [gs:0], rsp			; save user RSP into per-CPU slot
 	mov rsp, [gs:8]			; switch to this task's kernel stack
 
-	push r12			; preserve user r12 (also gives 16-byte align)
+	push r15			; preserve callee-saved user registers
+	push r14
+	push r13
+	push rbp
+	push rbx
+	push r12
 	mov r12, [gs:0]
 	push r12			; saved user RSP, copied into the frame
 	push rcx			; user RIP (for SYSRET)
@@ -53,18 +58,15 @@ syscall_entry:
 	; Enable IRQs only after all user state is safely on the kernel
 	; stack and the per-CPU scratch slot is no longer needed for
 	; recovery.  Without this, every syscall ran with IF=0 — long
-	; handlers (e.g. spawn / ELF load / ATA reads) would suppress the
+	; handlers (e.g. execve / ELF load / ATA reads) would suppress the
 	; LAPIC scheduler tick and starve the rest of the system.
 	sti
 	mov rdi, rsp			; struct syscall_args *
 	call syscall_dispatch
 	cli				; disable IRQs again before touching SYSRET state
 
-	; Restore caller-saved registers from the saved frame.  Skipping
-	; this step would leak whatever the C dispatcher left in
-	; rdi/rsi/rdx/r10/r8/r9 back to userspace and break the syscall
-	; ABI's "non-clobbered registers are preserved" promise.  rax
-	; already holds the dispatcher return value.
+	; Restore user registers from the saved frame. rax already holds
+	; the dispatcher return value.
 	add rsp, 8			; discard saved nr (return value lives in rax)
 	pop rdi
 	pop rsi
@@ -75,9 +77,16 @@ syscall_entry:
 	pop r11				; user RFLAGS
 	pop rcx				; user RIP
 
-	; Stack now: [rsp]=saved user RSP, [rsp+8]=saved r12.
-	; Restore r12 first (we still need rsp pointing at the slot to
-	; load user RSP).
+	; Stack now:
+	;   [rsp+00] saved user RSP
+	;   [rsp+08] r12, [rsp+16] rbx, [rsp+24] rbp,
+	;   [rsp+32] r13, [rsp+40] r14, [rsp+48] r15.
+	; Restore all saved registers before switching back to the user RSP.
+	mov rbx, [rsp + 16]
+	mov rbp, [rsp + 24]
+	mov r13, [rsp + 32]
+	mov r14, [rsp + 40]
+	mov r15, [rsp + 48]
 	mov r12, [rsp + 8]
 	mov rsp, [rsp]			; switch back to user RSP
 

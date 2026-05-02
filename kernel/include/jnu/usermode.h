@@ -9,4 +9,7 @@
 
 #include <jnu/types.h>
 
+struct syscall_frame;
+
 int usermode_enter(uint64_t entry, uint64_t stack);
+int usermode_enter_fork_frame(const struct syscall_frame *frame);

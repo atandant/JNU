@@ -16,8 +16,10 @@
 #define JNU_SYS_getpid 6
 #define JNU_SYS_yield 7
 #define JNU_SYS_fstat 8
+/* 9 is retired; it was JNU_SYS_spawn. */
 #define JNU_SYS_spawn 9
 #define JNU_SYS_waitpid 10
 #define JNU_SYS_fork 11
+#define JNU_SYS_execve 12
 
-#define JNU_SYS_MAX 11
+#define JNU_SYS_MAX 12

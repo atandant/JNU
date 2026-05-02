@@ -17,7 +17,7 @@
 
 int64_t sys_fork(const struct syscall_args *args)
 {
-	const struct syscall_user_state *us;
+	struct syscall_frame frame;
 	int pid;
 	int err;
 
@@ -25,8 +25,10 @@ int64_t sys_fork(const struct syscall_args *args)
 		return -EINVAL;
 	}
 
-	us = syscall_user_state_of(args);
-	err = process_fork(us->rip, us->rsp, &pid);
+	frame.args = *args;
+	frame.user = *syscall_user_state_of(args);
+
+	err = process_fork(&frame, &pid);
 	if (err) {
 		return err;
 	}

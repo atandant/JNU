@@ -255,6 +255,8 @@ static void attack_lseek_extremes(void)
  * unmapped territory).
  */
 static char giant_path[8192];
+static char huge_exec_arg[70000];
+static char *unterminated_argv[300];
 
 static void attack_string_paths(void)
 {
@@ -278,16 +280,44 @@ static void attack_string_paths(void)
 }
 
 /* ------------------------------------------------------------------------- */
-/* spawn / waitpid abuse                                                      */
+/* execve / retired spawn / waitpid abuse                                     */
 /* ------------------------------------------------------------------------- */
 
-static void attack_spawn_wait(void)
+static void attack_exec_wait(void)
 {
-	report("spawn(NULL)", spawn((const char *)0, (char *const *)0), 1);
-	report("spawn(kernel_text)",
-	       spawn((const char *)KERNEL_ADDR_TEXT, (char *const *)0), 1);
-	report("spawn(\"/no/such/path\")",
-	       spawn("/no/such/path", (char *const *)0), 1);
+	char *const argv[] = {"fuzz-exec", 0};
+	char *const bad_env[] = {(char *)KERNEL_ADDR_TEXT, 0};
+	char *const huge_argv[] = {"fuzz-exec", huge_exec_arg, 0};
+
+	for (size_t i = 0; i < sizeof(huge_exec_arg) - 1; i++) {
+		huge_exec_arg[i] = 'B';
+	}
+	huge_exec_arg[sizeof(huge_exec_arg) - 1] = '\0';
+	for (size_t i = 0; i < sizeof(unterminated_argv) /
+					sizeof(unterminated_argv[0]);
+	     i++) {
+		unterminated_argv[i] = "x";
+	}
+
+	report("sys_spawn retired",
+	       jnu_syscall2(JNU_SYS_spawn, (long)"/bin/hello", (long)argv),
+	       1);
+	report("execve(NULL)", execve((const char *)0, argv, 0), 1);
+	report("execve(kernel_text)",
+	       execve((const char *)KERNEL_ADDR_TEXT, argv, 0), 1);
+	report("execve(\"/no/such/path\")", execve("/no/such/path", argv, 0),
+	       1);
+	report("execve(empty argv)", execve("/bin/hello", (char *const *)0, 0),
+	       1);
+	report("execve(bad argv pointer)",
+	       execve("/bin/hello", (char *const *)KERNEL_ADDR_TEXT, 0), 1);
+	report("execve(bad envp pointer)",
+	       execve("/bin/hello", argv, (char *const *)KERNEL_ADDR_TEXT), 1);
+	report("execve(bad env string)", execve("/bin/hello", argv, bad_env),
+	       1);
+	report("execve(huge argv)", execve("/bin/hello", huge_argv, 0), 1);
+	report("execve(argv missing terminator)",
+	       execve("/bin/hello", unterminated_argv, 0), 1);
 
 	/* waitpid for a pid that does not exist */
 	int st = 0;
@@ -325,17 +355,21 @@ static void attack_fstat(void)
  * If NX is enforced this raises a #PF and the kernel must kill us
  * cleanly without taking the system down.
  *
- * We do NOT actually attempt this in the default fuzz pass because
- * killing the only userspace task wedges the boot. Spawn a child so
- * the parent survives to print results.
+ * The nxprobe binary is optional; if absent, the child exits 127 and
+ * the parent still proves fork preserved enough state to wait cleanly.
  */
 static void attack_nx_stack_in_child(void)
 {
-	int child = spawn("/bin/nxprobe", (char *const *)0);
+	char *const argv[] = {"nxprobe", 0};
+	int child = fork();
 	int st = 0;
 
+	if (child == 0) {
+		(void)execve("/bin/nxprobe", argv, 0);
+		exit(127);
+	}
 	if (child < 0) {
-		puts_("fuzz: nxprobe not present, skipping NX check\n");
+		puts_("fuzz: nxprobe fork failed\n");
 		return;
 	}
 	(void)waitpid(child, &st);
@@ -362,7 +396,7 @@ int main(int argc, char **argv)
 	attack_fd_abuse();
 	attack_lseek_extremes();
 	attack_string_paths();
-	attack_spawn_wait();
+	attack_exec_wait();
 	attack_fstat();
 	attack_nx_stack_in_child();
 

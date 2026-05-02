@@ -65,5 +65,5 @@ int load_initramfs_exec(struct addr_space *space, const char *path,
 		return err;
 	}
 
-	return elf64_setup_initial_stack(space, stack);
+	return elf64_setup_initial_stack(space, NULL, stack);
 }

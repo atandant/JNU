@@ -44,13 +44,14 @@ ldflags=(
 
 lib_c=(
 	user/libjnu/close.c
+	user/libjnu/execve.c
 	user/libjnu/exit.c
 	user/libjnu/fstat.c
+	user/libjnu/fork.c
 	user/libjnu/getpid.c
 	user/libjnu/lseek.c
 	user/libjnu/open.c
 	user/libjnu/read.c
-	user/libjnu/spawn.c
 	user/libjnu/waitpid.c
 	user/libjnu/write.c
 	user/libjnu/yield.c

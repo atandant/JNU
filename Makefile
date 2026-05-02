@@ -126,11 +126,11 @@ C_SRCS := \
     kernel/syscall/sys_lseek.c \
     kernel/syscall/sys_open.c \
     kernel/syscall/sys_read.c \
-    kernel/syscall/sys_spawn.c \
     kernel/syscall/sys_waitpid.c \
     kernel/syscall/sys_write.c \
     kernel/syscall/sys_yield.c \
     kernel/syscall/sys_fork.c \
+    kernel/syscall/sys_execve.c \
     kernel/user/copy.c \
     kernel/user/fd.c \
     kernel/user/process.c \
@@ -139,6 +139,7 @@ C_SRCS := \
     kernel/fs/minix.c \
     kernel/kernel/cmdline.c \
     kernel/kernel/fork.c \
+    kernel/kernel/execve.c \
     kernel/kernel/initfs_exec.c \
     kernel/kernel/vfs_exec.c \
     kernel/kernel/panic.c \
@@ -221,9 +222,10 @@ check-limine:
 
 $(USER_PROGRAM_BINS): scripts/build-user.sh $(USER_PROGRAM_SRCS) \
     user/libjnu/crt0.S user/libjnu/syscall.S \
-    user/libjnu/close.c user/libjnu/exit.c user/libjnu/fstat.c \
-    user/libjnu/getpid.c user/libjnu/lseek.c user/libjnu/open.c \
-    user/libjnu/read.c user/libjnu/spawn.c user/libjnu/waitpid.c \
+    user/libjnu/close.c user/libjnu/execve.c user/libjnu/exit.c \
+    user/libjnu/fstat.c user/libjnu/fork.c user/libjnu/getpid.c \
+    user/libjnu/lseek.c user/libjnu/open.c user/libjnu/read.c \
+    user/libjnu/waitpid.c \
     user/libjnu/write.c user/libjnu/yield.c user/libjnu/include/jnu_syscall.h
 	@bash scripts/build-user.sh "$(BUILD)"
 

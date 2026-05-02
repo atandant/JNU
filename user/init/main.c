@@ -66,11 +66,39 @@ static void read_minix_file(void)
 	(void)close(fd);
 }
 
-int main(int argc, char **argv)
+static char *const hello_argv[] = {"hello", 0};
+static char *const fuzz_argv[] = {"fuzz", 0};
+static char *const minix_argv[] = {"hello-minix", 0};
+
+static void fork_exec_wait(const char *path, char *const argv[])
 {
 	int status = 0;
-	int child;
+	int child = fork();
+	if (child == 0) {
+		int err = execve(path, argv, 0);
 
+		puts("JNU init: execve failed for ");
+		puts(path);
+		puts(" rc=");
+		put_uint((unsigned)(-err));
+		puts("\n");
+		exit(127);
+	}
+
+	if (child > 0) {
+		(void)waitpid(child, &status);
+		puts("JNU init: child ");
+		put_uint((unsigned)child);
+		puts(" exited ");
+		put_uint((unsigned)status);
+		puts("\n");
+	} else {
+		puts("JNU init: fork failed\n");
+	}
+}
+
+int main(int argc, char **argv)
+{
 	(void)argc;
 	(void)argv;
 
@@ -81,25 +109,12 @@ int main(int argc, char **argv)
 
 	read_minix_file();
 
-	child = spawn("/bin/hello", 0);
-	if (child >= 0) {
-		(void)waitpid(child, &status);
-	} else {
-		puts("JNU init: spawn /bin/hello failed\n");
-	}
+	fork_exec_wait("/bin/hello", hello_argv);
+	fork_exec_wait("/bin/fuzz", fuzz_argv);
+	fork_exec_wait("/hello", minix_argv);
 
-	child = spawn("/bin/fuzz", 0);
-	if (child >= 0) {
-		(void)waitpid(child, &status);
-	} else {
-		puts("JNU init: spawn /bin/fuzz failed\n");
-	}
-
-	child = spawn("/hello", 0);
-	if (child >= 0) {
-		(void)waitpid(child, &status);
-	} else {
-		puts("JNU init: spawn /hello failed\n");
+	if (execve("/no/such/path", hello_argv, 0) < 0) {
+		puts("JNU init: missing execve path rejected\n");
 	}
 
 	return 0;

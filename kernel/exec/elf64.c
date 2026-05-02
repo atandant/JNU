@@ -33,7 +33,7 @@
 #define PF_W 2
 
 #define USER_STACK_TOP 0x0000000080000000ull
-#define USER_STACK_SIZE (64 * 1024)
+#define USER_STACK_SIZE (128 * 1024)
 
 struct elf64_ehdr {
 	uint8_t e_ident[EI_NIDENT];
@@ -189,7 +189,8 @@ static uint64_t page_up(uint64_t v) { return (v + PAGE_MASK) & ~PAGE_MASK; }
  * given address space, bypassing copy_to_user.  We look up the PTE
  * to find the physical page, then memcpy through the HHDM.  This is
  * needed because copy_to_user validates against the *current*
- * process's address space, which is the parent during process_spawn.
+ * process's address space, which may not be the target space while
+ * building a fresh exec image.
  */
 static int write_to_space(struct addr_space *space, uint64_t va,
 			  const void *src, size_t len)
@@ -427,11 +428,19 @@ fail_unmap:
 	return err;
 }
 
-int elf64_setup_initial_stack(struct addr_space *space, uint64_t *stack_out)
+int elf64_setup_initial_stack(struct addr_space *space,
+			      const struct exec_strings *strings,
+			      uint64_t *stack_out)
 {
 	uint64_t guard = USER_STACK_TOP - USER_STACK_SIZE - PAGE_SIZE;
 	uint64_t base = guard + PAGE_SIZE;
-	uint64_t stack = USER_STACK_TOP - 16;
+	uint64_t stack = USER_STACK_TOP;
+	size_t argc = strings ? strings->argc : 0;
+	size_t envc = strings ? strings->envc : 0;
+	uint64_t *argv_user = NULL;
+	uint64_t *envp_user = NULL;
+	size_t words = 1 + argc + 1 + envc + 1;
+	size_t frame_size = words * sizeof(uint64_t);
 	int err;
 
 	if (!space || !stack_out) {
@@ -444,15 +453,92 @@ int elf64_setup_initial_stack(struct addr_space *space, uint64_t *stack_out)
 		return err;
 	}
 
-	uint64_t zero[2] = {0, 0};
-	err = write_to_space(space, stack, zero, sizeof(zero));
-	if (err) {
-		vmm_unmap(space, base, (USER_STACK_TOP - base) / PAGE_SIZE);
-		return err;
+	if (argc > 0) {
+		argv_user = kmalloc(argc * sizeof(*argv_user));
+		if (!argv_user) {
+			err = -ENOMEM;
+			goto fail_unmap;
+		}
+	}
+	if (envc > 0) {
+		envp_user = kmalloc(envc * sizeof(*envp_user));
+		if (!envp_user) {
+			err = -ENOMEM;
+			goto fail_unmap;
+		}
 	}
 
+	for (size_t i = envc; i > 0; i--) {
+		const char *s = strings->envp[i - 1];
+		size_t len = strlen(s) + 1;
+
+		stack -= len;
+		if (stack < base) {
+			err = -E2BIG;
+			goto fail_unmap;
+		}
+		err = write_to_space(space, stack, s, len);
+		if (err) {
+			goto fail_unmap;
+		}
+		envp_user[i - 1] = stack;
+	}
+
+	for (size_t i = argc; i > 0; i--) {
+		const char *s = strings->argv[i - 1];
+		size_t len = strlen(s) + 1;
+
+		stack -= len;
+		if (stack < base) {
+			err = -E2BIG;
+			goto fail_unmap;
+		}
+		err = write_to_space(space, stack, s, len);
+		if (err) {
+			goto fail_unmap;
+		}
+		argv_user[i - 1] = stack;
+	}
+
+	stack &= ~0xFull;
+	stack = (stack - frame_size) & ~0xFull;
+	if (stack < base) {
+		err = -E2BIG;
+		goto fail_unmap;
+	}
+
+	uint64_t frame_index = 0;
+	uint64_t *frame = kmalloc(frame_size);
+	if (!frame) {
+		err = -ENOMEM;
+		goto fail_unmap;
+	}
+	memset(frame, 0, frame_size);
+	frame[frame_index++] = argc;
+	for (size_t i = 0; i < argc; i++) {
+		frame[frame_index++] = argv_user[i];
+	}
+	frame_index++;
+	for (size_t i = 0; i < envc; i++) {
+		frame[frame_index++] = envp_user[i];
+	}
+
+	err = write_to_space(space, stack, frame, frame_size);
+	kfree(frame);
+	if (err) {
+		goto fail_unmap;
+	}
+
+	kfree(envp_user);
+	kfree(argv_user);
 	*stack_out = stack;
 	return 0;
+
+fail_unmap:
+	kfree(envp_user);
+	kfree(argv_user);
+	vmm_unmap(space, base, (USER_STACK_TOP - base) / PAGE_SIZE);
+	return err;
 }
 
 static ssize_t test_read(void *ctx, uint64_t off, void *buf, size_t len)

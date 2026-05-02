@@ -13,5 +13,7 @@ int elf64_validate_image(const struct exec_image *image,
 			 struct exec_load_info *info);
 int elf64_load_image(struct addr_space *space, const struct exec_image *image,
 		     struct exec_load_info *info);
-int elf64_setup_initial_stack(struct addr_space *space, uint64_t *stack_out);
+int elf64_setup_initial_stack(struct addr_space *space,
+			      const struct exec_strings *strings,
+			      uint64_t *stack_out);
 int elf64_selftest(void);

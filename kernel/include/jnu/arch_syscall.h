@@ -11,6 +11,8 @@
 
 void arch_syscall_init(void);
 void arch_syscall_set_kernel_stack(uint64_t stack_top);
+void arch_syscall_set_current_nr(int64_t nr);
+int64_t arch_syscall_current_nr(void);
 
 /*
  * Reinstall MSR_KERNEL_GS_BASE (and clear MSR_GS_BASE) immediately

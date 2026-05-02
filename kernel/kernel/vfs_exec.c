@@ -5,8 +5,8 @@
  * exec_image, and runs the ELF64 header/segment validator without mapping
  * anything. Used during boot to confirm a MINIX-backed ELF is loadable.
  *
- * A full vfs_exec_load() is not needed yet: Phase 4 VFS execution goes
- * through the process/spawn path. This file validates only.
+ * The execve path has its own VFS-backed loader. This file keeps the
+ * boot-time validation probe small.
  *
  * Copyright (c) 2026 The JNU Authors.
  * SPDX-License-Identifier: GPL-2.0-only

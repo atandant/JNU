@@ -15,6 +15,7 @@
  */
 
 #include <jnu/compiler.h>
+#include <jnu/arch_syscall.h>
 #include <jnu/idt.h>
 #include <jnu/klog.h>
 #include <jnu/paging.h>
@@ -158,12 +159,14 @@ static void emit_regs(const struct cpu_state *st, uint64_t cr2)
 	struct task *task = sched_current();
 
 	if (task) {
-		emit_fmt("CPU 0  ring %u  pid=%d tid=%d task=%s\n\n",
+		emit_fmt("CPU 0  ring %u  pid=%d tid=%d task=%s syscall=%ld\n\n",
 			 (unsigned)(st->cs & 3), task->pid, task->tid,
-			 task->name ? task->name : "(unnamed)");
+			 task->name ? task->name : "(unnamed)",
+			 (long)arch_syscall_current_nr());
 	} else {
-		emit_fmt("CPU 0  ring %u  task=<none>\n\n",
-			 (unsigned)(st->cs & 3));
+		emit_fmt("CPU 0  ring %u  task=<none> syscall=%ld\n\n",
+			 (unsigned)(st->cs & 3),
+			 (long)arch_syscall_current_nr());
 	}
 
 	emit_fmt("RIP=0x%016lx   ", (unsigned long)st->rip);

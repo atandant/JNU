@@ -34,12 +34,24 @@ struct syscall_args {
  *
  * Used by `sys_fork` to forge the child's iret state from the parent's
  * syscall return frame. Out-of-line sysret restoration is unaffected.
+ * In memory after `struct syscall_args`: rflags, rip, rsp, r12, rbx,
+ * rbp, r13, r14, r15.
  */
 struct syscall_user_state {
 	uint64_t rflags;
 	uint64_t rip;
 	uint64_t rsp;
 	uint64_t r12;
+	uint64_t rbx;
+	uint64_t rbp;
+	uint64_t r13;
+	uint64_t r14;
+	uint64_t r15;
+};
+
+struct syscall_frame {
+	struct syscall_args args;
+	struct syscall_user_state user;
 };
 
 static inline const struct syscall_user_state *
@@ -53,6 +65,7 @@ int syscall_copy_path(char *dst, const char *upath);
 int syscall_selftest(void);
 
 int64_t sys_close(int fd);
+int64_t sys_execve(const struct syscall_args *args);
 int64_t sys_exit(int status);
 int64_t sys_fork(const struct syscall_args *args);
 int64_t sys_fstat(int fd, void *ust);
@@ -60,7 +73,6 @@ int64_t sys_getpid(void);
 int64_t sys_lseek(int fd, int64_t off, int whence);
 int64_t sys_open(const char *upath, int flags);
 int64_t sys_read(int fd, void *ubuf, size_t len);
-int64_t sys_spawn(const char *upath, char *const *uargv);
 int64_t sys_waitpid(int pid, int *ustatus);
 int64_t sys_write(int fd, const void *ubuf, size_t len);
 int64_t sys_yield(void);
