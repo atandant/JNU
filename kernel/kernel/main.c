@@ -33,6 +33,7 @@
 #include <jnu/compiler.h>
 #include <jnu/cpu.h>
 #include <jnu/elf64.h>
+#include <jnu/errno.h>
 #include <jnu/exec.h>
 #include <jnu/fbcon.h>
 #include <jnu/execprot.h>
@@ -238,14 +239,68 @@ static void bring_up_initramfs(void)
 	}
 }
 
-/* exec code is split: initfs_load.c, initfs_valid.c, vfs_exec.c */
+/* exec code is split: initfs_exec.c and vfs_exec.c */
 
-static void load_userspace_probe(void)
+static int load_boot_exec(struct addr_space *space, const char *path,
+			  struct exec_load_info *info, uint64_t *stack,
+			  const char **source)
 {
-	const char *init_path = cmdline_get("init");
-	struct exec_load_info init_info;
+	int err;
+
+	err = load_initramfs_exec(space, path, info, stack);
+	if (!err) {
+		*source = "initramfs";
+		return 0;
+	}
+	if (err != -ENOENT) {
+		return err;
+	}
+
+	err = load_vfs_exec(space, path, info, stack);
+	if (!err) {
+		*source = "vfs";
+	}
+	return err;
+}
+
+static void run_exec_probes(void)
+{
 	struct exec_load_info hello_info;
 	struct exec_load_info minix_info;
+	int err;
+
+	err = validate_initramfs_exec("/bin/hello", &hello_info);
+	if (err) {
+		pr_warn("execprobe: /bin/hello not executable from initramfs "
+			"(err=%d)\n",
+			err);
+	} else {
+		pr_info("execprobe: /bin/hello initramfs entry=0x%lx "
+			"range=0x%lx..0x%lx\n",
+			(unsigned long)hello_info.entry,
+			(unsigned long)hello_info.low,
+			(unsigned long)hello_info.high);
+	}
+
+	err = validate_vfs_exec("/hello", &minix_info);
+	if (err) {
+		pr_warn("execprobe: /hello not executable from VFS "
+			"(err=%d)\n",
+			err);
+	} else {
+		pr_info("execprobe: /hello VFS entry=0x%lx "
+			"range=0x%lx..0x%lx\n",
+			(unsigned long)minix_info.entry,
+			(unsigned long)minix_info.low,
+			(unsigned long)minix_info.high);
+	}
+}
+
+static void start_init(void)
+{
+	const char *init_path = cmdline_get("init");
+	const char *source = NULL;
+	struct exec_load_info init_info;
 	struct task *task;
 	struct addr_space *space;
 	uint64_t stack;
@@ -272,41 +327,20 @@ static void load_userspace_probe(void)
 	task->process->space = space;
 
 	vmm_switch_to(space);
-	err = load_initramfs_exec(space, init_path, &init_info, &stack);
+	err = load_boot_exec(space, init_path, &init_info, &stack, &source);
 	if (err) {
-		panic("userspace: failed to load %s from initramfs (err=%d)",
+		panic("userspace: failed to load init '%s' (err=%d)",
 		      init_path, err);
 	}
 	task->process->user_entry = init_info.entry;
 	task->process->user_stack = stack;
+	task->process->has_user_frame = false;
 
-	pr_info("userspace: %s ELF64 entry=0x%lx range=0x%lx..0x%lx\n",
-		init_path, (unsigned long)init_info.entry,
-		(unsigned long)init_info.low, (unsigned long)init_info.high);
-
-	err = validate_initramfs_exec("/bin/hello", &hello_info);
-	if (err) {
-		panic("userspace: failed to load /bin/hello from initramfs "
-		      "(err=%d)",
-		      err);
-	}
-
-	pr_info("userspace: /bin/hello ELF64 entry=0x%lx range=0x%lx..0x%lx\n",
-		(unsigned long)hello_info.entry, (unsigned long)hello_info.low,
-		(unsigned long)hello_info.high);
-
-	err = validate_vfs_exec("/hello", &minix_info);
-	if (err) {
-		pr_warn("userspace: /hello not executable from MINIX yet "
-			"(err=%d)\n",
-			err);
-	} else {
-		pr_info("userspace: /hello MINIX ELF64 entry=0x%lx "
-			"range=0x%lx..0x%lx\n",
-			(unsigned long)minix_info.entry,
-			(unsigned long)minix_info.low,
-			(unsigned long)minix_info.high);
-	}
+	pr_info("userspace: init '%s' from %s entry=0x%lx "
+		"range=0x%lx..0x%lx\n",
+		init_path, source ? source : "unknown",
+		(unsigned long)init_info.entry, (unsigned long)init_info.low,
+		(unsigned long)init_info.high);
 
 	pr_info("userspace: entering ring 3 at 0x%lx stack=0x%lx\n",
 		(unsigned long)init_info.entry, (unsigned long)stack);
@@ -499,7 +533,11 @@ void kernel_main(void)
 		panic("v0.0.1 panic check");
 	}
 
-	load_userspace_probe();
+	if (cmdline_bool("execprobe")) {
+		run_exec_probes();
+	}
+
+	start_init();
 
 	pr_info("kernel: boot complete; idle\n");
 

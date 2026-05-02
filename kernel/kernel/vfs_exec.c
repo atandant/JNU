@@ -1,12 +1,8 @@
 /*
  * kernel/kernel/vfs_exec.c — VFS ELF exec validation adapter.
  *
- * Provides validate_vfs_exec(), which opens a VFS path, wraps it in an
- * exec_image, and runs the ELF64 header/segment validator without mapping
- * anything. Used during boot to confirm a MINIX-backed ELF is loadable.
- *
- * The execve path has its own VFS-backed loader. This file keeps the
- * boot-time validation probe small.
+ * Provides validate_vfs_exec() and load_vfs_exec(), which open a VFS path
+ * and wrap it in the generic exec_image abstraction used by the ELF loader.
  *
  * Copyright (c) 2026 The JNU Authors.
  * SPDX-License-Identifier: GPL-2.0-only
@@ -53,6 +49,31 @@ int validate_vfs_exec(const char *path, struct exec_load_info *info)
 	image.ctx = ino;
 
 	err = elf64_validate_image(&image, info);
+	vfs_close(ino);
+	return err;
+}
+
+int load_vfs_exec(struct addr_space *space, const char *path,
+		  struct exec_load_info *info, uint64_t *stack)
+{
+	struct vfs_inode *ino;
+	struct exec_image image;
+	int err;
+
+	err = vfs_open(path, &ino);
+	if (err) {
+		return err;
+	}
+
+	image.read_at = vfs_exec_read;
+	image.size = ino->size;
+	image.ctx = ino;
+
+	err = elf64_load_image(space, &image, info);
+	if (!err) {
+		err = elf64_setup_initial_stack(space, NULL, stack);
+	}
+
 	vfs_close(ino);
 	return err;
 }

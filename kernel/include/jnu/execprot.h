@@ -16,4 +16,6 @@ int load_initramfs_exec(struct addr_space *space, const char *path,
 			struct exec_load_info *info, uint64_t *stack);
 int validate_initramfs_exec(const char *path, struct exec_load_info *info);
 
+int load_vfs_exec(struct addr_space *space, const char *path,
+		  struct exec_load_info *info, uint64_t *stack);
 int validate_vfs_exec(const char *path, struct exec_load_info *info);
