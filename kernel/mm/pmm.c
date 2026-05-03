@@ -312,11 +312,7 @@ void pmm_get_user_page(paddr_t pa)
 		panic("pmm_get_user_page: refcount is 0 (pa 0x%lx)",
 		      (unsigned long)pa);
 	}
-	/* Note on line 316, MiniMax could not find a suitable uint16 max
-	   so the AI model instead just used the literal number, might be a
-	   hack?
-	   FIXME(atandant) maybe.*/
-	if (pfn_table[pfn].refcount == 65535) {
+	if (pfn_table[pfn].refcount == 0xFFFF) {
 		panic("pmm_get_user_page: refcount overflow (pa 0x%lx)",
 		      (unsigned long)pa);
 	}

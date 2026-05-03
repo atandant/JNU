@@ -394,9 +394,7 @@ static void dump_blocks(void)
 /* Entry                                                                      */
 /* ------------------------------------------------------------------------- */
 
-void kernel_main(void); /* author here: not sure why there is a duplicate
-			 * kernel_main, investigating this tommorow. FIXME
-			 * maybe?(atandant) */
+void kernel_main(void);
 void kernel_main(void)
 {
 	if (!LIMINE_BASE_REVISION_SUPPORTED) {

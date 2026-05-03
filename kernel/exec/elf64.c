@@ -259,9 +259,7 @@ static int map_zeroed_user_pages(struct addr_space *space, uint64_t start,
 	v->flags = flags;
 	err = vma_insert(&space->vmas, v);
 	if (err) {
-		/* Overlapping VMA — caller has a logic error.
-		    author here: we could replace this in the future
-		    with a goto, need to debate on this. FIXME(atandant): */
+		/* Overlapping VMA — caller has a logic error. */
 		kfree(v);
 		return err;
 	}

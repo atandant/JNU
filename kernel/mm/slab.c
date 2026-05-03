@@ -276,7 +276,13 @@ struct large_hdr {
 static void *large_alloc(size_t size)
 {
 	int order = 0;
-	while ((PAGE_SIZE << order) < size + sizeof(struct large_hdr)) {
+	size_t req;
+
+	if (__builtin_add_overflow(size, sizeof(struct large_hdr), &req)) {
+		return NULL;
+	}
+
+	while ((size_t)(PAGE_SIZE << order) < req) {
 		order++;
 		if (order >= PMM_MAX_ORDER) {
 			return NULL;

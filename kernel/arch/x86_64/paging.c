@@ -269,8 +269,14 @@ int paging_unmap(struct addr_space *space, vaddr_t virt, size_t pages)
 			continue;
 		}
 
-		pt[pt_idx(v)] = 0;
-		paging_invlpg(v);
+		uint64_t e = pt[pt_idx(v)];
+		if (e & PTE_PRESENT) {
+			if (e & PTE_USER) {
+				pmm_put_user_page(e & PTE_ADDR_MASK);
+			}
+			pt[pt_idx(v)] = 0;
+			paging_invlpg(v);
+		}
 	}
 	return 0;
 }
