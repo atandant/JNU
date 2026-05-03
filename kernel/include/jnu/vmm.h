@@ -38,19 +38,26 @@ struct addr_space *vmm_create_space(void);
 void vmm_destroy_space(struct addr_space *space);
 
 /*
- * Deep-copy `src` into a freshly allocated address space and return it
- * via `*out`. Every present user-side PTE in `src` is copied: a new
- * physical page is allocated, the source page's contents are memcpy'd
- * into it, and the destination PTE is installed with the same
- * USER/WRITE/NX bits. The source is not modified. v0.0.2.1 ships full
- * deep copy; CoW is the v0.0.2.2 release.
- *
- * On any allocation failure, every partial mapping in the destination
- * is unwound and the destination space is destroyed before returning.
- * Returns 0 / -errno.
+ * CoW clone: share every user-side PTE between `src` and a freshly
+ * allocated destination, with PTE_WRITE cleared and refcounts bumped.
+ * The destination VMA preserves the logical writability (VMA_WRITE).
+ * Write faults are resolved by vmm_handle_cow_fault().  Returns 0 /
+ * -errno.
  */
 int vmm_clone_space(struct addr_space *src, struct addr_space **out);
 int clone_space_selftest(void);
+
+/*
+ * Attempt to resolve a CoW write fault at `va` in `space`.  Called from
+ * the #PF handler when all of the following hold:
+ *
+ *   1. The fault is from user mode.
+ *   2. The error code has PF_EC_W (write) and PF_EC_P (present).
+ *   3. vma_find() returns a VMA with VMA_WRITE.
+ *
+ * Returns 0 if resolved, negative errno otherwise.
+ */
+int vmm_handle_cow_fault(struct addr_space *space, vaddr_t va);
 
 /*
  * Map `pages` × 4 KiB starting at `virt` to `phys` in `space`. Updates

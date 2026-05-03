@@ -1,5 +1,5 @@
 /*
- * include/jnu/pmm.h — Physical memory manager (buddy allocator).
+ * include/jnu/pmm.h — Physical memory manager (buddy allocator + refcounts).
  *
  * 11 buddy orders (4 KiB → 4 MiB), zoned: ZONE_DMA covers the first
  * 16 MiB, ZONE_NORMAL covers the rest. Backed by the Limine memory
@@ -52,6 +52,17 @@ paddr_t pmm_alloc_user_page(void);
 paddr_t pmm_alloc_dma(int order);
 
 void pmm_free_pages(paddr_t pa, int order);
+
+/*
+ * Refcount helpers for user pages allocated via pmm_alloc_user_page().
+ * Kernel page-table pages, slab pages, and large kmalloc allocations
+ * are NOT refcounted — their lifetime is governed by their owner.
+ */
+void pmm_get_user_page(paddr_t pa);
+void pmm_put_user_page(paddr_t pa);
+
+/* Exposed for selftest use only.  Not part of the kernel API. */
+uint16_t pmm_user_refcount(paddr_t pa);
 
 void pmm_get_stats(struct pmm_stats *out);
 

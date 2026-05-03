@@ -30,6 +30,8 @@
 #include <jnu/process.h>
 #include <jnu/sched.h>
 #include <jnu/types.h>
+#include <jnu/vma.h>
+#include <jnu/vmm.h>
 
 /* Error-code bit positions for #PF (Intel SDM Vol. 3A §4.7). */
 #define PF_EC_P (1u << 0)    /* page present */
@@ -157,6 +159,31 @@ void exceptions_handle(struct cpu_state *st)
 		if (st->vector == 14) {
 			uint64_t cr2 = paging_read_cr2();
 			uint32_t ec = (uint32_t)st->error_code;
+
+			/*
+			 * CoW resolution: user write to a present page
+			 * in a logically-writable VMA.  Try to resolve
+			 * before falling through to the kill path.
+			 */
+			if ((ec & PF_EC_P) && (ec & PF_EC_W)) {
+				struct task *t = sched_current();
+				struct addr_space *space =
+				    t->process ? t->process->space : NULL;
+
+				if (space) {
+					struct vma *v = vma_find(
+					    &space->vmas, cr2);
+
+					if (v && (v->flags & VMA_WRITE)) {
+						int cow_err =
+						    vmm_handle_cow_fault(
+							space, cr2 & ~PAGE_MASK);
+						if (cow_err == 0) {
+							return;
+						}
+					}
+				}
+			}
 
 			pr_err("pagefault: user %s at 0x%016lx "
 			       "(rip=0x%016lx ec=0x%x)\n",

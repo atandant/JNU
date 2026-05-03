@@ -405,8 +405,8 @@ void paging_destroy_user_half(uint64_t *pml4)
 				for (unsigned i1 = 0; i1 < 512; i1++) {
 					uint64_t e1 = pt[i1];
 					if (e1 & PTE_PRESENT) {
-						pmm_free_pages(
-						    e1 & PTE_ADDR_MASK, 0);
+						pmm_put_user_page(
+						    e1 & PTE_ADDR_MASK);
 					}
 				}
 				pmm_free_pages(e2 & PTE_ADDR_MASK, 0);

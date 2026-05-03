@@ -1,17 +1,21 @@
 /*
- * kernel/mm/clone_space.c — Deep-copy address space cloning.
+ * kernel/mm/clone_space.c — CoW address space cloning.
  *
- * Phase 1 of v0.0.2.1's fork plumbing. Walks the source VMA tree,
- * allocates a matching VMA descriptor in the destination, then for
- * every present 4 KiB user PTE in the source allocates a fresh page,
- * memcpys the contents through the HHDM, and installs the new PTE
- * with the same USER/WRITE/NX protection bits.
+ * v0.0.2.2's CoW clone.  Walks the source VMA tree, allocates a
+ * matching VMA descriptor in the destination, then for every present
+ * 4 KiB user PTE in the source:
  *
- * v0.0.2.1 deliberately does NOT introduce PMM page refcounts: every
- * page is duplicated. CoW is the v0.0.2.2 release per jnuspec021.md
- * §2.1. The selftest in this file exercises isolation in both
- * directions (mutating the parent must not change the child, and
- * vice versa).
+ *   1. Strips PTE_WRITE from the source PTE.
+ *   2. Installs the same physical address in the destination PTE,
+ *      with PTE_WRITE cleared and the same PTE_USER/PTE_NX bits.
+ *   3. Calls pmm_get_user_page(pa) once per added reference.
+ *   4. Invalidates the TLB for the source VA so the source side
+ *      starts taking write faults too.
+ *
+ * The destination VMA preserves the logical writability (VMA_WRITE).
+ * The PTE is the source of truth for "is this page currently CoW-
+ * shared"; the VMA is the source of truth for "may this address
+ * ever be written".
  *
  * Copyright (c) 2026 The JNU Authors.
  * SPDX-License-Identifier: GPL-2.0-only
@@ -29,10 +33,9 @@
 #include <jnu/vmm.h>
 
 /*
- * Bits we propagate from the source PTE into the destination PTE. We
- * deliberately drop ACCESSED, DIRTY, GLOBAL, and the PWT/PCD caching
- * bits: the child gets a clean slate. PTE_PRESENT is OR'd back in by
- * paging_map().
+ * Bits we propagate from the source PTE into the destination PTE.
+ * PTE_WRITE is deliberately included in the mask so we can clear
+ * it below; we never set it in the destination.
  */
 #define CLONE_PTE_FLAGS_MASK (PTE_WRITE | PTE_USER | PTE_NX)
 
@@ -64,9 +67,8 @@ static int clone_one_vma(struct addr_space *src, struct addr_space *dst,
 
 	for (vaddr_t va = src_vma->start; va < src_vma->end; va += PAGE_SIZE) {
 		uint64_t src_pte;
-		paddr_t src_pa;
-		paddr_t dst_pa;
-		uint64_t pte_flags;
+		paddr_t pa;
+		uint64_t dst_flags;
 
 		err = paging_get_flags(src, va, &src_pte);
 		if (err == -ENOENT) {
@@ -78,7 +80,7 @@ static int clone_one_vma(struct addr_space *src, struct addr_space *dst,
 		}
 		if (src_pte & PTE_HUGE) {
 			/*
-			 * v0.0.2.1 user mappings are 4 KiB only. A huge
+			 * v0.0.2.2 user mappings are 4 KiB only. A huge
 			 * user PTE means the loader or VMM produced
 			 * something this clone path is not prepared for.
 			 */
@@ -87,20 +89,36 @@ static int clone_one_vma(struct addr_space *src, struct addr_space *dst,
 			return -EINVAL;
 		}
 
-		dst_pa = pmm_alloc_user_page();
-		if (!dst_pa) {
-			return -ENOMEM;
+		pa = src_pte & PTE_ADDR_MASK;
+
+		/*
+		 * Strip PTE_WRITE from the source PTE so the source
+		 * side starts taking write faults on this page too.
+		 * Pages that were already RO need no PTE change beyond
+		 * the refcount bump below.
+		 */
+		if (src_pte & PTE_WRITE) {
+			err = paging_protect(src, va, 1,
+					     (src_pte & CLONE_PTE_FLAGS_MASK) &
+						 ~PTE_WRITE);
+			if (err) {
+				return err;
+			}
+			paging_invlpg(va);
 		}
 
-		src_pa = src_pte & PTE_ADDR_MASK;
-		memcpy(phys_to_virt(dst_pa), phys_to_virt(src_pa), PAGE_SIZE);
-
-		pte_flags = src_pte & CLONE_PTE_FLAGS_MASK;
-		err = paging_map(dst, va, dst_pa, 1, pte_flags);
+		/*
+		 * Install the same PA in the destination with PTE_WRITE
+		 * cleared and the same PTE_USER/PTE_NX bits.
+		 */
+		dst_flags = (src_pte & CLONE_PTE_FLAGS_MASK) & ~PTE_WRITE;
+		err = paging_map(dst, va, pa, 1, dst_flags);
 		if (err) {
-			pmm_free_pages(dst_pa, 0);
 			return err;
 		}
+
+		/* Bump the refcount for the shared page. */
+		pmm_get_user_page(pa);
 	}
 
 	return 0;
@@ -163,7 +181,7 @@ static int populate_test_space(struct addr_space *space, uint64_t value)
 	err = vmm_map(space, CLONE_TEST_VA, pa, 1,
 		      VMA_READ | VMA_WRITE | VMA_USER);
 	if (err) {
-		pmm_free_pages(pa, 0);
+		pmm_put_user_page(pa);
 		return err;
 	}
 
@@ -172,7 +190,7 @@ static int populate_test_space(struct addr_space *space, uint64_t value)
 
 		if (!v) {
 			vmm_unmap(space, CLONE_TEST_VA, 1);
-			pmm_free_pages(pa, 0);
+			pmm_put_user_page(pa);
 			return -ENOMEM;
 		}
 		v->start = CLONE_TEST_VA;
@@ -182,7 +200,7 @@ static int populate_test_space(struct addr_space *space, uint64_t value)
 		if (err) {
 			kfree(v);
 			vmm_unmap(space, CLONE_TEST_VA, 1);
-			pmm_free_pages(pa, 0);
+			pmm_put_user_page(pa);
 			return err;
 		}
 	}
@@ -198,17 +216,6 @@ static uint64_t read_test_value(struct addr_space *space)
 		return 0;
 	}
 	return *(volatile uint64_t *)phys_to_virt(pte & PTE_ADDR_MASK);
-}
-
-static int write_test_value(struct addr_space *space, uint64_t value)
-{
-	uint64_t pte;
-
-	if (paging_get_flags(space, CLONE_TEST_VA, &pte) != 0) {
-		return -ENOENT;
-	}
-	*(volatile uint64_t *)phys_to_virt(pte & PTE_ADDR_MASK) = value;
-	return 0;
 }
 
 int clone_space_selftest(void)
@@ -236,29 +243,41 @@ int clone_space_selftest(void)
 		goto fail_src;
 	}
 
+	/* After CoW clone, both sides share the same physical frame. */
 	if (read_test_value(dst) != CLONE_TEST_SENTINEL) {
 		err = -EIO;
 		goto fail_dst;
 	}
 
-	/* Mutating the source must not affect the destination. */
-	err = write_test_value(src, 0xDEADBEEFCAFEBABEull);
-	if (err) {
-		goto fail_dst;
-	}
-	if (read_test_value(dst) != CLONE_TEST_SENTINEL) {
-		err = -EIO;
-		goto fail_dst;
-	}
+	/*
+	 * Verify the refcount: the page should now have refcount == 2
+	 * (one from the source, one from the destination).
+	 */
+	{
+		uint64_t src_pte;
+		paddr_t pa;
 
-	/* Mutating the destination must not affect the source. */
-	err = write_test_value(dst, 0xFEEDFACEFEEDFACEull);
-	if (err) {
-		goto fail_dst;
-	}
-	if (read_test_value(src) != 0xDEADBEEFCAFEBABEull) {
-		err = -EIO;
-		goto fail_dst;
+		err = paging_get_flags(src, CLONE_TEST_VA, &src_pte);
+		if (err) {
+			goto fail_dst;
+		}
+		pa = src_pte & PTE_ADDR_MASK;
+
+		if (pmm_user_refcount(pa) != 2) {
+			pr_err("clone_space_selftest: expected refcount 2, "
+			       "got %u\n",
+			       (unsigned)pmm_user_refcount(pa));
+			err = -EIO;
+			goto fail_dst;
+		}
+
+		/* Verify PTE_WRITE was stripped from the source. */
+		if (src_pte & PTE_WRITE) {
+			pr_err("clone_space_selftest: source PTE still "
+			       "writable after CoW clone\n");
+			err = -EIO;
+			goto fail_dst;
+		}
 	}
 
 	err = 0;

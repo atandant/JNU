@@ -126,6 +126,67 @@ void vmm_switch_to(struct addr_space *space)
 }
 
 /* ------------------------------------------------------------------------- */
+/* CoW fault resolution                                                       */
+/* ------------------------------------------------------------------------- */
+
+int vmm_handle_cow_fault(struct addr_space *space, vaddr_t va)
+{
+	uint64_t old_pte;
+	paddr_t old_pa;
+	paddr_t new_pa;
+	uint64_t new_flags;
+	int err;
+
+	err = paging_get_flags(space, va, &old_pte);
+	if (err) {
+		return err;
+	}
+
+	old_pa = old_pte & PTE_ADDR_MASK;
+
+	/*
+	 * Fast path: if the refcount has dropped to 1 (the other side
+	 * already copied or exited), just re-enable PTE_WRITE — no
+	 * allocation, no copy.
+	 */
+	if (pmm_user_refcount(old_pa) == 1) {
+		err = paging_protect(space, va, 1,
+				     (old_pte & (PTE_USER | PTE_NX)) |
+					 PTE_WRITE);
+		if (err) {
+			return err;
+		}
+		paging_invlpg(va);
+		return 0;
+	}
+
+	/*
+	 * Slow path: allocate a private copy, memcpy the old contents,
+	 * install the new PTE with PTE_WRITE, and drop the old ref.
+	 */
+	new_pa = pmm_alloc_user_page();
+	if (!new_pa) {
+		return -ENOMEM;
+	}
+
+	memcpy(phys_to_virt(new_pa), phys_to_virt(old_pa), PAGE_SIZE);
+
+	new_flags = (old_pte & (PTE_USER | PTE_NX)) | PTE_WRITE;
+	err = paging_map(space, va, new_pa, 1, new_flags);
+	if (err) {
+		goto fail_page;
+	}
+
+	pmm_put_user_page(old_pa);
+	paging_invlpg(va);
+	return 0;
+
+fail_page:
+	pmm_put_user_page(new_pa);
+	return err;
+}
+
+/* ------------------------------------------------------------------------- */
 /* Selftest                                                                   */
 /* ------------------------------------------------------------------------- */
 

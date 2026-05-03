@@ -33,7 +33,7 @@ if [ ! -f "$ISO" ]; then
     exit 1
 fi
 
-ARGS=("-machine" "q35" "-m" "$MEMORY" "-cdrom" "$ISO" "-boot" "d" "-serial" "stdio" "-no-reboot" "-no-shutdown")
+ARGS=("-machine" "q35" "-m" "$MEMORY" "-cpu" "qemu64,+smep,+smap" "-cdrom" "$ISO" "-boot" "d" "-serial" "stdio" "-no-reboot" "-no-shutdown")
 
 if [ "$DEBUG" -eq 1 ]; then
     ARGS+=("-s" "-S")

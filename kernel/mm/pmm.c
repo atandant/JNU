@@ -1,5 +1,5 @@
 /*
- * kernel/mm/pmm.c — Physical memory manager: buddy allocator.
+ * kernel/mm/pmm.c — Physical memory manager: buddy allocator + refcounts.
  *
  * 11 buddy orders (4 KiB → 4 MiB), zoned: ZONE_DMA covers the first
  * 16 MiB, ZONE_NORMAL covers the rest. Free lists are intrusive; we
@@ -39,6 +39,8 @@
 struct pmm_pfn {
 	uint32_t flags;
 	uint32_t order;
+	uint16_t refcount; /* user-page refcount; 0 for non-user pages */
+	uint16_t _pad[3];
 	uint64_t next; /* PFN of next on free list, or NO_LINK */
 	uint64_t prev;
 };
@@ -196,7 +198,17 @@ paddr_t pmm_alloc_zeroed_pages(int order)
 	return pa;
 }
 
-paddr_t pmm_alloc_user_page(void) { return pmm_alloc_zeroed_pages(0); }
+paddr_t pmm_alloc_user_page(void)
+{
+	paddr_t pa = pmm_alloc_zeroed_pages(0);
+
+	if (pa) {
+		uint64_t pfn = pa_to_pfn(pa);
+		pfn_table[pfn].refcount = 1;
+	}
+
+	return pa;
+}
 
 paddr_t pmm_alloc_dma(int order)
 {
@@ -278,6 +290,70 @@ void pmm_free_pages(paddr_t pa, int order)
 	stats.free_pages += (1ull << order);
 	stats.free_by_order[order]++;
 	stats.zone_free[z] += (1ull << order);
+}
+
+/* ------------------------------------------------------------------------- */
+/* User-page refcounting                                                      */
+/* ------------------------------------------------------------------------- */
+
+void pmm_get_user_page(paddr_t pa)
+{
+	uint64_t pfn = pa_to_pfn(pa);
+
+	if (pfn >= pfn_count) {
+		panic("pmm_get_user_page: pfn out of range (pa 0x%lx)",
+		      (unsigned long)pa);
+	}
+	if (pfn_table[pfn].flags & PFN_FREE) {
+		panic("pmm_get_user_page: page is free (pa 0x%lx)",
+		      (unsigned long)pa);
+	}
+	if (pfn_table[pfn].refcount == 0) {
+		panic("pmm_get_user_page: refcount is 0 (pa 0x%lx)",
+		      (unsigned long)pa);
+	}
+	/* Note on line 316, MiniMax could not find a suitable uint16 max
+	   so the AI model instead just used the literal number, might be a
+	   hack?
+	   FIXME(atandant) maybe.*/
+	if (pfn_table[pfn].refcount == 65535) {
+		panic("pmm_get_user_page: refcount overflow (pa 0x%lx)",
+		      (unsigned long)pa);
+	}
+
+	pfn_table[pfn].refcount++;
+}
+
+void pmm_put_user_page(paddr_t pa)
+{
+	uint64_t pfn = pa_to_pfn(pa);
+
+	if (pfn >= pfn_count) {
+		panic("pmm_put_user_page: pfn out of range (pa 0x%lx)",
+		      (unsigned long)pa);
+	}
+	if (pfn_table[pfn].flags & PFN_FREE) {
+		panic("pmm_put_user_page: page is already free (pa 0x%lx)",
+		      (unsigned long)pa);
+	}
+	if (pfn_table[pfn].refcount == 0) {
+		panic("pmm_put_user_page: refcount underflow (pa 0x%lx)",
+		      (unsigned long)pa);
+	}
+
+	if (--pfn_table[pfn].refcount == 0) {
+		pmm_free_pages(pa, 0);
+	}
+}
+
+uint16_t pmm_user_refcount(paddr_t pa)
+{
+	uint64_t pfn = pa_to_pfn(pa);
+
+	if (pfn >= pfn_count) {
+		return 0;
+	}
+	return pfn_table[pfn].refcount;
 }
 
 void pmm_get_stats(struct pmm_stats *out) { *out = stats; }
