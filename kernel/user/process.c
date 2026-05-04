@@ -8,6 +8,7 @@
 #include <jnu/errno.h>
 #include <jnu/fd.h>
 #include <jnu/kmalloc.h>
+#include <jnu/panic.h>
 #include <jnu/process.h>
 #include <jnu/sched.h>
 #include <jnu/spinlock.h>
@@ -22,6 +23,18 @@ static int next_pid = 1;
  * only — no other subsystem touches it.
  */
 struct spinlock process_tree_lock = SPINLOCK_INITIALIZER;
+
+/*
+ * Init process pointer. Set once by main.c after the boot task's
+ * process has been wired up to run /init. Used by process_exit_current
+ * to reparent children of a dying process so they never leave a stale
+ * `parent` pointer behind.
+ */
+static struct process *init_proc;
+
+void process_set_init(struct process *proc) { init_proc = proc; }
+
+struct process *process_get_init(void) { return init_proc; }
 
 int process_alloc_pid(void)
 {
@@ -55,7 +68,9 @@ void process_exit_current(int status)
 {
 	struct task *task = sched_current();
 	struct process *proc = task ? task->process : NULL;
+	struct process *init = init_proc;
 	uint64_t flags;
+	bool wake_init = false;
 
 	if (!proc) {
 		return;
@@ -66,12 +81,68 @@ void process_exit_current(int status)
 	}
 
 	flags = spin_lock_irqsave(&process_tree_lock);
+
+	/*
+	 * Reparent every surviving child to init so they do not leave a
+	 * dangling `parent` pointer behind once `proc` is reaped. If a
+	 * child is already a zombie, it has been waiting for its parent
+	 * to call wait4(); we splice it onto init's child list and wake
+	 * init below so it can reap.
+	 *
+	 * If init itself is exiting we have nowhere to reparent onto;
+	 * panic, because that is the same as PID 1 dying on Linux.
+	 */
+	if (proc == init) {
+		if (proc->first_child) {
+			panic("process_exit_current: init exited with live "
+			      "children — system is unrecoverable");
+		}
+	} else if (proc->first_child) {
+		struct process *head = proc->first_child;
+		struct process *last = head;
+
+		/*
+		 * Walk the child list, repointing each child's parent
+		 * pointer at init and noting any zombies we will need
+		 * init to reap. Find the tail so we can splice the whole
+		 * chain onto init->first_child in O(1).
+		 */
+		head->parent = init;
+		if (head->state == PROCESS_ZOMBIE) {
+			wake_init = true;
+		}
+		while (last->next_sibling) {
+			last = last->next_sibling;
+			last->parent = init;
+			if (last->state == PROCESS_ZOMBIE) {
+				wake_init = true;
+			}
+		}
+
+		if (init) {
+			last->next_sibling = init->first_child;
+			init->first_child = head;
+		}
+		/*
+		 * If init is NULL we are in pre-init boot and only
+		 * kernel threads exist; they have no user children, so
+		 * this branch is unreachable in practice. Either way,
+		 * proc->first_child is cleared below to leave proc in a
+		 * clean state for the upcoming reap.
+		 */
+	}
+	proc->first_child = NULL;
+
 	proc->exit_status = status & 0xFF;
 	proc->state = PROCESS_ZOMBIE;
 	if (proc->parent && proc->parent->main_task) {
 		sched_wake(proc->parent->main_task);
 	}
 	spin_unlock_irqrestore(&process_tree_lock, flags);
+
+	if (wake_init && init && init->main_task) {
+		sched_wake(init->main_task);
+	}
 }
 
 static struct process *find_child(struct process *parent, int pid)

@@ -378,6 +378,36 @@ void paging_clone_kernel_half(uint64_t *new_pml4)
 	}
 }
 
+/*
+ * Drop user-page references for every 4 KiB sub-page covered by a
+ * single huge user PTE. Used when destroying an address space that
+ * holds 2 MiB or 1 GiB user mappings. The contract is the same as
+ * for 4 KiB user pages: each sub-page must have been individually
+ * refcounted via pmm_alloc_user_page() (or be the global zero page).
+ *
+ * If a sub-page's refcount is already zero we treat it as
+ * already-freed and skip — this leaves a tripwire for any caller
+ * that produced a huge user PTE without setting per-sub-page
+ * refcounts (pmm_put_user_page itself panics on refcount underflow,
+ * so the bug surfaces loudly rather than silently corrupting
+ * memory). v0.0.3 has no path that constructs huge user PTEs; the
+ * machinery exists so adding one later does not silently leak.
+ */
+static void put_huge_user_range(paddr_t base, size_t span)
+{
+	for (size_t off = 0; off < span; off += PAGE_SIZE) {
+		paddr_t pa = base + off;
+
+		if (pa == mm_zero_page) {
+			continue;
+		}
+		if (pmm_user_refcount(pa) == 0) {
+			continue;
+		}
+		pmm_put_user_page(pa);
+	}
+}
+
 void paging_destroy_user_half(uint64_t *pml4)
 {
 	if (!pml4 || pml4 == kernel_pml4) {
@@ -397,6 +427,18 @@ void paging_destroy_user_half(uint64_t *pml4)
 				continue;
 			}
 			if (e3 & PTE_HUGE) {
+				/*
+				 * 1 GiB huge user mapping. Drop the user
+				 * reference on every 4 KiB sub-page; the
+				 * physical 1 GiB block is freed implicitly
+				 * once each sub-page's refcount falls to 0
+				 * (pmm_put_user_page returns each frame to
+				 * the buddy at order 0; coalescing rebuilds
+				 * larger blocks). 1 GiB exceeds PMM_MAX_ORDER
+				 * so we cannot free as a single block.
+				 */
+				put_huge_user_range(e3 & PTE_ADDR_MASK,
+						    1ull << 30);
 				continue;
 			}
 
@@ -407,7 +449,22 @@ void paging_destroy_user_half(uint64_t *pml4)
 					continue;
 				}
 				if (e2 & PTE_HUGE) {
-					pmm_free_pages(e2 & PTE_ADDR_MASK, 9);
+					/*
+					 * 2 MiB huge user mapping. Drop
+					 * the user reference on every
+					 * 4 KiB sub-page; the previous
+					 * implementation called
+					 * pmm_free_pages(..., 9) which
+					 * bypassed refcount tracking and
+					 * would double-free a frame that
+					 * was still shared with a child
+					 * after CoW clone. The
+					 * sub-page-iteration form is
+					 * uniform with the 4 KiB and
+					 * 1 GiB arms.
+					 */
+					put_huge_user_range(e2 & PTE_ADDR_MASK,
+							    PAGE_HUGE_SIZE);
 					continue;
 				}
 

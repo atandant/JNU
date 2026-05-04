@@ -25,10 +25,24 @@
 #include <jnu/paging.h>
 #include <jnu/panic.h>
 #include <jnu/pmm.h>
+#include <jnu/spinlock.h>
 #include <jnu/string.h>
 #include <jnu/types.h>
 
 #include <limine.h>
+
+/*
+ * Global PMM lock. Serialises every mutation of the buddy free
+ * lists, per-PFN metadata, refcounts, and stats. The single-CPU
+ * spinlock_irqsave shim (kernel/lib/spinlock.c) makes this an
+ * IRQ-disable; SMP migration replaces it with a real lock without
+ * touching the call sites.
+ *
+ * Acquired by every public allocator/refcount entry point and
+ * released before returning. Init runs single-threaded before any
+ * other CPU/thread exists, so it does not take the lock.
+ */
+static struct spinlock pmm_lock = SPINLOCK_INITIALIZER;
 
 /* ------------------------------------------------------------------------- */
 /* Page-frame metadata                                                        */
@@ -169,7 +183,10 @@ static void pmm_register_range(uint64_t start_pa, uint64_t end_pa)
 	}
 }
 
-paddr_t pmm_alloc_pages(int order)
+/*
+ * Internal allocator core. Caller MUST hold pmm_lock.
+ */
+static paddr_t pmm_alloc_pages_locked(int order)
 {
 	if (order < 0 || order >= PMM_MAX_ORDER) {
 		return 0;
@@ -206,6 +223,14 @@ paddr_t pmm_alloc_pages(int order)
 	return 0;
 }
 
+paddr_t pmm_alloc_pages(int order)
+{
+	uint64_t flags = spin_lock_irqsave(&pmm_lock);
+	paddr_t pa = pmm_alloc_pages_locked(order);
+	spin_unlock_irqrestore(&pmm_lock, flags);
+	return pa;
+}
+
 paddr_t pmm_alloc_zeroed_pages(int order)
 {
 	/*
@@ -217,24 +242,27 @@ paddr_t pmm_alloc_zeroed_pages(int order)
 
 paddr_t pmm_alloc_user_page(void)
 {
-	paddr_t pa = pmm_alloc_pages(0);
+	uint64_t flags = spin_lock_irqsave(&pmm_lock);
+	paddr_t pa = pmm_alloc_pages_locked(0);
 
 	if (pa) {
 		uint64_t pfn = pa_to_pfn(pa);
 		pfn_table[pfn].refcount = 1;
 	}
-
+	spin_unlock_irqrestore(&pmm_lock, flags);
 	return pa;
 }
 
 paddr_t pmm_alloc_dma(int order)
 {
+	uint64_t flags = spin_lock_irqsave(&pmm_lock);
 	int o = order;
 	while (o < PMM_MAX_ORDER &&
 	       free_list_head[PMM_ZONE_DMA][o] == NO_LINK) {
 		o++;
 	}
 	if (o >= PMM_MAX_ORDER) {
+		spin_unlock_irqrestore(&pmm_lock, flags);
 		return 0;
 	}
 	uint64_t pfn = list_pop(PMM_ZONE_DMA, o);
@@ -253,10 +281,15 @@ paddr_t pmm_alloc_dma(int order)
 
 	pfn_table[pfn].flags &= ~PFN_FREE;
 	pfn_table[pfn].order = (uint32_t)order;
-	return pfn_to_pa(pfn);
+	paddr_t result = pfn_to_pa(pfn);
+	spin_unlock_irqrestore(&pmm_lock, flags);
+	return result;
 }
 
-void pmm_free_pages(paddr_t pa, int order)
+/*
+ * Internal free core. Caller MUST hold pmm_lock.
+ */
+static void pmm_free_pages_locked(paddr_t pa, int order)
 {
 	if (order < 0 || order >= PMM_MAX_ORDER) {
 		panic("pmm_free_pages: bad order %d", order);
@@ -319,6 +352,13 @@ void pmm_free_pages(paddr_t pa, int order)
 	stats.zone_free[z] += (1ull << order);
 }
 
+void pmm_free_pages(paddr_t pa, int order)
+{
+	uint64_t flags = spin_lock_irqsave(&pmm_lock);
+	pmm_free_pages_locked(pa, order);
+	spin_unlock_irqrestore(&pmm_lock, flags);
+}
+
 /* ------------------------------------------------------------------------- */
 /* User-page refcounting                                                      */
 /* ------------------------------------------------------------------------- */
@@ -326,6 +366,7 @@ void pmm_free_pages(paddr_t pa, int order)
 void pmm_get_user_page(paddr_t pa)
 {
 	uint64_t pfn = pa_to_pfn(pa);
+	uint64_t flags;
 
 	if (pa == mm_zero_page) {
 		panic("pmm_get_user_page: called on zero page (pa 0x%lx)",
@@ -335,6 +376,8 @@ void pmm_get_user_page(paddr_t pa)
 		panic("pmm_get_user_page: pfn out of range (pa 0x%lx)",
 		      (unsigned long)pa);
 	}
+
+	flags = spin_lock_irqsave(&pmm_lock);
 	if (pfn_table[pfn].flags & PFN_FREE) {
 		panic("pmm_get_user_page: page is free (pa 0x%lx)",
 		      (unsigned long)pa);
@@ -349,11 +392,14 @@ void pmm_get_user_page(paddr_t pa)
 	}
 
 	pfn_table[pfn].refcount++;
+	spin_unlock_irqrestore(&pmm_lock, flags);
 }
 
 void pmm_put_user_page(paddr_t pa)
 {
 	uint64_t pfn = pa_to_pfn(pa);
+	uint64_t flags;
+	bool do_free = false;
 
 	if (pa == mm_zero_page) {
 		panic("pmm_put_user_page: called on zero page (pa 0x%lx)",
@@ -363,6 +409,8 @@ void pmm_put_user_page(paddr_t pa)
 		panic("pmm_put_user_page: pfn out of range (pa 0x%lx)",
 		      (unsigned long)pa);
 	}
+
+	flags = spin_lock_irqsave(&pmm_lock);
 	if (pfn_table[pfn].flags & PFN_FREE) {
 		panic("pmm_put_user_page: page is already free (pa 0x%lx)",
 		      (unsigned long)pa);
@@ -373,11 +421,26 @@ void pmm_put_user_page(paddr_t pa)
 	}
 
 	if (--pfn_table[pfn].refcount == 0) {
-		pmm_free_pages(pa, 0);
+		/*
+		 * Free under the same lock — pmm_free_pages_locked does
+		 * not re-acquire it, so no recursion. Doing the free
+		 * inline keeps the (refcount==0 → free) transition
+		 * atomic against any concurrent pmm_user_refcount /
+		 * pmm_get_user_page observation.
+		 */
+		do_free = true;
 	}
+	if (do_free) {
+		pmm_free_pages_locked(pa, 0);
+	}
+	spin_unlock_irqrestore(&pmm_lock, flags);
 }
 
-uint16_t pmm_user_refcount(paddr_t pa)
+uint64_t pmm_lock_acquire(void) { return spin_lock_irqsave(&pmm_lock); }
+
+void pmm_lock_release(uint64_t flags) { spin_unlock_irqrestore(&pmm_lock, flags); }
+
+uint16_t pmm_user_refcount_locked(paddr_t pa)
 {
 	uint64_t pfn = pa_to_pfn(pa);
 
@@ -387,7 +450,27 @@ uint16_t pmm_user_refcount(paddr_t pa)
 	return pfn_table[pfn].refcount;
 }
 
-void pmm_get_stats(struct pmm_stats *out) { *out = stats; }
+uint16_t pmm_user_refcount(paddr_t pa)
+{
+	uint64_t pfn = pa_to_pfn(pa);
+	uint16_t r;
+	uint64_t flags;
+
+	if (pfn >= pfn_count) {
+		return 0;
+	}
+	flags = spin_lock_irqsave(&pmm_lock);
+	r = pfn_table[pfn].refcount;
+	spin_unlock_irqrestore(&pmm_lock, flags);
+	return r;
+}
+
+void pmm_get_stats(struct pmm_stats *out)
+{
+	uint64_t flags = spin_lock_irqsave(&pmm_lock);
+	*out = stats;
+	spin_unlock_irqrestore(&pmm_lock, flags);
+}
 
 void pmm_dump(void)
 {

@@ -72,7 +72,6 @@ static int clone_one_vma(struct addr_space *src, struct addr_space *dst,
 
 		err = paging_get_flags(src, va, &src_pte);
 		if (err == -ENOENT) {
-			/* Sparse page within the VMA; legal, leave unmapped. */
 			continue;
 		}
 		if (err) {

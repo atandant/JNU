@@ -44,6 +44,18 @@ int process_wait(int pid, int *status_out);
 void process_destroy(struct process *proc);
 
 /*
+ * Register `proc` as the init process. Called once from main.c after
+ * start_init() has loaded /init into the boot task's process. Any
+ * process that subsequently exits while it still has live (non-zombie)
+ * children reparents those children to `proc` so they are not orphaned
+ * onto a freed `parent` pointer. Init must outlive every other process;
+ * if init itself ever exits, the kernel panics — there is nothing to
+ * reparent its children onto.
+ */
+void process_set_init(struct process *proc);
+struct process *process_get_init(void);
+
+/*
  * Duplicate the calling process. Allocates a child process, deep-copies
  * the parent's address space and fd table, then schedules a user task
  * that resumes in userspace at `user_rip`/`user_rsp` with rax = 0.

@@ -256,7 +256,17 @@ static int materialise_pages(struct addr_space *space, uint64_t start,
 		err =
 		    vmm_map(space, va, pa, 1, VMA_READ | VMA_WRITE | VMA_USER);
 		if (err) {
-			pmm_free_pages(pa, 0);
+			/*
+			 * pa was returned by pmm_alloc_user_page() and
+			 * therefore has refcount=1. Releasing it via the
+			 * raw pmm_free_pages() path would put a still-
+			 * referenced page back on the buddy free list,
+			 * later panicking pmm_get_user_page() with
+			 * "page is free / refcount is 0". Drop the
+			 * reference instead so the refcount falls to 0
+			 * and the page is freed cleanly.
+			 */
+			pmm_put_user_page(pa);
 			return err;
 		}
 	}

@@ -64,6 +64,25 @@ void pmm_put_user_page(paddr_t pa);
 /* Exposed for selftest use only.  Not part of the kernel API. */
 uint16_t pmm_user_refcount(paddr_t pa);
 
+/*
+ * Acquire / release the global PMM lock. Use ONLY when an external
+ * operation needs PMM-internal state (currently: per-PFN refcounts)
+ * to remain stable while a non-PMM operation runs alongside it.
+ *
+ * The single sanctioned caller is the CoW fault fast path
+ * (vmm_handle_cow_fault) which must atomically observe
+ * refcount == 1 and upgrade the PTE to writable so a concurrent
+ * fork cannot bump the refcount between the two operations.
+ *
+ * MUST NOT call any pmm_alloc_*, pmm_free_*, pmm_get_user_page,
+ * or pmm_put_user_page while holding the lock — they all attempt
+ * to re-acquire it and the spinlock implementation panics on
+ * recursive acquire. pmm_user_refcount_locked() is safe.
+ */
+uint64_t pmm_lock_acquire(void);
+void pmm_lock_release(uint64_t flags);
+uint16_t pmm_user_refcount_locked(paddr_t pa);
+
 void pmm_get_stats(struct pmm_stats *out);
 
 void pmm_dump(void);

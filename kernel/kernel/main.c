@@ -336,6 +336,14 @@ static void start_init(void)
 	task->process->user_stack = stack;
 	task->process->has_user_frame = false;
 
+	/*
+	 * Register the init process so process_exit_current can reparent
+	 * orphans here instead of leaving stale `parent` pointers behind.
+	 * Must happen before any fork from this process can succeed, i.e.
+	 * before we drop into ring 3.
+	 */
+	process_set_init(task->process);
+
 	pr_info("userspace: init '%s' from %s entry=0x%lx "
 		"range=0x%lx..0x%lx\n",
 		init_path, source ? source : "unknown",

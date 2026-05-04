@@ -175,15 +175,29 @@ int vmm_handle_cow_fault(struct addr_space *space, vaddr_t va)
 	 *
 	 * The zero page has refcount 0 forever — it never qualifies
 	 * for the fast path.
+	 *
+	 * Race window closure: the refcount load and the PTE upgrade
+	 * must be atomic against a concurrent fork that would bump
+	 * refcount and rely on this PTE staying read-only. We hold
+	 * pmm_lock across both. paging_protect does not allocate (it
+	 * walks an already-present PT, no PMM call) so it is safe to
+	 * call under the PMM lock.
 	 */
-	if (old_pa != mm_zero_page && pmm_user_refcount(old_pa) == 1) {
-		err = paging_protect(space, va, 1,
-				     (old_pte & PTE_USER) | PTE_WRITE | PTE_NX);
-		if (err) {
-			return err;
+	if (old_pa != mm_zero_page) {
+		uint64_t lock_flags = pmm_lock_acquire();
+
+		if (pmm_user_refcount_locked(old_pa) == 1) {
+			err = paging_protect(
+			    space, va, 1,
+			    (old_pte & PTE_USER) | PTE_WRITE | PTE_NX);
+			pmm_lock_release(lock_flags);
+			if (err) {
+				return err;
+			}
+			paging_invlpg(va);
+			return 0;
 		}
-		paging_invlpg(va);
-		return 0;
+		pmm_lock_release(lock_flags);
 	}
 
 	/*

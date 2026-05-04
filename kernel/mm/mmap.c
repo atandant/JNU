@@ -286,6 +286,7 @@ int64_t sys_mprotect(uint64_t addr, uint64_t length, int prot)
 	}
 
 	while (v && v->start < end) {
+		uint32_t old_vma_flags = v->flags;
 		next = vma_next(v);
 
 		if (v->start >= start && v->end <= end) {
@@ -303,6 +304,18 @@ int64_t sys_mprotect(uint64_t addr, uint64_t length, int prot)
 					continue;
 				}
 				if (err) {
+					/*
+					 * Restore the VMA's flags so the
+					 * tree and the partially-updated
+					 * page tables are at least
+					 * consistent on the entries we
+					 * have not touched yet. We cannot
+					 * cleanly roll back the PTEs we
+					 * already changed without a second
+					 * walk; surfacing the error is the
+					 * best the caller can do.
+					 */
+					v->flags = old_vma_flags;
 					return (int64_t)err;
 				}
 
@@ -321,7 +334,24 @@ int64_t sys_mprotect(uint64_t addr, uint64_t length, int prot)
 					}
 				}
 
-				paging_protect(space, va, 1, new_pte);
+				err = paging_protect(space, va, 1, new_pte);
+				if (err) {
+					/*
+					 * paging_protect's failure modes
+					 * are -ENOENT (PTE walk hit a
+					 * missing intermediate level) or
+					 * -EINVAL. Restore the VMA flags
+					 * and propagate; the tree is now
+					 * consistent with itself but PTEs
+					 * earlier in this VMA may already
+					 * carry the new protection. Linux
+					 * leaves the partial state in
+					 * place too — the syscall ABI
+					 * permits it.
+					 */
+					v->flags = old_vma_flags;
+					return (int64_t)err;
+				}
 				paging_invlpg(va);
 			}
 		}

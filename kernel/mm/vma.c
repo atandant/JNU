@@ -112,6 +112,7 @@ int vma_split_at(struct rb_root *root, struct vma *vma, vaddr_t boundary,
 		 struct vma **out)
 {
 	struct vma *upper;
+	vaddr_t original_end;
 	int err;
 
 	if (!root || !vma || !out) {
@@ -137,19 +138,40 @@ int vma_split_at(struct rb_root *root, struct vma *vma, vaddr_t boundary,
 	 * Remove the original, shrink it, then re-insert both halves.
 	 * Removal + re-insertion is the simplest way to keep the
 	 * rb-tree invariants consistent when the key (start addr)
-	 * range changes.
+	 * range changes. We save original_end so any failure below
+	 * can restore the tree to its pre-split state.
 	 */
+	original_end = vma->end;
 	vma_remove(root, vma);
 	vma->end = boundary;
 
 	err = vma_insert(root, vma);
 	if (err) {
+		/*
+		 * Re-insert of the shrunken original failed (only
+		 * possible via -EEXIST, which would mean the tree was
+		 * concurrently modified or corrupted). Restore the
+		 * original range and put it back so the caller observes
+		 * a tree identical to the pre-call state.
+		 */
+		vma->end = original_end;
+		(void)vma_insert(root, vma);
 		kfree(upper);
 		return err;
 	}
 
 	err = vma_insert(root, upper);
 	if (err) {
+		/*
+		 * Critical rollback path: vma was already shrunk and
+		 * re-inserted; if we returned now, the range
+		 * [boundary, original_end) would be silently absent
+		 * from the tree even though its PTEs still exist.
+		 * Undo the shrink so the tree matches the page tables.
+		 */
+		vma_remove(root, vma);
+		vma->end = original_end;
+		(void)vma_insert(root, vma);
 		kfree(upper);
 		return err;
 	}

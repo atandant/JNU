@@ -1,8 +1,7 @@
 /*
  * kernel/arch/x86_64/fpu.c — Eager FPU/SSE state save/restore.
  *
- * v0.0.3 §2.7: XSAVE or FXSAVE on every context switch.  No lazy-FPU
- * CR0.TS games.  #NM (vector 7) panics — its appearance is a setup bug.
+ * v0.0.3 §2.7: XSAVE or FXSAVE on every context switch.S
  *
  * Boot-time detection:
  *   - CPUID.01H:ECX.XSAVE (bit 26) → use XSAVE/XRSTOR.
