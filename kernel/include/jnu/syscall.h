@@ -71,8 +71,26 @@ int64_t sys_fork(const struct syscall_args *args);
 int64_t sys_fstat(int fd, void *ust);
 int64_t sys_getpid(void);
 int64_t sys_lseek(int fd, int64_t off, int whence);
+int64_t sys_mmap(uint64_t addr, uint64_t length, int prot, int flags,
+		 int fd, int64_t offset);
+int64_t sys_mprotect(uint64_t addr, uint64_t length, int prot);
+int64_t sys_munmap(uint64_t addr, uint64_t length);
 int64_t sys_open(const char *upath, int flags);
 int64_t sys_read(int fd, void *ubuf, size_t len);
 int64_t sys_waitpid(int pid, int *ustatus);
 int64_t sys_write(int fd, const void *ubuf, size_t len);
 int64_t sys_yield(void);
+
+/* v0.0.3 Phase 3: musl-support syscalls (§2.9). */
+int64_t sys_rt_sigaction(int signum, const void *act, void *oldact,
+			 size_t sigsetsize);
+int64_t sys_rt_sigprocmask(int how, const void *set, void *oldset,
+			   size_t sigsetsize);
+int64_t sys_ioctl(int fd, uint64_t request, uint64_t arg);
+int64_t sys_writev(int fd, const void *uiov, int iovcnt);
+int64_t sys_nanosleep(const void *ureq, void *urem);
+int64_t sys_arch_prctl(int code, uint64_t addr);
+int64_t sys_set_tid_address(void *tidptr);
+int64_t sys_clock_gettime(int clockid, void *utp);
+int64_t sys_exit_group(int status);
+int64_t sys_getrandom(void *ubuf, size_t buflen, unsigned int flags);

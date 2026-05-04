@@ -14,17 +14,30 @@
 
 #pragma once
 
-#define JNU_SYS_read         0
-#define JNU_SYS_write        1
-#define JNU_SYS_open         2
-#define JNU_SYS_close        3
-#define JNU_SYS_fstat        5
-#define JNU_SYS_lseek        8
-#define JNU_SYS_sched_yield 24
-#define JNU_SYS_getpid      39
-#define JNU_SYS_fork        57
-#define JNU_SYS_execve      59
-#define JNU_SYS_exit        60
-#define JNU_SYS_wait4       61
+#define JNU_SYS_read            0
+#define JNU_SYS_write           1
+#define JNU_SYS_open            2
+#define JNU_SYS_close           3
+#define JNU_SYS_fstat           5
+#define JNU_SYS_lseek           8
+#define JNU_SYS_mmap            9
+#define JNU_SYS_mprotect       10
+#define JNU_SYS_munmap         11
+#define JNU_SYS_rt_sigaction   13
+#define JNU_SYS_rt_sigprocmask 14
+#define JNU_SYS_ioctl          16
+#define JNU_SYS_writev         20
+#define JNU_SYS_sched_yield    24
+#define JNU_SYS_nanosleep      35
+#define JNU_SYS_getpid         39
+#define JNU_SYS_fork           57
+#define JNU_SYS_execve         59
+#define JNU_SYS_exit           60
+#define JNU_SYS_wait4          61
+#define JNU_SYS_arch_prctl    158
+#define JNU_SYS_set_tid_address 218
+#define JNU_SYS_clock_gettime 228
+#define JNU_SYS_exit_group    231
+#define JNU_SYS_getrandom     318
 
-#define JNU_SYS_MAX         61
+#define JNU_SYS_MAX           318

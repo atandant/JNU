@@ -14,6 +14,7 @@
 #include <jnu/exec.h>
 #include <jnu/klog.h>
 #include <jnu/kmalloc.h>
+#include <jnu/mman.h>
 #include <jnu/paging.h>
 #include <jnu/pmm.h>
 #include <jnu/string.h>
@@ -222,81 +223,46 @@ static int write_to_space(struct addr_space *space, uint64_t va,
 	return 0;
 }
 
-static uint32_t phdr_vma_flags(const struct elf64_phdr *ph)
+static uint32_t phdr_to_prot(const struct elf64_phdr *ph)
 {
-	uint32_t flags = VMA_READ | VMA_USER;
+	uint32_t prot = PROT_READ;
 
 	if (ph->p_flags & PF_W) {
-		flags |= VMA_WRITE;
+		prot |= PROT_WRITE;
 	}
 	if (ph->p_flags & PF_X) {
-		flags |= VMA_EXEC;
+		prot |= PROT_EXEC;
 	}
-	return flags;
+	return prot;
 }
 
-static int map_zeroed_user_pages(struct addr_space *space, uint64_t start,
-				 uint64_t end, uint32_t flags)
+/*
+ * Eagerly materialise zeroed pages into a VMA that was created by
+ * vmm_map_anonymous (which installs no PTEs).  This is needed during
+ * execve because we must copy file content into the pages before
+ * the process runs.
+ */
+static int materialise_pages(struct addr_space *space, uint64_t start,
+			     uint64_t end, uint32_t vma_flags)
 {
-	uint64_t va;
-	struct vma *v;
-	int err;
-
-	/*
-	 * Allocate and insert a VMA descriptor before touching the page
-	 * tables. This gives the address space an authoritative record of
-	 * every mapped range so that:
-	 *   (a) the #PF handler can distinguish a valid unmapped-page fault
-	 *       from a wild-pointer access, and
-	 *   (b) vmm_destroy_space() can eventually walk VMAs to free frames.
-	 */
-	v = kzalloc(sizeof(*v));
-	if (!v) {
-		return -ENOMEM;
-	}
-	v->start = start;
-	v->end = end;
-	v->flags = flags;
-	err = vma_insert(&space->vmas, v);
-	if (err) {
-		/* Overlapping VMA — caller has a logic error. */
-		kfree(v);
-		return err;
-	}
-
-	for (va = start; va < end; va += PAGE_SIZE) {
+	for (uint64_t va = start; va < end; va += PAGE_SIZE) {
 		paddr_t pa = pmm_alloc_user_page();
+		int err;
 
 		if (!pa) {
-			goto fail_partial;
+			return -ENOMEM;
 		}
 
-		err = vmm_map(space, va, pa, 1, flags);
+		err = vmm_map(space, va, pa, 1,
+			      VMA_READ | VMA_WRITE | VMA_USER);
 		if (err) {
 			pmm_free_pages(pa, 0);
-			goto fail_partial;
+			return err;
 		}
 	}
-	return 0;
 
-fail_partial:
-	/*
-	 * Undo every page we successfully mapped in this call. Without
-	 * this, a partial map would leak both the physical pages and
-	 * the residual user-visible mappings — and the higher-level
-	 * unmap-on-error path in elf64_load_image() would silently
-	 * skip these pages because it tracks ranges per segment, not
-	 * per attempted mapping.
-	 *
-	 * Remove the VMA we inserted above so the tree stays consistent
-	 * with the actual page-table state.
-	 */
-	if (va > start) {
-		vmm_unmap(space, start, (va - start) / PAGE_SIZE);
-	}
-	vma_remove(&space->vmas, v);
-	kfree(v);
-	return -ENOMEM;
+	(void)vma_flags;
+	return 0;
 }
 
 int elf64_load_image(struct addr_space *space, const struct exec_image *image,
@@ -305,19 +271,12 @@ int elf64_load_image(struct addr_space *space, const struct exec_image *image,
 	struct elf64_ehdr eh;
 	struct elf64_phdr ph;
 	struct exec_load_info local_info;
-	uint64_t mapped_low = USER_TOP;
-	uint64_t mapped_high = 0;
 	int err;
 
 	if (!space) {
 		return -EINVAL;
 	}
 
-	/*
-	 * Always validate into a local info first so we have low/high
-	 * available for the cleanup path even if the caller passed
-	 * NULL for `info`.
-	 */
 	err = elf64_validate_image(image, &local_info);
 	if (err) {
 		return err;
@@ -332,14 +291,14 @@ int elf64_load_image(struct addr_space *space, const struct exec_image *image,
 		uint64_t off = eh.e_phoff + (uint64_t)i * sizeof(ph);
 		uint64_t start;
 		uint64_t end;
-		uint32_t final_flags;
+		uint32_t seg_prot;
 		uint64_t remaining;
 		uint64_t file_off;
 		uint64_t curr_va;
 
 		err = image_read_exact(image, off, &ph, sizeof(ph));
 		if (err) {
-			goto fail_unmap;
+			goto fail_space;
 		}
 		if (ph.p_type != PT_LOAD) {
 			continue;
@@ -347,25 +306,27 @@ int elf64_load_image(struct addr_space *space, const struct exec_image *image,
 
 		start = page_down(ph.p_vaddr);
 		end = page_up(ph.p_vaddr + ph.p_memsz);
-		final_flags = phdr_vma_flags(&ph);
-
-		err = map_zeroed_user_pages(space, start, end,
-					    VMA_READ | VMA_WRITE | VMA_USER);
-		if (err) {
-			goto fail_unmap;
-		}
+		seg_prot = phdr_to_prot(&ph);
 
 		/*
-		 * Track the union of every successfully mapped range so
-		 * the failure path can unmap all of them in one shot.
-		 * Per spec §3.1 the ELF loader must not leak pages on
-		 * partial failure.
+		 * v0.0.3 §2.8: create segment VMA via vmm_map_anonymous
+		 * with MAP_FIXED.  We use PROT_READ|PROT_WRITE for the
+		 * initial mapping so we can copy segment content, then
+		 * tighten to the final protection afterwards.
 		 */
-		if (start < mapped_low) {
-			mapped_low = start;
+		err = vmm_map_anonymous(space, start, end - start,
+					PROT_READ | PROT_WRITE,
+					MAP_FIXED | MAP_PRIVATE |
+					MAP_ANONYMOUS, NULL);
+		if (err) {
+			goto fail_space;
 		}
-		if (end > mapped_high) {
-			mapped_high = end;
+
+		/* Eagerly materialise pages so we can copy file content. */
+		err = materialise_pages(space, start, end,
+					VMA_READ | VMA_WRITE | VMA_USER);
+		if (err) {
+			goto fail_space;
 		}
 
 		remaining = ph.p_filesz;
@@ -379,12 +340,12 @@ int elf64_load_image(struct addr_space *space, const struct exec_image *image,
 
 			err = image_read_exact(image, file_off, buf, chunk);
 			if (err) {
-				goto fail_unmap;
+				goto fail_space;
 			}
 
 			err = write_to_space(space, curr_va, buf, chunk);
 			if (err) {
-				goto fail_unmap;
+				goto fail_space;
 			}
 
 			file_off += chunk;
@@ -392,21 +353,27 @@ int elf64_load_image(struct addr_space *space, const struct exec_image *image,
 			remaining -= chunk;
 		}
 
-		err = vmm_protect(space, start, (end - start) / PAGE_SIZE,
-				  final_flags);
-		if (err) {
-			goto fail_unmap;
-		}
-
 		/*
-		 * map_zeroed_user_pages() recorded the VMA with the temporary
-		 * writable flags we used during segment copying. Now that the
-		 * page tables carry the final protection, patch the VMA to
-		 * match so that future VMA consumers (the #PF handler, any
-		 * audit code) see the correct permissions.
+		 * Tighten page-table protection to the segment's real
+		 * permissions and update the VMA flags to match.
 		 */
 		{
-			struct vma *seg_vma = vma_find(&space->vmas, start);
+			uint32_t final_flags = VMA_READ | VMA_USER;
+			if (seg_prot & PROT_WRITE) {
+				final_flags |= VMA_WRITE;
+			}
+			if (seg_prot & PROT_EXEC) {
+				final_flags |= VMA_EXEC;
+			}
+			err = vmm_protect(space, start,
+					  (end - start) / PAGE_SIZE,
+					  final_flags);
+			if (err) {
+				goto fail_space;
+			}
+
+			struct vma *seg_vma =
+			    vma_find(&space->vmas, start);
 			if (seg_vma) {
 				seg_vma->flags = final_flags;
 			}
@@ -418,11 +385,12 @@ int elf64_load_image(struct addr_space *space, const struct exec_image *image,
 	}
 	return 0;
 
-fail_unmap:
-	if (mapped_high > mapped_low) {
-		vmm_unmap(space, mapped_low,
-			  (mapped_high - mapped_low) / PAGE_SIZE);
-	}
+fail_space:
+	/*
+	 * v0.0.3 §3: on any segment-load failure the caller tears
+	 * the entire new address space down via vmm_destroy_space(),
+	 * so we do not attempt per-segment cleanup here.
+	 */
 	return err;
 }
 
@@ -445,8 +413,32 @@ int elf64_setup_initial_stack(struct addr_space *space,
 		return -EINVAL;
 	}
 
-	err = map_zeroed_user_pages(space, base, USER_STACK_TOP,
-				    VMA_READ | VMA_WRITE | VMA_USER);
+	/*
+	 * v0.0.3 §2.8: stack guard page.  PROT_NONE VMA below the
+	 * stack so that stack overflow traps cleanly instead of
+	 * silently corrupting an adjacent VMA.
+	 */
+	err = vmm_map_anonymous(space, guard, PAGE_SIZE, PROT_NONE,
+				MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS,
+				NULL);
+	if (err) {
+		return err;
+	}
+
+	/*
+	 * v0.0.3 §2.8: stack VMA via vmm_map_anonymous.
+	 */
+	err = vmm_map_anonymous(space, base, USER_STACK_SIZE,
+				PROT_READ | PROT_WRITE,
+				MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS,
+				NULL);
+	if (err) {
+		return err;
+	}
+
+	/* Eagerly materialise stack pages. */
+	err = materialise_pages(space, base, USER_STACK_TOP,
+				VMA_READ | VMA_WRITE | VMA_USER);
 	if (err) {
 		return err;
 	}
@@ -455,14 +447,14 @@ int elf64_setup_initial_stack(struct addr_space *space,
 		argv_user = kmalloc(argc * sizeof(*argv_user));
 		if (!argv_user) {
 			err = -ENOMEM;
-			goto fail_unmap;
+			goto fail;
 		}
 	}
 	if (envc > 0) {
 		envp_user = kmalloc(envc * sizeof(*envp_user));
 		if (!envp_user) {
 			err = -ENOMEM;
-			goto fail_unmap;
+			goto fail;
 		}
 	}
 
@@ -473,11 +465,11 @@ int elf64_setup_initial_stack(struct addr_space *space,
 		stack -= len;
 		if (stack < base) {
 			err = -E2BIG;
-			goto fail_unmap;
+			goto fail;
 		}
 		err = write_to_space(space, stack, s, len);
 		if (err) {
-			goto fail_unmap;
+			goto fail;
 		}
 		envp_user[i - 1] = stack;
 	}
@@ -489,11 +481,11 @@ int elf64_setup_initial_stack(struct addr_space *space,
 		stack -= len;
 		if (stack < base) {
 			err = -E2BIG;
-			goto fail_unmap;
+			goto fail;
 		}
 		err = write_to_space(space, stack, s, len);
 		if (err) {
-			goto fail_unmap;
+			goto fail;
 		}
 		argv_user[i - 1] = stack;
 	}
@@ -502,14 +494,14 @@ int elf64_setup_initial_stack(struct addr_space *space,
 	stack = (stack - frame_size) & ~0xFull;
 	if (stack < base) {
 		err = -E2BIG;
-		goto fail_unmap;
+		goto fail;
 	}
 
 	uint64_t frame_index = 0;
 	uint64_t *frame = kmalloc(frame_size);
 	if (!frame) {
 		err = -ENOMEM;
-		goto fail_unmap;
+		goto fail;
 	}
 	memset(frame, 0, frame_size);
 	frame[frame_index++] = argc;
@@ -524,7 +516,7 @@ int elf64_setup_initial_stack(struct addr_space *space,
 	err = write_to_space(space, stack, frame, frame_size);
 	kfree(frame);
 	if (err) {
-		goto fail_unmap;
+		goto fail;
 	}
 
 	kfree(envp_user);
@@ -532,10 +524,9 @@ int elf64_setup_initial_stack(struct addr_space *space,
 	*stack_out = stack;
 	return 0;
 
-fail_unmap:
+fail:
 	kfree(envp_user);
 	kfree(argv_user);
-	vmm_unmap(space, base, (USER_STACK_TOP - base) / PAGE_SIZE);
 	return err;
 }
 

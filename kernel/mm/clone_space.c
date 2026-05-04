@@ -117,8 +117,16 @@ static int clone_one_vma(struct addr_space *src, struct addr_space *dst,
 			return err;
 		}
 
-		/* Bump the refcount for the shared page. */
-		pmm_get_user_page(pa);
+		/*
+		 * Bump the refcount for the shared page.
+		 *
+		 * v0.0.3 §2.5: the zero page's refcount is 0 forever
+		 * and must never be touched.  Skip the bump — the
+		 * zero page is a shared singleton that is never freed.
+		 */
+		if (pa != mm_zero_page) {
+			pmm_get_user_page(pa);
+		}
 	}
 
 	return 0;

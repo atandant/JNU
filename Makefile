@@ -115,6 +115,7 @@ C_SRCS := \
     kernel/mm/vma.c \
     kernel/mm/slab.c \
     kernel/mm/clone_space.c \
+    kernel/mm/mmap.c \
     kernel/initramfs/cpio_newc.c \
     kernel/initramfs/initramfs.c \
     kernel/exec/elf64.c \
@@ -132,6 +133,16 @@ C_SRCS := \
     kernel/syscall/sys_yield.c \
     kernel/syscall/sys_fork.c \
     kernel/syscall/sys_execve.c \
+    kernel/syscall/sys_writev.c \
+    kernel/syscall/sys_arch_prctl.c \
+    kernel/syscall/sys_clock_gettime.c \
+    kernel/syscall/sys_nanosleep.c \
+    kernel/syscall/sys_getrandom.c \
+    kernel/syscall/sys_set_tid_address.c \
+    kernel/syscall/sys_rt_sigaction.c \
+    kernel/syscall/sys_rt_sigprocmask.c \
+    kernel/syscall/sys_ioctl.c \
+    kernel/syscall/sys_exit_group.c \
     kernel/user/copy.c \
     kernel/user/fd.c \
     kernel/user/process.c \

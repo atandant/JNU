@@ -9,6 +9,7 @@
  */
 
 #include <jnu/arch_syscall.h>
+#include <jnu/cpu.h>
 #include <jnu/errno.h>
 #include <jnu/gdt.h>
 #include <jnu/klog.h>
@@ -129,6 +130,10 @@ static void switch_to(struct task *next)
 	/* v0.0.3 §2.7: eager FPU save/restore on every switch. */
 	fpu_save(prev->fpu_state);
 	fpu_restore(next->fpu_state);
+
+	/* v0.0.3 §2.9: preserve per-task FS/GS base for TLS. */
+	prev->fs_base = rdmsr(MSR_FS_BASE);
+	wrmsr(MSR_FS_BASE, next->fs_base);
 
 	context_switch(&prev->ctx, &next->ctx);
 }

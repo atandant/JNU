@@ -42,6 +42,13 @@ struct task {
 	 */
 	unsigned int wake_pending;
 	/*
+	 * v0.0.3 §2.9: per-task FS/GS base for arch_prctl.
+	 * Saved and restored on every context switch via wrmsr.
+	 * musl uses %fs:0 for TLS / errno access.
+	 */
+	uint64_t fs_base;
+	uint64_t gs_base;
+	/*
 	 * v0.0.3 §2.7: per-task FPU/SSE state buffer.  64-byte
 	 * aligned for FXSAVE/XSAVE requirements.  Sized to the
 	 * maximum XSAVE area (1024 bytes covers x87+SSE; XSAVE

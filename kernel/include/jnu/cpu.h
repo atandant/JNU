@@ -68,6 +68,7 @@ static inline void wrmsr(uint32_t msr, uint64_t v)
 }
 
 #define MSR_EFER 0xC0000080
+#define MSR_FS_BASE 0xC0000100
 #define MSR_GS_BASE 0xC0000101
 #define MSR_KERNEL_GS_BASE 0xC0000102
 #define MSR_APIC_BASE 0x0000001B

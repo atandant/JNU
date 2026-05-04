@@ -172,11 +172,13 @@ int vmm_handle_cow_fault(struct addr_space *space, vaddr_t va)
 	 * Fast path: if the refcount has dropped to 1 (the other side
 	 * already copied or exited), just re-enable PTE_WRITE — no
 	 * allocation, no copy.
+	 *
+	 * The zero page has refcount 0 forever — it never qualifies
+	 * for the fast path.
 	 */
-	if (pmm_user_refcount(old_pa) == 1) {
+	if (old_pa != mm_zero_page && pmm_user_refcount(old_pa) == 1) {
 		err = paging_protect(space, va, 1,
-				     (old_pte & PTE_USER) | PTE_WRITE |
-					 PTE_NX);
+				     (old_pte & PTE_USER) | PTE_WRITE | PTE_NX);
 		if (err) {
 			return err;
 		}
@@ -201,13 +203,85 @@ int vmm_handle_cow_fault(struct addr_space *space, vaddr_t va)
 		goto fail_page;
 	}
 
-	pmm_put_user_page(old_pa);
+	/*
+	 * v0.0.3 §2.5: skip pmm_put_user_page on the zero page —
+	 * its refcount is 0 and must never be touched.
+	 */
+	if (old_pa != mm_zero_page) {
+		pmm_put_user_page(old_pa);
+	}
 	paging_invlpg(va);
 	return 0;
 
 fail_page:
 	pmm_put_user_page(new_pa);
 	return err;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Lazy zero-fill — v0.0.3 §2.5                                              */
+/* ------------------------------------------------------------------------- */
+
+int vmm_handle_lazy_fault(struct addr_space *space, const struct vma *v,
+			  vaddr_t va, uint32_t ec)
+{
+	paddr_t pa;
+	uint64_t pte_flags;
+	int err;
+
+	/*
+	 * ec bit layout (x86-64 #PF error code):
+	 *   bit 1 (W) — write access
+	 *   bit 4 (ID) — instruction fetch
+	 */
+#define LAZY_EC_W (1u << 1)
+#define LAZY_EC_ID (1u << 4)
+
+	if (ec & LAZY_EC_ID) {
+		if (!(v->flags & VMA_EXEC)) {
+			return -EACCES;
+		}
+		pa = pmm_alloc_user_page();
+		if (!pa) {
+			return -ENOMEM;
+		}
+		pte_flags = PTE_USER;
+
+	} else if (ec & LAZY_EC_W) {
+		if (!(v->flags & VMA_WRITE)) {
+			return -EACCES;
+		}
+		pa = pmm_alloc_user_page();
+		if (!pa) {
+			return -ENOMEM;
+		}
+		pte_flags = PTE_USER | PTE_WRITE | PTE_NX;
+
+	} else {
+		if (!(v->flags & VMA_READ)) {
+			return -EACCES;
+		}
+		/*
+		 * Wire in the global zero page.  No allocation, no
+		 * refcount touch — the zero page's refcount stays 0.
+		 */
+		pa = mm_zero_page;
+		pte_flags = PTE_USER | PTE_NX;
+	}
+
+	err = paging_map(space, va, pa, 1, pte_flags);
+	if (err) {
+		if (pa != mm_zero_page) {
+			pmm_put_user_page(pa);
+		}
+		return err;
+	}
+
+	paging_invlpg(va);
+	return 0;
+
+#undef LAZY_EC_W
+#undef LAZY_EC_ID
 }
 
 /* ------------------------------------------------------------------------- */

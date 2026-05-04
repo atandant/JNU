@@ -48,6 +48,15 @@ int vmm_clone_space(struct addr_space *src, struct addr_space **out);
 int clone_space_selftest(void);
 
 /*
+ * v0.0.3 §2.8: create an anonymous private VMA in `space`.  PTEs are
+ * NOT installed; the lazy zero-fill #PF handler materialises pages on
+ * first access.  `prot` uses PROT_* flags, `flags` uses MAP_* flags.
+ * On success the chosen base address is written to `*addr_out`.
+ */
+int vmm_map_anonymous(struct addr_space *space, vaddr_t addr, size_t length,
+		      uint32_t prot, uint32_t flags, vaddr_t *addr_out);
+
+/*
  * Attempt to resolve a CoW write fault at `va` in `space`.  Called from
  * the #PF handler when all of the following hold:
  *
@@ -59,6 +68,13 @@ int clone_space_selftest(void);
  */
 int vmm_handle_cow_fault(struct addr_space *space, vaddr_t va);
 
+/*
+ * v0.0.3 §2.5: resolve a lazy zero-fill fault.  Called from the #PF
+ * handler when the PTE is absent and a VMA covers the address.
+ * `ec` is the raw x86-64 #PF error code.
+ */
+int vmm_handle_lazy_fault(struct addr_space *space, const struct vma *v,
+			  vaddr_t va, uint32_t ec);
 /*
  * Map `pages` × 4 KiB starting at `virt` to `phys` in `space`. Updates
  * both the page tables and the VMA tree. Returns 0 / -errno.

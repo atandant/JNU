@@ -247,20 +247,16 @@ static void fpu_test_thread(void *arg)
 	uint64_t hi = ctx->pattern_hi;
 	_Alignas(16) uint8_t load_buf[16];
 	_Alignas(16) uint8_t store_buf[16];
-
-	/* Build the 128-bit pattern in load_buf. */
 	*(uint64_t *)&load_buf[0] = lo;
 	*(uint64_t *)&load_buf[8] = hi;
 
 	/* Load pattern into XMM0. */
 	__asm__ __volatile__("movdqu %0, %%xmm0" : : "m"(load_buf) : "memory");
 
-	/* Yield several times to exercise save/restore. */
 	for (int i = 0; i < 8; i++) {
 		sched_yield();
 	}
 
-	/* Read XMM0 back. */
 	__asm__ __volatile__("movdqu %%xmm0, %0"
 			     : "=m"(store_buf)
 			     :

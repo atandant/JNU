@@ -55,6 +55,12 @@ static uint64_t free_list_head[PMM_ZONE_NR][PMM_MAX_ORDER];
 
 static struct pmm_stats stats;
 
+/*
+ * v0.0.3 §2.5: single global kernel zero page.  Allocated once in
+ * pmm_init; its PFN refcount stays 0 forever.
+ */
+paddr_t mm_zero_page;
+
 /* ------------------------------------------------------------------------- */
 /* Helpers                                                                    */
 /* ------------------------------------------------------------------------- */
@@ -321,6 +327,10 @@ void pmm_get_user_page(paddr_t pa)
 {
 	uint64_t pfn = pa_to_pfn(pa);
 
+	if (pa == mm_zero_page) {
+		panic("pmm_get_user_page: called on zero page (pa 0x%lx)",
+		      (unsigned long)pa);
+	}
 	if (pfn >= pfn_count) {
 		panic("pmm_get_user_page: pfn out of range (pa 0x%lx)",
 		      (unsigned long)pa);
@@ -345,6 +355,10 @@ void pmm_put_user_page(paddr_t pa)
 {
 	uint64_t pfn = pa_to_pfn(pa);
 
+	if (pa == mm_zero_page) {
+		panic("pmm_put_user_page: called on zero page (pa 0x%lx)",
+		      (unsigned long)pa);
+	}
 	if (pfn >= pfn_count) {
 		panic("pmm_put_user_page: pfn out of range (pa 0x%lx)",
 		      (unsigned long)pa);
@@ -477,6 +491,17 @@ void pmm_init(const struct limine_memmap_response *mm, uint64_t hhdm_offset)
 		? (highest_end - 16ull * 1024 * 1024) / PAGE_SIZE
 		: 0;
 	(void)total_free_pages;
+
+	/*
+	 * v0.0.3 §2.5: allocate the global zero page.  It comes back
+	 * zeroed (§2.6 invariant) and its PFN refcount stays 0.
+	 */
+	mm_zero_page = pmm_alloc_zeroed_pages(0);
+	if (!mm_zero_page) {
+		panic("pmm: cannot allocate zero page");
+	}
+	pr_info("pmm: zero page at phys 0x%lx\n",
+		(unsigned long)mm_zero_page);
 
 	pmm_dump();
 }

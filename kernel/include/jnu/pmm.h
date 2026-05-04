@@ -68,5 +68,14 @@ void pmm_get_stats(struct pmm_stats *out);
 
 void pmm_dump(void);
 
+/*
+ * v0.0.3 §2.5: the kernel zero page.  Allocated once at PMM init;
+ * its PFN refcount stays 0 forever.  Used by the lazy zero-fill
+ * fault path to satisfy read faults without allocating a frame.
+ * Never passed to pmm_get_user_page / pmm_put_user_page (both panic
+ * on this address as a defense-in-depth guard).
+ */
+extern paddr_t mm_zero_page;
+
 int pmm_selftest(void);
 int pmm_zerofree_selftest(void);

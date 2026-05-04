@@ -196,6 +196,32 @@ void exceptions_handle(struct cpu_state *st)
 				}
 			}
 
+			/*
+			 * v0.0.3 §2.5: lazy zero-fill for absent pages
+			 * inside a valid VMA.  The PTE is not present
+			 * (PF_EC_P is clear).
+			 */
+			if (!(ec & PF_EC_P)) {
+				struct task *t = sched_current();
+				struct addr_space *space =
+				    t->process ? t->process->space : NULL;
+
+				if (space) {
+					struct vma *v = vma_find(
+					    &space->vmas, cr2);
+
+					if (v) {
+						vaddr_t va = cr2 & ~PAGE_MASK;
+						int fill_err =
+						    vmm_handle_lazy_fault(
+							space, v, va, ec);
+						if (fill_err == 0) {
+							return;
+						}
+					}
+				}
+			}
+
 			pr_err("pagefault: user %s at 0x%016lx "
 			       "(rip=0x%016lx ec=0x%x)\n",
 			       pf_reason(ec), (unsigned long)cr2,

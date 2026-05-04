@@ -236,9 +236,16 @@ int usercopy_selftest(void)
 		goto fail_page;
 	}
 
-	if (*(volatile uint64_t *)USERCOPY_TEST_VA != 0) {
-		err = -EINVAL;
-		goto fail_unmap;
+	{
+		uint64_t zero_check = 1;
+
+		err = copy_from_user(&zero_check,
+				     (void *)USERCOPY_TEST_VA,
+				     sizeof(zero_check));
+		if (err || zero_check != 0) {
+			err = err ? err : -EINVAL;
+			goto fail_unmap;
+		}
 	}
 
 	err = copy_to_user((void *)USERCOPY_TEST_VA, src, sizeof(src));
@@ -275,6 +282,9 @@ int usercopy_selftest(void)
 
 fail_unmap:
 	vmm_unmap(vmm_kernel_space(), USERCOPY_TEST_VA, 1);
+	/* vmm_unmap released the physical page; do not free it again. */
+	return err;
+
 fail_page:
 	pmm_free_pages(pa, 0);
 	return err;

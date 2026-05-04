@@ -272,7 +272,11 @@ int paging_unmap(struct addr_space *space, vaddr_t virt, size_t pages)
 		uint64_t e = pt[pt_idx(v)];
 		if (e & PTE_PRESENT) {
 			if (e & PTE_USER) {
-				pmm_put_user_page(e & PTE_ADDR_MASK);
+				paddr_t pa = e & PTE_ADDR_MASK;
+
+				if (pa != mm_zero_page) {
+					pmm_put_user_page(pa);
+				}
 			}
 			pt[pt_idx(v)] = 0;
 			paging_invlpg(v);
@@ -411,8 +415,11 @@ void paging_destroy_user_half(uint64_t *pml4)
 				for (unsigned i1 = 0; i1 < 512; i1++) {
 					uint64_t e1 = pt[i1];
 					if (e1 & PTE_PRESENT) {
-						pmm_put_user_page(
-						    e1 & PTE_ADDR_MASK);
+						paddr_t pa = e1 & PTE_ADDR_MASK;
+
+						if (pa != mm_zero_page) {
+							pmm_put_user_page(pa);
+						}
 					}
 				}
 				pmm_free_pages(e2 & PTE_ADDR_MASK, 0);
