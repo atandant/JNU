@@ -1,0 +1,67 @@
+JNU stubbed-syscall notes (parked from 0.0.3 audit conversation)
+================================================================
+
+Stub status as of 0.0.3 audit:
+
+  rt_sigaction         returns 0, ignores act/oldact
+  rt_sigprocmask       returns 0, ignores how/set/oldset
+  ioctl                returns -ENOTTY for everything
+  set_tid_address      returns current pid, ignores tidptr (no futex)
+  arch_prctl           SET/GET FS/GS only — already real, not a stub
+  getrandom            already real (CSPRNG)
+  clock_gettime        already real (HPET)
+  nanosleep            already real
+  exit_group           already real (single-thread today)
+
+What blocks turning the stubs into real syscalls:
+
+  rt_sigaction / rt_sigprocmask
+    Needs a signal-delivery story:
+      - per-process struct sigaction[NSIG]
+      - per-task pending mask + blocked mask
+      - check-and-deliver hook on syscall return / IRQ return to user
+      - default actions (SIGSEGV → kill, SIGCHLD → ignore, etc.)
+      - rt_sigreturn syscall to unwind the user-stack signal frame
+    DOES NOT need any FS work. Roughly 300–500 LOC + careful arch glue.
+    Touchpoints: arch/x86_64/syscall_entry.S, exceptions.c (raise on fault),
+                 sched.c (deliver before returning to ring 3), process.h.
+
+  ioctl
+    Useful targets in 0.0.3:
+      - TIOCGWINSZ on /dev/kbd or a future /dev/tty (musl stdio probes it)
+      - FIONREAD on /dev/kbd ring (cheap, useful)
+    Needs a per-chardev .ioctl op slot in struct char_ops, plus
+    syscall plumbing that copies the request struct in/out.
+    NO FS work needed.
+
+  set_tid_address
+    Already returns pid; only "real" use is robust-futex cleanup, which
+    requires a futex implementation. Defer until threads/futex land.
+
+Keyboard-input via existing chardev path:
+  sys_open() already resolves "/dev/kbd" → kbd_get_chardev() and
+  sys_read() already handles JNU_FILE_CHARDEV with a copy_to_user
+  bounce. So `int fd = open("/dev/kbd"); read(fd, buf, n);` works
+  TODAY from a userspace program. We do NOT need a /dev filesystem
+  to consume keyboard input — just call open("/dev/kbd").
+
+  Caveats: it is non-blocking (driver returns 0 when ring is empty),
+  no line discipline, no echo, no ICANON. Adding /dev/tty with
+  cooked mode is a separate project.
+
+What does NOT need minix-write:
+  - any of the four stubs above
+  - keyboard input (chardev path is wired)
+  - /dev/null, /dev/zero (just register more chardevs and add a path
+    in resolve_dev_chardev)
+
+What DOES need a writable FS or some persistence:
+  - shells that want to save history
+  - editors / userspace mutating files at runtime
+  - logging beyond serial
+
+Recommendation captured from the audit chat:
+  Defer signals → 0.0.4 (real implementation, not stubs).
+  ioctl → tiny per-chardev helper in 0.0.3 if appetite allows.
+  /dev/null + /dev/zero → trivial, optional 0.0.3.
+  set_tid_address → leave as is until futex.
