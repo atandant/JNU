@@ -20,6 +20,9 @@ struct cpu {
 	bool has_smap;
 	bool has_nx;
 	bool has_apic;
+	bool has_fxsr;	     /* CPUID.01H:EDX.FXSR (bit 24) */
+	bool has_xsave;	     /* CPUID.01H:ECX.XSAVE (bit 26) */
+	uint32_t xsave_size; /* bytes needed for XSAVE/FXSAVE area */
 };
 
 /*
@@ -71,7 +74,41 @@ static inline void wrmsr(uint32_t msr, uint64_t v)
 
 #define EFER_NXE (1ull << 11)
 
-#define CR0_WP (1ull << 16)
-#define CR4_PGE (1ull << 7)
-#define CR4_SMEP (1ull << 20)
-#define CR4_SMAP (1ull << 21)
+#define CR0_MP   (1ull << 1)
+#define CR0_EM   (1ull << 2)
+#define CR0_TS   (1ull << 3)
+#define CR0_NE   (1ull << 5)
+#define CR0_WP   (1ull << 16)
+
+#define CR4_OSFXSR     (1ull << 9)
+#define CR4_OSXMMEXCPT (1ull << 10)
+#define CR4_PGE        (1ull << 7)
+#define CR4_SMEP       (1ull << 20)
+#define CR4_SMAP       (1ull << 21)
+#define CR4_OSXSAVE    (1ull << 18)
+
+/* XCR0 feature bits (Extended Control Register 0). */
+#define XCR0_X87 (1ull << 0)
+#define XCR0_SSE (1ull << 1)
+
+/*
+ * FPU state management — v0.0.3 §2.7.
+ *
+ * fpu_init_early() detects FXSR/XSAVE, sets the CR0/CR4 bits, and
+ * prepares the canonical initial FPU state buffer.  Called once from
+ * cpu_init().
+ *
+ * fpu_state_init() copies the canonical starting state into a task's
+ * FPU buffer.  Called at task creation.
+ *
+ * fpu_save(buf) / fpu_restore(buf) perform XSAVE/XRSTOR or
+ * FXSAVE/FXRSTOR into/from the given buffer.  Called by the
+ * context-switch path in sched.c.
+ */
+void fpu_init_early(void);
+void fpu_state_init(void *buf);
+void fpu_save(void *buf);
+void fpu_restore(const void *buf);
+
+/* Phase 1 selftest: two tasks load distinct XMM patterns, yield, check. */
+int fpu_selftest(void);

@@ -29,3 +29,5 @@ Here's a possible roadmap of all the future additions 0.0.2.3 or 0.0.3 entails.
       7. Minix FS Write support.
       8. More filesystem drivers.
 
+I also tried to add SLUB but that failed horribly, too messy.
+

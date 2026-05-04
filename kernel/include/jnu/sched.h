@@ -8,6 +8,7 @@
 #pragma once
 
 #include <jnu/context.h>
+#include <jnu/cpu.h>
 #include <jnu/types.h>
 
 enum task_state {
@@ -40,6 +41,14 @@ struct task {
 	 * consumes the credit instead of blocking.
 	 */
 	unsigned int wake_pending;
+	/*
+	 * v0.0.3 §2.7: per-task FPU/SSE state buffer.  64-byte
+	 * aligned for FXSAVE/XSAVE requirements.  Sized to the
+	 * maximum XSAVE area (1024 bytes covers x87+SSE; XSAVE
+	 * with only XCR0.X87|SSE needs <= 576 bytes, but we
+	 * over-provision to avoid a variable-length struct).
+	 */
+	_Alignas(64) uint8_t fpu_state[1024];
 };
 
 typedef void (*kernel_thread_fn)(void *arg);

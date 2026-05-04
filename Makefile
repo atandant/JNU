@@ -109,6 +109,7 @@ C_SRCS := \
     kernel/arch/x86_64/arch_syscall.c \
     kernel/arch/x86_64/usermode.c \
     kernel/arch/x86_64/paging.c \
+    kernel/arch/x86_64/fpu.c \
     kernel/mm/pmm.c \
     kernel/mm/vmm.c \
     kernel/mm/vma.c \

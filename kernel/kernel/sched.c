@@ -126,6 +126,10 @@ static void switch_to(struct task *next)
 			  ? next->process->space
 			  : vmm_kernel_space());
 
+	/* v0.0.3 §2.7: eager FPU save/restore on every switch. */
+	fpu_save(prev->fpu_state);
+	fpu_restore(next->fpu_state);
+
 	context_switch(&prev->ctx, &next->ctx);
 }
 
@@ -203,6 +207,7 @@ void sched_init(void)
 	arch_syscall_set_kernel_stack(
 	    (uint64_t)(uintptr_t)boot_task.kstack_top);
 	current = &boot_task;
+	fpu_state_init(boot_task.fpu_state);
 	all_tasks_add(&boot_task);
 
 	memset(&idle_task, 0, sizeof(idle_task));
@@ -214,6 +219,7 @@ void sched_init(void)
 	    phys_to_virt(pmm_alloc_zeroed_pages(KSTACK_ORDER));
 	idle_task.kstack_top = (uint8_t *)idle_task.kstack_base + KSTACK_SIZE;
 	task_prepare_stack(&idle_task, idle_loop, NULL);
+	fpu_state_init(idle_task.fpu_state);
 	all_tasks_add(&idle_task);
 
 	pr_info("sched: boot tid=%d pid=%d, idle tid=%d\n", boot_task.tid,
@@ -252,6 +258,7 @@ int sched_create_user_task(const char *name, struct process *proc,
 	task->parent = current;
 	task->process = proc;
 	task_prepare_stack(task, user_thread_entry, proc);
+	fpu_state_init(task->fpu_state);
 	proc->main_task = task;
 
 	flags = spin_lock_irqsave(&sched_lock);
@@ -306,6 +313,7 @@ int sched_create_kernel_thread(const char *name, kernel_thread_fn fn, void *arg,
 	task->name = name ? name : "kthread";
 	task->parent = current;
 	task_prepare_stack(task, fn, arg);
+	fpu_state_init(task->fpu_state);
 
 	task->process = process_create_kernel(task);
 	if (!task->process) {

@@ -151,6 +151,17 @@ static void kill_current_user(void)
 void exceptions_handle(struct cpu_state *st)
 {
 	/*
+	 * v0.0.3 §2.7: #NM (vector 7) is impossible with eager FPU
+	 * save (CR0.TS is always clear).  Panic unconditionally — its
+	 * appearance is a CPU/setup bug, not a user fault.
+	 */
+	if (st->vector == 7) {
+		panic("FPU #NM with eager save active "
+		      "(rip=0x%lx, cs=0x%lx)",
+		      (unsigned long)st->rip, (unsigned long)st->cs);
+	}
+
+	/*
 	 * User-mode faults: kill the process, do not panic the kernel.
 	 * Every exception from ring 3 is fatal to the process, whether
 	 * it is #PF, #GP, #UD, #DE, or anything else.

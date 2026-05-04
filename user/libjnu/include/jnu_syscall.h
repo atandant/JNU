@@ -1,6 +1,9 @@
 /*
  * user/libjnu/include/jnu_syscall.h - Tiny native JNU userspace ABI.
  *
+ * v0.0.3 §2.2: Linux x86_64-compatible syscall numbers. Mirrors
+ * kernel/include/jnu/syscall_nr.h.
+ *
  * Copyright (c) 2026 The JNU Authors.
  * SPDX-License-Identifier: GPL-2.0-only
  */
@@ -13,20 +16,18 @@ typedef signed long int64_t;
 typedef unsigned long uint64_t;
 typedef unsigned int uint32_t;
 
-#define JNU_SYS_exit 0
-#define JNU_SYS_write 1
-#define JNU_SYS_read 2
-#define JNU_SYS_open 3
-#define JNU_SYS_close 4
-#define JNU_SYS_lseek 5
-#define JNU_SYS_getpid 6
-#define JNU_SYS_yield 7
-#define JNU_SYS_fstat 8
-/* 9 is retired; it was JNU_SYS_spawn. */
-#define JNU_SYS_spawn 9
-#define JNU_SYS_waitpid 10
-#define JNU_SYS_fork 11
-#define JNU_SYS_execve 12
+#define JNU_SYS_read         0
+#define JNU_SYS_write        1
+#define JNU_SYS_open         2
+#define JNU_SYS_close        3
+#define JNU_SYS_fstat        5
+#define JNU_SYS_lseek        8
+#define JNU_SYS_sched_yield 24
+#define JNU_SYS_getpid      39
+#define JNU_SYS_fork        57
+#define JNU_SYS_execve      59
+#define JNU_SYS_exit        60
+#define JNU_SYS_wait4       61
 
 #define SEEK_SET 0
 #define SEEK_CUR 1
@@ -43,6 +44,7 @@ long jnu_syscall0(long nr);
 long jnu_syscall1(long nr, long a0);
 long jnu_syscall2(long nr, long a0, long a1);
 long jnu_syscall3(long nr, long a0, long a1, long a2);
+long jnu_syscall4(long nr, long a0, long a1, long a2, long a3);
 
 int close(int fd);
 int execve(const char *path, char *const argv[], char *const envp[]);

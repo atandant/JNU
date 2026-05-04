@@ -299,9 +299,12 @@ static void attack_exec_wait(void)
 		unterminated_argv[i] = "x";
 	}
 
-	report("sys_spawn retired",
-	       jnu_syscall2(JNU_SYS_spawn, (long)"/bin/hello", (long)argv),
-	       1);
+	/*
+	 * sys_spawn is fully retired in v0.0.3 (its slot 9 now belongs
+	 * to mmap, landing in Phase 2). Syscall 99 below already
+	 * exercises the -ENOSYS path, so we drop the spawn-specific
+	 * probe rather than perpetuate the macro.
+	 */
 	report("execve(NULL)", execve((const char *)0, argv, 0), 1);
 	report("execve(kernel_text)",
 	       execve((const char *)KERNEL_ADDR_TEXT, argv, 0), 1);

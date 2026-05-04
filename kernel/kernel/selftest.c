@@ -10,6 +10,7 @@
  */
 
 #include <jnu/ata.h>
+#include <jnu/cpu.h>
 #include <jnu/elf64.h>
 #include <jnu/fd.h>
 #include <jnu/initramfs.h>
@@ -34,6 +35,8 @@ static const struct selftest tests[] = {
     {"spinlock", spinlock_selftest},
     {"rbtree", rbtree_selftest},
     {"pmm", pmm_selftest},
+    {"pmm_zerofree", pmm_zerofree_selftest},
+    {"fpu", fpu_selftest},
     {"vmm", vmm_selftest},
     {"slab", slab_selftest},
     {"initramfs", initramfs_selftest},

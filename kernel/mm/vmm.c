@@ -137,12 +137,36 @@ int vmm_handle_cow_fault(struct addr_space *space, vaddr_t va)
 	uint64_t new_flags;
 	int err;
 
+	/*
+	 * Re-align defensively: callers in v0.0.2.2 already mask CR2,
+	 * but a future direct caller passing an unaligned VA would
+	 * otherwise silently land on the wrong PA in the slow path.
+	 */
+	va &= ~PAGE_MASK;
+
 	err = paging_get_flags(space, va, &old_pte);
 	if (err) {
 		return err;
 	}
 
+	/*
+	 * v0.0.2.2 user mappings are 4 KiB only. A huge user PTE here
+	 * would mean the loader/VMM produced something this CoW path
+	 * is not prepared for: the refcount is per-4-KiB-PFN, memcpy
+	 * below would only copy one 4 KiB chunk of a 2 MiB frame, and
+	 * pmm_put_user_page would corrupt refcount tracking. Refuse.
+	 */
+	if (old_pte & PTE_HUGE) {
+		return -EINVAL;
+	}
+
 	old_pa = old_pte & PTE_ADDR_MASK;
+
+	/*
+	 * W^X: granting PTE_WRITE on a CoW resolution must never produce
+	 * a writable + executable user page. Force PTE_NX whenever we
+	 * add PTE_WRITE, regardless of what the source PTE carried.
+	 */
 
 	/*
 	 * Fast path: if the refcount has dropped to 1 (the other side
@@ -151,8 +175,8 @@ int vmm_handle_cow_fault(struct addr_space *space, vaddr_t va)
 	 */
 	if (pmm_user_refcount(old_pa) == 1) {
 		err = paging_protect(space, va, 1,
-				     (old_pte & (PTE_USER | PTE_NX)) |
-					 PTE_WRITE);
+				     (old_pte & PTE_USER) | PTE_WRITE |
+					 PTE_NX);
 		if (err) {
 			return err;
 		}
@@ -171,7 +195,7 @@ int vmm_handle_cow_fault(struct addr_space *space, vaddr_t va)
 
 	memcpy(phys_to_virt(new_pa), phys_to_virt(old_pa), PAGE_SIZE);
 
-	new_flags = (old_pte & (PTE_USER | PTE_NX)) | PTE_WRITE;
+	new_flags = (old_pte & PTE_USER) | PTE_WRITE | PTE_NX;
 	err = paging_map(space, va, new_pa, 1, new_flags);
 	if (err) {
 		goto fail_page;

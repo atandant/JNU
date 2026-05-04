@@ -126,6 +126,19 @@ static uint64_t buddy_pfn(uint64_t pfn, int order)
 static void pmm_register_block(uint64_t pfn, int order)
 {
 	enum pmm_zone z = zone_of(pfn_to_pa(pfn));
+
+	/*
+	 * v0.0.3 §2.6: maintain the "freelist pages are zero" invariant
+	 * at boot. Limine's USABLE regions may contain BIOS scratch or
+	 * leftover bootloader data; zero before publishing to the buddy.
+	 *
+	 * Cannot use phys_to_virt() here because paging_init() (which
+	 * sets the global hhdm_offset) has not run yet; use the PMM-
+	 * local hhdm_off directly.
+	 */
+	memset((void *)(uintptr_t)(pfn_to_pa(pfn) + hhdm_off), 0,
+	       PMM_ORDER_SIZE(order));
+
 	list_push(z, order, pfn);
 	stats.free_pages += (1ull << order);
 	stats.free_by_order[order]++;
@@ -189,18 +202,16 @@ paddr_t pmm_alloc_pages(int order)
 
 paddr_t pmm_alloc_zeroed_pages(int order)
 {
-	paddr_t pa = pmm_alloc_pages(order);
-
-	if (pa) {
-		memset(phys_to_virt(pa), 0, PMM_ORDER_SIZE(order));
-	}
-
-	return pa;
+	/*
+	 * v0.0.3 §2.6: pages on the buddy free list are guaranteed
+	 * zero by pmm_free_pages; this becomes a thin wrapper.
+	 */
+	return pmm_alloc_pages(order);
 }
 
 paddr_t pmm_alloc_user_page(void)
 {
-	paddr_t pa = pmm_alloc_zeroed_pages(0);
+	paddr_t pa = pmm_alloc_pages(0);
 
 	if (pa) {
 		uint64_t pfn = pa_to_pfn(pa);
@@ -257,6 +268,16 @@ void pmm_free_pages(paddr_t pa, int order)
 		panic("pmm_free_pages: double-free at 0x%lx",
 		      (unsigned long)pa);
 	}
+
+	/*
+	 * v0.0.3 §2.6: zero on free. The freelist invariant is that
+	 * every page reachable from a free list is zero. This closes
+	 * the §12 (jnuspec.md) information-leak risk and lets
+	 * pmm_alloc_pages skip its own zeroing path. Buddies that
+	 * coalesce below are already zero (they were zeroed on their
+	 * own free), so zeroing only the incoming block is sufficient.
+	 */
+	memset(phys_to_virt(pa), 0, PMM_ORDER_SIZE(order));
 
 	enum pmm_zone z = zone_of(pa);
 
@@ -517,6 +538,69 @@ int pmm_selftest(void)
 		       (unsigned long)after.free_pages);
 		return -EINVAL;
 	}
+
+	return 0;
+}
+
+/*
+ * Verify the v0.0.3 §2.6 zero-on-free invariant: a page written with a
+ * non-zero pattern, freed, then allocated back must read as zero. The
+ * test covers both 4 KiB and order-3 (32 KiB) blocks so the memset
+ * size argument is exercised at more than the page granularity.
+ */
+int pmm_zerofree_selftest(void)
+{
+	static const uint8_t pattern = 0xA5;
+	paddr_t pa;
+	uint8_t *p;
+
+	/* Order-0: single page. */
+	pa = pmm_alloc_pages(0);
+	if (!pa) {
+		return -ENOMEM;
+	}
+	p = phys_to_virt(pa);
+	memset(p, pattern, PAGE_SIZE);
+	pmm_free_pages(pa, 0);
+
+	pa = pmm_alloc_pages(0);
+	if (!pa) {
+		return -ENOMEM;
+	}
+	p = phys_to_virt(pa);
+	for (size_t i = 0; i < PAGE_SIZE; i++) {
+		if (p[i] != 0) {
+			pr_err("pmm: zero-on-free violated at +%lu (got 0x%02x)\n",
+			       (unsigned long)i, p[i]);
+			pmm_free_pages(pa, 0);
+			return -EIO;
+		}
+	}
+	pmm_free_pages(pa, 0);
+
+	/* Order-3: 32 KiB block. */
+	pa = pmm_alloc_pages(3);
+	if (!pa) {
+		return -ENOMEM;
+	}
+	p = phys_to_virt(pa);
+	memset(p, pattern, PMM_ORDER_SIZE(3));
+	pmm_free_pages(pa, 3);
+
+	pa = pmm_alloc_pages(3);
+	if (!pa) {
+		return -ENOMEM;
+	}
+	p = phys_to_virt(pa);
+	for (size_t i = 0; i < PMM_ORDER_SIZE(3); i++) {
+		if (p[i] != 0) {
+			pr_err("pmm: zero-on-free order-3 violated at +%lu\n",
+			       (unsigned long)i);
+			pmm_free_pages(pa, 3);
+			return -EIO;
+		}
+	}
+	pmm_free_pages(pa, 3);
 
 	return 0;
 }

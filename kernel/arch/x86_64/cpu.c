@@ -131,6 +131,9 @@ void cpu_init(void)
 	/* Wire IA32_GS_BASE to the per-CPU block. */
 	wrmsr(MSR_GS_BASE, (uint64_t)(uintptr_t)&boot_cpu);
 
+	/* v0.0.3 §2.7: FPU/SSE eager-save setup. */
+	fpu_init_early();
+
 	pr_info("cpu: features lm=%c apic=%c nx=%c smep=%c smap=%c\n",
 		has_lm ? 'y' : 'n', has_apic ? 'y' : 'n', has_nx ? 'y' : 'n',
 		has_smep ? 'y' : 'n', has_smap ? 'y' : 'n');

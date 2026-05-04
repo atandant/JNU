@@ -69,3 +69,4 @@ void pmm_get_stats(struct pmm_stats *out);
 void pmm_dump(void);
 
 int pmm_selftest(void);
+int pmm_zerofree_selftest(void);
