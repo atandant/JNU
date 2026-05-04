@@ -261,6 +261,10 @@ int sched_create_user_task(const char *name, struct process *proc,
 	task->kstack_top = (uint8_t *)task->kstack_base + KSTACK_SIZE;
 	task->name = name ? name : "user";
 	task->parent = current;
+	if (current) {
+		task->fs_base = current->fs_base;
+		task->gs_base = current->gs_base;
+	}
 	task->process = proc;
 	task_prepare_stack(task, user_thread_entry, proc);
 	fpu_state_init(task->fpu_state);

@@ -34,6 +34,9 @@ int64_t sys_arch_prctl(int code, uint64_t addr)
 
 	switch (code) {
 	case ARCH_SET_FS:
+		if (addr >= USER_TOP) {
+			return -EPERM;
+		}
 		t->fs_base = addr;
 		wrmsr(MSR_FS_BASE, addr);
 		return 0;
@@ -46,6 +49,9 @@ int64_t sys_arch_prctl(int code, uint64_t addr)
 				    sizeof(t->fs_base));
 
 	case ARCH_SET_GS:
+		if (addr >= USER_TOP) {
+			return -EPERM;
+		}
 		t->gs_base = addr;
 		wrmsr(MSR_GS_BASE, addr);
 		return 0;

@@ -253,8 +253,8 @@ static int materialise_pages(struct addr_space *space, uint64_t start,
 			return -ENOMEM;
 		}
 
-		err = vmm_map(space, va, pa, 1,
-			      VMA_READ | VMA_WRITE | VMA_USER);
+		err =
+		    vmm_map(space, va, pa, 1, VMA_READ | VMA_WRITE | VMA_USER);
 		if (err) {
 			pmm_free_pages(pa, 0);
 			return err;
@@ -314,10 +314,9 @@ int elf64_load_image(struct addr_space *space, const struct exec_image *image,
 		 * initial mapping so we can copy segment content, then
 		 * tighten to the final protection afterwards.
 		 */
-		err = vmm_map_anonymous(space, start, end - start,
-					PROT_READ | PROT_WRITE,
-					MAP_FIXED | MAP_PRIVATE |
-					MAP_ANONYMOUS, NULL);
+		err = vmm_map_anonymous(
+		    space, start, end - start, PROT_READ | PROT_WRITE,
+		    MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, NULL);
 		if (err) {
 			goto fail_space;
 		}
@@ -365,15 +364,14 @@ int elf64_load_image(struct addr_space *space, const struct exec_image *image,
 			if (seg_prot & PROT_EXEC) {
 				final_flags |= VMA_EXEC;
 			}
-			err = vmm_protect(space, start,
-					  (end - start) / PAGE_SIZE,
-					  final_flags);
+			err =
+			    vmm_protect(space, start, (end - start) / PAGE_SIZE,
+					final_flags);
 			if (err) {
 				goto fail_space;
 			}
 
-			struct vma *seg_vma =
-			    vma_find(&space->vmas, start);
+			struct vma *seg_vma = vma_find(&space->vmas, start);
 			if (seg_vma) {
 				seg_vma->flags = final_flags;
 			}
@@ -405,7 +403,7 @@ int elf64_setup_initial_stack(struct addr_space *space,
 	size_t envc = strings ? strings->envc : 0;
 	uint64_t *argv_user = NULL;
 	uint64_t *envp_user = NULL;
-	size_t words = 1 + argc + 1 + envc + 1;
+	size_t words = 1 + argc + 1 + envc + 1 + 2;
 	size_t frame_size = words * sizeof(uint64_t);
 	int err;
 
@@ -419,8 +417,7 @@ int elf64_setup_initial_stack(struct addr_space *space,
 	 * silently corrupting an adjacent VMA.
 	 */
 	err = vmm_map_anonymous(space, guard, PAGE_SIZE, PROT_NONE,
-				MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS,
-				NULL);
+				MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, NULL);
 	if (err) {
 		return err;
 	}
@@ -430,8 +427,7 @@ int elf64_setup_initial_stack(struct addr_space *space,
 	 */
 	err = vmm_map_anonymous(space, base, USER_STACK_SIZE,
 				PROT_READ | PROT_WRITE,
-				MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS,
-				NULL);
+				MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, NULL);
 	if (err) {
 		return err;
 	}

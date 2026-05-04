@@ -6,44 +6,40 @@
  */
 
 #include <jnu/arch_syscall.h>
+#include <jnu/cpu.h>
 #include <jnu/errno.h>
 #include <jnu/gdt.h>
+#include <jnu/sched.h>
 #include <jnu/syscall.h>
 #include <jnu/types.h>
 #include <jnu/usermode.h>
 
 int usermode_enter(uint64_t entry, uint64_t stack)
 {
+	struct task *t = sched_current();
+	uint32_t user_ds = GDT_USER_DS | 3;
+
 	if (!entry || !stack) {
 		return -EINVAL;
 	}
 
-	arch_syscall_install_user_gs();
+	__asm__ __volatile__(
+	    "mov %0, %%ds\n\t"
+	    "mov %0, %%es\n\t"
+	    "mov %0, %%fs\n\t"
+	    "mov %0, %%gs\n\t"
+	    :
+	    : "r"(user_ds)
+	    : "memory");
 
-	/*
-	 * iretq pops RIP, CS, RFLAGS, RSP, SS but does NOT touch the
-	 * general-purpose registers. Whatever the kernel left in
-	 * rax/rbx/rcx/rdx/rsi/rdi/rbp/r8..r15 would be visible to
-	 * ring 3 — which can include kernel pointers, stack canaries,
-	 * or arbitrary heap addresses. Zero them all immediately
-	 * before iretq so userspace starts with a clean register
-	 * file. The build of the iretq frame happens before the wipe;
-	 * after the wipe, the only live values are RSP (kernel stack
-	 * holding the iretq frame) and the temporaries the asm
-	 * itself touches.
-	 *
-	 * We use a memory operand for entry/stack so we are free to
-	 * scrub every register in the GP set; reading them through
-	 * the iretq stack frame avoids needing them in registers
-	 * after the wipe.
-	 */
+	arch_syscall_install_user_gs();
+	if (t) {
+		wrmsr(MSR_FS_BASE, t->fs_base);
+		wrmsr(MSR_GS_BASE, t->gs_base);
+	}
+
 	__asm__ __volatile__(
 	    "cli\n\t"
-	    "mov %[uds], %%ax\n\t"
-	    "mov %%ax, %%ds\n\t"
-	    "mov %%ax, %%es\n\t"
-	    "mov %%ax, %%fs\n\t"
-	    "mov %%ax, %%gs\n\t"
 	    "pushq %[uds]\n\t"
 	    "pushq %[rsp]\n\t"
 	    "pushfq\n\t"

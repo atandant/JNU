@@ -24,43 +24,62 @@ struct iovec {
 	size_t iov_len;
 };
 
+#include <jnu/kmalloc.h>
+
 #define UIO_MAXIOV 1024
 
 int64_t sys_writev(int fd, const void *uiov, int iovcnt)
 {
-	struct iovec iov;
+	struct iovec *iov;
 	int64_t total = 0;
+	size_t total_len = 0;
+	int err;
 
 	if (iovcnt <= 0 || iovcnt > UIO_MAXIOV) {
 		return -EINVAL;
 	}
 
+	iov = kmalloc((size_t)iovcnt * sizeof(struct iovec));
+	if (!iov) {
+		return -ENOMEM;
+	}
+
+	err = copy_from_user(iov, uiov, (size_t)iovcnt * sizeof(struct iovec));
+	if (err) {
+		kfree(iov);
+		return err;
+	}
+
+	/* Pre-validate total length to prevent ssize_t overflow (POSIX requirement) */
 	for (int i = 0; i < iovcnt; i++) {
-		const struct iovec *entry =
-		    (const struct iovec *)uiov + i;
-		int err;
+		if (__builtin_add_overflow(total_len, iov[i].iov_len, &total_len) ||
+		    total_len > (size_t)0x7FFFFFFFFFFFFFFFull) {
+			kfree(iov);
+			return -EINVAL;
+		}
+	}
+
+	for (int i = 0; i < iovcnt; i++) {
 		int64_t n;
 
-		err = copy_from_user(&iov, entry, sizeof(iov));
-		if (err) {
-			return total > 0 ? total : (int64_t)err;
-		}
-
-		if (iov.iov_len == 0) {
+		if (iov[i].iov_len == 0) {
 			continue;
 		}
 
-		n = sys_write(fd, iov.iov_base, iov.iov_len);
+		n = sys_write(fd, iov[i].iov_base, iov[i].iov_len);
 		if (n < 0) {
+			kfree(iov);
 			return total > 0 ? total : n;
 		}
+
 		total += n;
 
 		/* Short write — stop iterating, return partial. */
-		if ((size_t)n < iov.iov_len) {
+		if ((size_t)n < iov[i].iov_len) {
 			break;
 		}
 	}
 
+	kfree(iov);
 	return total;
 }

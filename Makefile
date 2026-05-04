@@ -43,10 +43,9 @@ KERNEL_ELF  := $(BUILD)/kernel.elf
 KERNEL_ISO  := $(BUILD)/kernel.iso
 INITRAMFS   := $(BUILD)/initramfs.cpio
 USER_INIT   := $(BUILD)/user/init
-USER_HELLO  := $(BUILD)/user/bin/hello
-USER_PROGRAM_SRCS := $(wildcard user/*/main.c)
+MUSL_TEST   := $(BUILD)/user/bin/musltest
+USER_PROGRAM_SRCS := $(wildcard user/init/main.c)
 USER_PROGRAM_BINS := $(patsubst user/init/main.c,$(USER_INIT),$(USER_PROGRAM_SRCS))
-USER_PROGRAM_BINS := $(patsubst user/%/main.c,$(BUILD)/user/bin/%,$(USER_PROGRAM_BINS))
 ISO_ROOT    := $(BUILD)/iso_root
 ATA_DISK    := $(BUILD)/disk.img
 
@@ -241,7 +240,10 @@ $(USER_PROGRAM_BINS): scripts/build-user.sh $(USER_PROGRAM_SRCS) \
     user/libjnu/write.c user/libjnu/yield.c user/libjnu/include/jnu_syscall.h
 	@bash scripts/build-user.sh "$(BUILD)"
 
-$(INITRAMFS): scripts/make-initramfs.sh $(USER_PROGRAM_BINS) FORCE
+$(MUSL_TEST): scripts/build-musl-user.sh user/musltest/main.c
+	@bash scripts/build-musl-user.sh "$(BUILD)"
+
+$(INITRAMFS): scripts/make-initramfs.sh $(USER_PROGRAM_BINS) $(MUSL_TEST) FORCE
 	@mkdir -p $(dir $@)
 	@bash scripts/make-initramfs.sh "$@" "$(BUILD)/user"
 

@@ -84,7 +84,7 @@ programs=()
 while IFS= read -r src; do
 	programs+=("$src")
 done < <(find user -mindepth 2 -maxdepth 2 -name main.c \
-	! -path 'user/libjnu/*' | sort)
+	! -path 'user/libjnu/*' ! -path 'user/musl/*' ! -path 'user/musltest/*' | sort)
 
 if [ "${#programs[@]}" -eq 0 ]; then
 	echo "user: no user/<program>/main.c files found" >&2
