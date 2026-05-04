@@ -14,6 +14,7 @@ kernel/drivers/font_data.h
 .venv/
 kernel_heatmap.py
 kernel_objdump.txt
+user/musl
 
 # Auto-generated entries
 # Dependencies
