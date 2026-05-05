@@ -48,6 +48,7 @@
 /* Commands. */
 #define ATA_CMD_IDENTIFY 0xEC
 #define ATA_CMD_READ_PIO 0x20
+#define ATA_CMD_WRITE_PIO 0x30
 
 #define ATA_SECTOR_SIZE 512
 
@@ -230,11 +231,43 @@ static int ata_bdev_read(struct block_device *bdev, uint64_t lba, size_t count,
 static int ata_bdev_write(struct block_device *bdev, uint64_t lba, size_t count,
 			  const void *buf)
 {
-	(void)bdev;
-	(void)lba;
-	(void)count;
-	(void)buf;
-	return -ENOSYS; /* read-only in v0.0.1 */
+	struct ata_drive *drv = bdev->priv;
+	struct ata_channel *ch = drv->channel;
+	const uint8_t *p = buf;
+
+	for (size_t i = 0; i < count; i++) {
+		uint64_t sector = lba + i;
+		int err;
+
+		if (sector >= drv->sectors)
+			return -EINVAL;
+
+		ata_select_drive(ch,
+				 (uint8_t)(drv->drive_sel |
+					   (uint8_t)((sector >> 24) & 0x0Fu)));
+
+		outb((uint16_t)(ch->io_base + ATA_REG_SECCOUNT), 1);
+		outb((uint16_t)(ch->io_base + ATA_REG_LBA_LO),
+		     (uint8_t)(sector & 0xFFu));
+		outb((uint16_t)(ch->io_base + ATA_REG_LBA_MID),
+		     (uint8_t)((sector >> 8) & 0xFFu));
+		outb((uint16_t)(ch->io_base + ATA_REG_LBA_HI),
+		     (uint8_t)((sector >> 16) & 0xFFu));
+		outb((uint16_t)(ch->io_base + ATA_REG_CMD), ATA_CMD_WRITE_PIO);
+
+		err = ata_wait_drq(ch);
+		if (err)
+			return err;
+
+		outsw((uint16_t)(ch->io_base + ATA_REG_DATA), p,
+		      ATA_SECTOR_SIZE / 2);
+		err = ata_wait_ready(ch);
+		if (err)
+			return err;
+		p += ATA_SECTOR_SIZE;
+	}
+
+	return 0;
 }
 
 static const struct block_ops ata_blk_ops = {

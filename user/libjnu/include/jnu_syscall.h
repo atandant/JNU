@@ -28,6 +28,13 @@ typedef unsigned int uint32_t;
 #define JNU_SYS_execve      59
 #define JNU_SYS_exit        60
 #define JNU_SYS_wait4       61
+#define JNU_SYS_fsync       74
+#define JNU_SYS_ftruncate   77
+#define JNU_SYS_rename      82
+#define JNU_SYS_mkdir       83
+#define JNU_SYS_rmdir       84
+#define JNU_SYS_creat       85
+#define JNU_SYS_unlink      87
 
 #define SEEK_SET 0
 #define SEEK_CUR 1

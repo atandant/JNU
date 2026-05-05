@@ -124,6 +124,7 @@ C_SRCS := \
     kernel/syscall/sys_exit.c \
     kernel/syscall/sys_fstat.c \
     kernel/syscall/sys_getpid.c \
+    kernel/syscall/sys_fs_write.c \
     kernel/syscall/sys_lseek.c \
     kernel/syscall/sys_open.c \
     kernel/syscall/sys_read.c \
@@ -147,7 +148,12 @@ C_SRCS := \
     kernel/user/process.c \
     kernel/fs/block.c \
     kernel/fs/vfs.c \
-    kernel/fs/minix.c \
+    kernel/fs/minix/buffer.c \
+    kernel/fs/minix/bitmap.c \
+    kernel/fs/minix/dir.c \
+    kernel/fs/minix/file.c \
+    kernel/fs/minix/inode.c \
+    kernel/fs/minix/super.c \
     kernel/kernel/cmdline.c \
     kernel/kernel/fork.c \
     kernel/kernel/execve.c \
@@ -236,7 +242,9 @@ $(USER_PROGRAM_BINS): scripts/build-user.sh $(USER_PROGRAM_SRCS) \
     user/libjnu/close.c user/libjnu/execve.c user/libjnu/exit.c \
     user/libjnu/fstat.c user/libjnu/fork.c user/libjnu/getpid.c \
     user/libjnu/lseek.c user/libjnu/open.c user/libjnu/read.c \
-    user/libjnu/waitpid.c \
+    user/libjnu/waitpid.c user/libjnu/creat.c user/libjnu/unlink.c \
+    user/libjnu/mkdir.c user/libjnu/rmdir.c user/libjnu/rename.c \
+    user/libjnu/fsync.c user/libjnu/ftruncate.c \
     user/libjnu/write.c user/libjnu/yield.c user/libjnu/include/jnu_syscall.h
 	@bash scripts/build-user.sh "$(BUILD)"
 

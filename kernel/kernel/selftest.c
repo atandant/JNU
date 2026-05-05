@@ -50,6 +50,11 @@ static const struct selftest tests[] = {
     {"syscall", syscall_selftest},
     {"pci", pci_selftest},
     {"ata", ata_selftest},
+    {"bufcache", bufcache_selftest},
+    {"minix_bitmap", minix_bitmap_selftest},
+    {"minix_write", minix_write_selftest},
+    {"minix_dir", minix_dir_selftest},
+    {"minix_fsync", minix_fsync_selftest},
     {"vfs", vfs_selftest},
     {"minix", minix_selftest},
 };
@@ -79,5 +84,6 @@ int selftest_run_all(void)
 		       failures == 1 ? "" : "s");
 	}
 
+	bufcache_log_stats();
 	return failures;
 }

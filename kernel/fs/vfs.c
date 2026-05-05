@@ -89,6 +89,70 @@ static int next_component(const char *path, char *comp, size_t max_len,
 	return 1;
 }
 
+static bool path_has_more(const char *path)
+{
+	path = skip_slash(path);
+	return *path != '\0';
+}
+
+static int vfs_parent(const char *path, struct vfs_inode **dir, char *name,
+		      size_t name_len)
+{
+	struct vfs_inode *curr;
+	char comp[VFS_NAME_MAX];
+	const char *p = path;
+	int err;
+
+	if (!root_mounted || !root_mount.root)
+		return -ENOENT;
+	if (path[0] != '/')
+		return -EINVAL;
+
+	err = root_mount.ops->lookup(root_mount.root, ".", &curr);
+	if (err)
+		return err;
+
+	while (1) {
+		int res = next_component(p, comp, sizeof(comp), &p);
+
+		if (res < 0) {
+			curr->mnt->ops->close(curr);
+			return res;
+		}
+		if (res == 0) {
+			curr->mnt->ops->close(curr);
+			return -EINVAL;
+		}
+		if (!path_has_more(p)) {
+			if (strlen(comp) >= name_len) {
+				curr->mnt->ops->close(curr);
+				return -ENAMETOOLONG;
+			}
+			memcpy(name, comp, strlen(comp) + 1);
+			*dir = curr;
+			return 0;
+		}
+
+		if (!curr->is_dir) {
+			curr->mnt->ops->close(curr);
+			return -ENOTDIR;
+		}
+
+		if (strcmp(comp, "..") == 0 && curr->ino == root_mount.root->ino)
+			continue;
+
+		{
+			struct vfs_inode *next = NULL;
+
+			err = curr->mnt->ops->lookup(curr, comp, &next);
+			curr->mnt->ops->close(curr);
+			if (err)
+				return err;
+			curr = next;
+		}
+	}
+}
+
 int vfs_open(const char *path, struct vfs_inode **out)
 {
 	if (!root_mounted || !root_mount.root)
@@ -153,6 +217,123 @@ ssize_t vfs_read(struct vfs_inode *ino, uint64_t offset, size_t len, void *buf)
 	if (!(ino->mode & 0444))
 		return -EACCES;
 	return ino->mnt->ops->read(ino, offset, len, buf);
+}
+
+ssize_t vfs_write(struct vfs_inode *ino, uint64_t offset, size_t len,
+		  const void *buf)
+{
+	if (!ino || !ino->mnt || !ino->mnt->ops || !ino->mnt->ops->write)
+		return -EINVAL;
+	if (ino->is_dir)
+		return -EISDIR;
+	if (!(ino->mode & 0222))
+		return -EACCES;
+	return ino->mnt->ops->write(ino, offset, len, buf);
+}
+
+int vfs_truncate(struct vfs_inode *ino, uint64_t size)
+{
+	if (!ino || !ino->mnt || !ino->mnt->ops || !ino->mnt->ops->truncate)
+		return -EINVAL;
+	if (ino->is_dir)
+		return -EISDIR;
+	return ino->mnt->ops->truncate(ino, size);
+}
+
+int vfs_create(const char *path, uint16_t mode, struct vfs_inode **out)
+{
+	struct vfs_inode *dir;
+	char name[VFS_NAME_MAX];
+	int err;
+
+	err = vfs_parent(path, &dir, name, sizeof(name));
+	if (err)
+		return err;
+	if (!dir->mnt->ops->create) {
+		vfs_close(dir);
+		return -ENOSYS;
+	}
+	err = dir->mnt->ops->create(dir, name, mode, out);
+	vfs_close(dir);
+	return err;
+}
+
+int vfs_unlink(const char *path)
+{
+	struct vfs_inode *dir;
+	char name[VFS_NAME_MAX];
+	int err;
+
+	err = vfs_parent(path, &dir, name, sizeof(name));
+	if (err)
+		return err;
+	err = dir->mnt->ops->unlink ? dir->mnt->ops->unlink(dir, name) : -ENOSYS;
+	vfs_close(dir);
+	return err;
+}
+
+int vfs_mkdir(const char *path, uint16_t mode)
+{
+	struct vfs_inode *dir;
+	char name[VFS_NAME_MAX];
+	int err;
+
+	err = vfs_parent(path, &dir, name, sizeof(name));
+	if (err)
+		return err;
+	err = dir->mnt->ops->mkdir ? dir->mnt->ops->mkdir(dir, name, mode) : -ENOSYS;
+	vfs_close(dir);
+	return err;
+}
+
+int vfs_rmdir(const char *path)
+{
+	struct vfs_inode *dir;
+	char name[VFS_NAME_MAX];
+	int err;
+
+	err = vfs_parent(path, &dir, name, sizeof(name));
+	if (err)
+		return err;
+	err = dir->mnt->ops->rmdir ? dir->mnt->ops->rmdir(dir, name) : -ENOSYS;
+	vfs_close(dir);
+	return err;
+}
+
+int vfs_rename(const char *old_path, const char *new_path)
+{
+	struct vfs_inode *old_dir;
+	struct vfs_inode *new_dir;
+	char old_name[VFS_NAME_MAX];
+	char new_name[VFS_NAME_MAX];
+	int err;
+
+	err = vfs_parent(old_path, &old_dir, old_name, sizeof(old_name));
+	if (err)
+		return err;
+	err = vfs_parent(new_path, &new_dir, new_name, sizeof(new_name));
+	if (err) {
+		vfs_close(old_dir);
+		return err;
+	}
+	if (old_dir->mnt != new_dir->mnt) {
+		err = -EXDEV;
+	} else if (!old_dir->mnt->ops->rename) {
+		err = -ENOSYS;
+	} else {
+		err = old_dir->mnt->ops->rename(old_dir, old_name, new_dir,
+						new_name);
+	}
+	vfs_close(new_dir);
+	vfs_close(old_dir);
+	return err;
+}
+
+int vfs_fsync(struct vfs_inode *ino)
+{
+	if (!ino || !ino->mnt || !ino->mnt->ops || !ino->mnt->ops->fsync)
+		return -EINVAL;
+	return ino->mnt->ops->fsync(ino);
 }
 
 int vfs_readdir(struct vfs_inode *dir, size_t index, struct vfs_dirent *out)

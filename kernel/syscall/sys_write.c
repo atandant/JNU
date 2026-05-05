@@ -17,14 +17,18 @@
  */
 
 #include <jnu/errno.h>
+#include <jnu/fd.h>
 #include <jnu/klog.h>
 #include <jnu/process.h>
 #include <jnu/sched.h>
 #include <jnu/string.h>
 #include <jnu/syscall.h>
 #include <jnu/usercopy.h>
+#include <jnu/vfs.h>
 
 #define WRITE_CHUNK 128
+#define JNU_O_ACCMODE 03
+#define JNU_O_RDONLY 00
 
 /*
  * Strip every byte that could drive a terminal or be confused with a
@@ -53,13 +57,41 @@ int64_t sys_write(int fd, const void *ubuf, size_t len)
 	int pid = (task && task->process) ? task->process->pid : 0;
 	enum klog_level level;
 	size_t done = 0;
+	struct file *file;
 
 	if (fd == 1) {
 		level = KLOG_INFO;
 	} else if (fd == 2) {
 		level = KLOG_ERR;
 	} else {
-		return -EINVAL;
+		if (!task || !task->process)
+			return -EINVAL;
+		file = fd_get(&task->process->fds, fd);
+		if (!file || file->type != JNU_FILE_VFS)
+			return -EINVAL;
+		if ((file->flags & JNU_O_ACCMODE) == JNU_O_RDONLY)
+			return -EACCES;
+
+		while (done < len) {
+			size_t chunk = len - done;
+			ssize_t n;
+			int err;
+
+			if (chunk > WRITE_CHUNK)
+				chunk = WRITE_CHUNK;
+			err = copy_from_user(buf, (const uint8_t *)ubuf + done,
+					     chunk);
+			if (err)
+				return done ? (int64_t)done : err;
+			n = vfs_write(file->u.vfs, file->offset, chunk, buf);
+			if (n < 0)
+				return done ? (int64_t)done : n;
+			file->offset += (uint64_t)n;
+			done += (size_t)n;
+			if ((size_t)n < chunk)
+				break;
+		}
+		return (int64_t)done;
 	}
 
 	while (done < len) {

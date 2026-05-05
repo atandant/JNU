@@ -37,6 +37,11 @@ static int64_t wrap_open(const struct syscall_args *a)
 	return sys_open((const char *)a->arg0, (int)a->arg1);
 }
 
+static int64_t wrap_creat(const struct syscall_args *a)
+{
+	return sys_creat((const char *)a->arg0, (int)a->arg1);
+}
+
 static int64_t wrap_close(const struct syscall_args *a)
 {
 	return sys_close((int)a->arg0);
@@ -50,6 +55,36 @@ static int64_t wrap_fstat(const struct syscall_args *a)
 static int64_t wrap_lseek(const struct syscall_args *a)
 {
 	return sys_lseek((int)a->arg0, (int64_t)a->arg1, (int)a->arg2);
+}
+
+static int64_t wrap_fsync(const struct syscall_args *a)
+{
+	return sys_fsync((int)a->arg0);
+}
+
+static int64_t wrap_ftruncate(const struct syscall_args *a)
+{
+	return sys_ftruncate((int)a->arg0, (int64_t)a->arg1);
+}
+
+static int64_t wrap_unlink(const struct syscall_args *a)
+{
+	return sys_unlink((const char *)a->arg0);
+}
+
+static int64_t wrap_mkdir(const struct syscall_args *a)
+{
+	return sys_mkdir((const char *)a->arg0, (int)a->arg1);
+}
+
+static int64_t wrap_rmdir(const struct syscall_args *a)
+{
+	return sys_rmdir((const char *)a->arg0);
+}
+
+static int64_t wrap_rename(const struct syscall_args *a)
+{
+	return sys_rename((const char *)a->arg0, (const char *)a->arg1);
 }
 
 static int64_t wrap_sched_yield(const struct syscall_args *a)
@@ -183,6 +218,13 @@ static const syscall_handler_t syscall_table[JNU_SYS_MAX + 1] = {
 	[JNU_SYS_execve]         = wrap_execve,
 	[JNU_SYS_exit]           = wrap_exit,
 	[JNU_SYS_wait4]          = wrap_wait4,
+	[JNU_SYS_fsync]          = wrap_fsync,
+	[JNU_SYS_ftruncate]      = wrap_ftruncate,
+	[JNU_SYS_rename]         = wrap_rename,
+	[JNU_SYS_mkdir]          = wrap_mkdir,
+	[JNU_SYS_rmdir]          = wrap_rmdir,
+	[JNU_SYS_creat]          = wrap_creat,
+	[JNU_SYS_unlink]         = wrap_unlink,
 	[JNU_SYS_arch_prctl]     = wrap_arch_prctl,
 	[JNU_SYS_set_tid_address] = wrap_set_tid_address,
 	[JNU_SYS_clock_gettime]  = wrap_clock_gettime,

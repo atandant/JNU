@@ -14,6 +14,8 @@
 #include <jnu/usercopy.h>
 
 #define READ_CHUNK 256
+#define JNU_O_ACCMODE 03
+#define JNU_O_WRONLY 01
 
 static ssize_t file_read_at(struct file *file, uint64_t off, void *buf,
 			    size_t len)
@@ -95,11 +97,17 @@ int64_t sys_read(int fd, void *ubuf, size_t len)
 	}
 
 	if (file->type == JNU_FILE_CHARDEV) {
+		if ((file->flags & JNU_O_ACCMODE) == JNU_O_WRONLY) {
+			return -EACCES;
+		}
 		if (!file->u.chardev || !file->u.chardev->ops ||
 		    !file->u.chardev->ops->read) {
 			return -EINVAL;
 		}
 		return chardev_read_to_user(file->u.chardev, ubuf, len);
+	}
+	if ((file->flags & JNU_O_ACCMODE) == JNU_O_WRONLY) {
+		return -EACCES;
 	}
 
 	while (done < len) {

@@ -1,0 +1,345 @@
+/*
+ * kernel/fs/minix/buffer.c — MINIX-local 1 KiB buffer cache.
+ *
+ * Implements a fixed 64-slot LRU cache keyed by (block_device, block).
+ * Chunk 1 is read-only: dirty buffers are represented so eviction rules
+ * are already correct, but writeback is intentionally a no-op until the
+ * write-support chunk wires block writes into the block layer.
+ *
+ * Lock ordering: bufcache_lock < pmm_lock < vfs_inode_lock.
+ *
+ * Copyright (c) 2026 The JNU Authors.
+ * SPDX-License-Identifier: GPL-2.0-only
+ */
+
+#include "internal.h"
+
+#include <jnu/errno.h>
+#include <jnu/klog.h>
+#include <jnu/minix.h>
+#include <jnu/spinlock.h>
+#include <jnu/string.h>
+
+#define BUFCACHE_SLOTS 64
+#define BUFCACHE_DIRTY_LIMIT 48
+#define BUFCACHE_SECTORS_PER_BLOCK (MINIX_BLOCK_SIZE / 512)
+#define BUFCACHE_SELFTEST_BLOCKS 96
+
+struct bufcache_slot {
+	struct minix_buffer buf;
+	bool valid;
+	uint64_t lru;
+};
+
+static struct bufcache_slot slots[BUFCACHE_SLOTS];
+static struct spinlock bufcache_lock = SPINLOCK_INITIALIZER;
+static uint64_t bufcache_clock;
+static uint32_t bufcache_dirty_count;
+static uint64_t bufcache_hits;
+static uint64_t bufcache_misses;
+
+/*
+ * Pick a slot for a cache miss.
+ *
+ * Invalid slots are preferred. Otherwise the oldest clean unreferenced
+ * slot is selected; dirty slots become evictable only after chunk 2
+ * provides writeback.
+ */
+static struct bufcache_slot *bufcache_pick_victim(void)
+{
+	struct bufcache_slot *victim = NULL;
+
+	for (size_t i = 0; i < BUFCACHE_SLOTS; i++) {
+		if (!slots[i].valid && slots[i].buf.refcount == 0)
+			return &slots[i];
+		if (slots[i].buf.refcount != 0 || slots[i].buf.dirty)
+			continue;
+		if (!victim || slots[i].lru < victim->lru)
+			victim = &slots[i];
+	}
+
+	return victim;
+}
+
+/*
+ * Return a referenced cache buffer for a MINIX block.
+ *
+ * Parameters:
+ *   bdev   block device that owns the block.
+ *   block  1 KiB MINIX block number.
+ *
+ * Returns:
+ *   Referenced buffer on success, NULL on I/O failure or cache pressure.
+ *
+ * Locking:
+ *   Takes bufcache_lock internally.
+ */
+struct minix_buffer *bufcache_get(struct block_device *bdev, uint32_t block)
+{
+	struct bufcache_slot *slot;
+	uint64_t flags;
+	int err;
+
+	if (!bdev || bdev->sector_size != 512)
+		return NULL;
+
+	flags = spin_lock_irqsave(&bufcache_lock);
+	for (size_t i = 0; i < BUFCACHE_SLOTS; i++) {
+		if (!slots[i].valid)
+			continue;
+		if (slots[i].buf.bdev != bdev || slots[i].buf.block_no != block)
+			continue;
+
+		slots[i].buf.refcount++;
+		slots[i].lru = ++bufcache_clock;
+		bufcache_hits++;
+		spin_unlock_irqrestore(&bufcache_lock, flags);
+		return &slots[i].buf;
+	}
+
+	bufcache_misses++;
+	slot = bufcache_pick_victim();
+	if (!slot) {
+		spin_unlock_irqrestore(&bufcache_lock, flags);
+		pr_err("bufcache: no clean unreferenced slot for block %u\n",
+		       block);
+		return NULL;
+	}
+
+	if (slot->valid && slot->buf.dirty && bufcache_dirty_count > 0)
+		bufcache_dirty_count--;
+	slot->valid = false;
+	slot->buf.bdev = bdev;
+	slot->buf.block_no = block;
+	slot->buf.refcount = 1;
+	slot->buf.dirty = false;
+	slot->lru = ++bufcache_clock;
+	spin_unlock_irqrestore(&bufcache_lock, flags);
+
+	err = block_read(bdev, (uint64_t)block * BUFCACHE_SECTORS_PER_BLOCK,
+			 BUFCACHE_SECTORS_PER_BLOCK, slot->buf.data);
+	if (err) {
+		flags = spin_lock_irqsave(&bufcache_lock);
+		slot->valid = false;
+		slot->buf.refcount = 0;
+		spin_unlock_irqrestore(&bufcache_lock, flags);
+		return NULL;
+	}
+
+	flags = spin_lock_irqsave(&bufcache_lock);
+	slot->valid = true;
+	spin_unlock_irqrestore(&bufcache_lock, flags);
+	return &slot->buf;
+}
+
+/*
+ * Drop a cache buffer reference.
+ *
+ * Parameters:
+ *   buf  buffer returned by bufcache_get().
+ *
+ * Locking:
+ *   Takes bufcache_lock internally.
+ */
+void bufcache_put(struct minix_buffer *buf)
+{
+	uint64_t flags;
+
+	if (!buf)
+		return;
+
+	flags = spin_lock_irqsave(&bufcache_lock);
+	if (buf->refcount == 0) {
+		spin_unlock_irqrestore(&bufcache_lock, flags);
+		pr_err("bufcache: put on unreferenced block %u\n",
+		       buf->block_no);
+		return;
+	}
+	buf->refcount--;
+	spin_unlock_irqrestore(&bufcache_lock, flags);
+}
+
+void bufcache_mark_dirty(struct minix_buffer *buf)
+{
+	uint64_t flags;
+
+	if (!buf)
+		return;
+
+	flags = spin_lock_irqsave(&bufcache_lock);
+	if (!buf->dirty && bufcache_dirty_count >= BUFCACHE_DIRTY_LIMIT) {
+		struct block_device *bdev = buf->bdev;
+
+		spin_unlock_irqrestore(&bufcache_lock, flags);
+		(void)bufcache_sync(bdev);
+		flags = spin_lock_irqsave(&bufcache_lock);
+	}
+	if (!buf->dirty)
+		bufcache_dirty_count++;
+	buf->dirty = true;
+	spin_unlock_irqrestore(&bufcache_lock, flags);
+}
+
+/*
+ * Synchronize dirty buffers for one device.
+ *
+ * Chunk 1 has no writeback path, but the symbol exists so chunk 2 can
+ * fill in dirty-buffer handling without changing callers.
+ */
+int bufcache_sync(struct block_device *bdev)
+{
+	uint64_t flags;
+
+	for (size_t i = 0; i < BUFCACHE_SLOTS; i++) {
+		struct block_device *slot_bdev;
+		uint32_t block;
+		bool do_write;
+		int err;
+
+		flags = spin_lock_irqsave(&bufcache_lock);
+		slot_bdev = slots[i].buf.bdev;
+		block = slots[i].buf.block_no;
+		do_write = slots[i].valid && slots[i].buf.dirty &&
+			   (!bdev || slot_bdev == bdev);
+		if (do_write)
+			slots[i].buf.refcount++;
+		spin_unlock_irqrestore(&bufcache_lock, flags);
+
+		if (!do_write)
+			continue;
+
+		err = block_write(slot_bdev,
+				  (uint64_t)block * BUFCACHE_SECTORS_PER_BLOCK,
+				  BUFCACHE_SECTORS_PER_BLOCK, slots[i].buf.data);
+
+		flags = spin_lock_irqsave(&bufcache_lock);
+		if (!err) {
+			if (slots[i].buf.dirty && bufcache_dirty_count > 0)
+				bufcache_dirty_count--;
+			slots[i].buf.dirty = false;
+		}
+		if (slots[i].buf.refcount > 0)
+			slots[i].buf.refcount--;
+		spin_unlock_irqrestore(&bufcache_lock, flags);
+
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
+void bufcache_log_stats(void)
+{
+	uint64_t total = bufcache_hits + bufcache_misses;
+	uint64_t hit_pct = total ? (bufcache_hits * 100u) / total : 100u;
+	uint64_t flags;
+	uint32_t dirty;
+
+	flags = spin_lock_irqsave(&bufcache_lock);
+	dirty = bufcache_dirty_count;
+	spin_unlock_irqrestore(&bufcache_lock, flags);
+
+	pr_info("bufcache: hits=%llu misses=%llu hit_rate=%llu%% dirty=%u/%u\n",
+		(unsigned long long)bufcache_hits,
+		(unsigned long long)bufcache_misses,
+		(unsigned long long)hit_pct, (unsigned)dirty,
+		(unsigned)BUFCACHE_SLOTS);
+}
+
+static uint8_t selftest_storage[BUFCACHE_SELFTEST_BLOCKS][MINIX_BLOCK_SIZE];
+
+static int bufcache_selftest_read(struct block_device *bdev, uint64_t lba,
+				  size_t count, void *buf)
+{
+	uint64_t block;
+
+	(void)bdev;
+	if (count != BUFCACHE_SECTORS_PER_BLOCK)
+		return -EINVAL;
+	if ((lba % BUFCACHE_SECTORS_PER_BLOCK) != 0)
+		return -EINVAL;
+
+	block = lba / BUFCACHE_SECTORS_PER_BLOCK;
+	if (block >= BUFCACHE_SELFTEST_BLOCKS)
+		return -EINVAL;
+
+	memcpy(buf, selftest_storage[block], MINIX_BLOCK_SIZE);
+	return 0;
+}
+
+static int bufcache_selftest_write(struct block_device *bdev, uint64_t lba,
+				   size_t count, const void *buf)
+{
+	(void)bdev;
+	(void)lba;
+	(void)count;
+	(void)buf;
+	return -ENOSYS;
+}
+
+static const struct block_ops bufcache_selftest_ops = {
+    .read = bufcache_selftest_read,
+    .write = bufcache_selftest_write,
+};
+
+static struct block_device bufcache_selftest_bdev = {
+    .name = "bufcache-test",
+    .sector_size = 512,
+    .sector_count = BUFCACHE_SELFTEST_BLOCKS * BUFCACHE_SECTORS_PER_BLOCK,
+    .ops = &bufcache_selftest_ops,
+};
+
+int bufcache_selftest(void)
+{
+	struct minix_buffer *held;
+	struct minix_buffer *buf;
+
+	for (size_t i = 0; i < BUFCACHE_SELFTEST_BLOCKS; i++) {
+		for (size_t j = 0; j < MINIX_BLOCK_SIZE; j++)
+			selftest_storage[i][j] = (uint8_t)(i ^ j);
+	}
+
+	buf = bufcache_get(&bufcache_selftest_bdev, 3);
+	if (!buf)
+		return -EIO;
+	if (buf->data[17] != selftest_storage[3][17]) {
+		bufcache_put(buf);
+		return -EIO;
+	}
+	bufcache_put(buf);
+
+	for (uint32_t i = 0; i < BUFCACHE_SLOTS + 1; i++) {
+		buf = bufcache_get(&bufcache_selftest_bdev, i);
+		if (!buf)
+			return -EIO;
+		if (buf->data[31] != selftest_storage[i][31]) {
+			bufcache_put(buf);
+			return -EIO;
+		}
+		bufcache_put(buf);
+	}
+
+	held = bufcache_get(&bufcache_selftest_bdev, 1);
+	if (!held)
+		return -EIO;
+	for (uint32_t i = 2; i < BUFCACHE_SLOTS + 2; i++) {
+		buf = bufcache_get(&bufcache_selftest_bdev, i);
+		if (!buf) {
+			bufcache_put(held);
+			return -EIO;
+		}
+		bufcache_put(buf);
+	}
+	if (held->block_no != 1 || held->data[63] != selftest_storage[1][63]) {
+		bufcache_put(held);
+		return -EIO;
+	}
+	bufcache_put(held);
+
+	if (bufcache_dirty_count != 0)
+		return -EIO;
+
+	pr_info("bufcache_selftest: [ OK ]\n");
+	return 0;
+}

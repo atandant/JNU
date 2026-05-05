@@ -112,3 +112,28 @@ void rtc_init(void)
 }
 
 void rtc_now(struct tm *out) { *out = boot_time; }
+
+static bool rtc_is_leap(uint16_t year)
+{
+	return (year % 4u) == 0 && ((year % 100u) != 0 || (year % 400u) == 0);
+}
+
+uint32_t rtc_now_unix(void)
+{
+	static const uint16_t month_days[] = {
+	    31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+	};
+	uint32_t days = 0;
+
+	for (uint16_t year = 1970; year < boot_time.year; year++)
+		days += rtc_is_leap(year) ? 366u : 365u;
+	for (uint8_t month = 1; month < boot_time.month; month++) {
+		days += month_days[month - 1u];
+		if (month == 2 && rtc_is_leap(boot_time.year))
+			days++;
+	}
+	days += (uint32_t)boot_time.day - 1u;
+
+	return days * 86400u + (uint32_t)boot_time.hour * 3600u +
+	       (uint32_t)boot_time.minute * 60u + (uint32_t)boot_time.second;
+}

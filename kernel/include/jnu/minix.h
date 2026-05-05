@@ -11,4 +11,10 @@
 
 extern const struct vfs_ops minix_ops;
 
+int bufcache_selftest(void);
+void bufcache_log_stats(void);
+int minix_bitmap_selftest(void);
+int minix_dir_selftest(void);
+int minix_fsync_selftest(void);
 int minix_selftest(void);
+int minix_write_selftest(void);

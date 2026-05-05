@@ -65,18 +65,25 @@ int syscall_copy_path(char *dst, const char *upath);
 int syscall_selftest(void);
 
 int64_t sys_close(int fd);
+int64_t sys_creat(const char *upath, int mode);
 int64_t sys_execve(const struct syscall_args *args);
 int64_t sys_exit(int status);
 int64_t sys_fork(const struct syscall_args *args);
 int64_t sys_fstat(int fd, void *ust);
+int64_t sys_fsync(int fd);
+int64_t sys_ftruncate(int fd, int64_t length);
 int64_t sys_getpid(void);
 int64_t sys_lseek(int fd, int64_t off, int whence);
 int64_t sys_mmap(uint64_t addr, uint64_t length, int prot, int flags,
 		 int fd, int64_t offset);
 int64_t sys_mprotect(uint64_t addr, uint64_t length, int prot);
 int64_t sys_munmap(uint64_t addr, uint64_t length);
+int64_t sys_mkdir(const char *upath, int mode);
 int64_t sys_open(const char *upath, int flags);
 int64_t sys_read(int fd, void *ubuf, size_t len);
+int64_t sys_rename(const char *uold, const char *unew);
+int64_t sys_rmdir(const char *upath);
+int64_t sys_unlink(const char *upath);
 int64_t sys_waitpid(int pid, int *ustatus);
 int64_t sys_write(int fd, const void *ubuf, size_t len);
 int64_t sys_yield(void);

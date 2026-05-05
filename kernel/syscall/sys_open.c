@@ -16,6 +16,15 @@
 #include <jnu/syscall.h>
 #include <jnu/vfs.h>
 
+#define JNU_O_ACCMODE 03
+#define JNU_O_RDONLY 00
+#define JNU_O_WRONLY 01
+#define JNU_O_RDWR 02
+#define JNU_O_CREAT 0100
+#define JNU_O_TRUNC 01000
+#define JNU_O_APPEND 02000
+#define JNU_O_LARGEFILE 0100000
+
 /*
  * Resolve a synthetic /dev/ path to a registered char_device.
  * Returns NULL when the path is not a known device node.  This is the
@@ -39,7 +48,8 @@ int64_t sys_open(const char *upath, int flags)
 	struct char_device *cdev;
 	int err;
 
-	if (flags != 0) {
+	if ((flags & ~(JNU_O_ACCMODE | JNU_O_CREAT | JNU_O_TRUNC |
+		       JNU_O_APPEND | JNU_O_LARGEFILE)) != 0) {
 		return -EINVAL;
 	}
 
@@ -63,6 +73,7 @@ int64_t sys_open(const char *upath, int flags)
 	 * fail-path or sys_close drops it.
 	 */
 	file->refcount = 1;
+	file->flags = (uint32_t)flags;
 
 	cdev = resolve_dev_chardev(path);
 	if (cdev) {
@@ -78,10 +89,19 @@ int64_t sys_open(const char *upath, int flags)
 	}
 
 	err = vfs_open(path, &file->u.vfs);
+	if (err == -ENOENT && (flags & JNU_O_CREAT) != 0)
+		err = vfs_create(path, 0666, &file->u.vfs);
 	if (err) {
 		goto fail_file;
 	}
 	file->type = JNU_FILE_VFS;
+	if ((flags & JNU_O_TRUNC) != 0) {
+		err = vfs_truncate(file->u.vfs, 0);
+		if (err)
+			goto fail_file;
+	}
+	if ((flags & JNU_O_APPEND) != 0)
+		file->offset = file->u.vfs->size;
 
 alloc_fd:
 	err = fd_alloc(&task->process->fds, file);

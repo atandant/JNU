@@ -30,3 +30,5 @@ void rtc_init(void);
 
 /* Snapshot the last-read time into `out`. */
 void rtc_now(struct tm *out);
+
+uint32_t rtc_now_unix(void);

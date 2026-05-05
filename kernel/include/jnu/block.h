@@ -57,3 +57,6 @@ struct block_device *block_lookup(const char *name);
  */
 int block_read(struct block_device *bdev, uint64_t lba, size_t count,
 	       void *buf);
+
+int block_write(struct block_device *bdev, uint64_t lba, size_t count,
+		const void *buf);

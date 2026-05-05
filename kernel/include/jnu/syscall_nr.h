@@ -34,6 +34,13 @@
 #define JNU_SYS_execve         59
 #define JNU_SYS_exit           60
 #define JNU_SYS_wait4          61
+#define JNU_SYS_fsync          74
+#define JNU_SYS_ftruncate      77
+#define JNU_SYS_rename         82
+#define JNU_SYS_mkdir          83
+#define JNU_SYS_rmdir          84
+#define JNU_SYS_creat          85
+#define JNU_SYS_unlink         87
 #define JNU_SYS_arch_prctl    158
 #define JNU_SYS_set_tid_address 218
 #define JNU_SYS_clock_gettime 228

@@ -58,3 +58,11 @@ int block_read(struct block_device *bdev, uint64_t lba, size_t count, void *buf)
 		return -EINVAL;
 	return bdev->ops->read(bdev, lba, count, buf);
 }
+
+int block_write(struct block_device *bdev, uint64_t lba, size_t count,
+		const void *buf)
+{
+	if (!bdev || !bdev->ops || !bdev->ops->write)
+		return -EINVAL;
+	return bdev->ops->write(bdev, lba, count, buf);
+}

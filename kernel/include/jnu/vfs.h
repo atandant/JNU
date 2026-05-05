@@ -28,6 +28,17 @@ struct vfs_ops {
 		       struct vfs_dirent *out);
 	ssize_t (*read)(struct vfs_inode *ino, uint64_t offset, size_t len,
 			void *buf);
+	ssize_t (*write)(struct vfs_inode *ino, uint64_t offset, size_t len,
+			 const void *buf);
+	int (*truncate)(struct vfs_inode *ino, uint64_t size);
+	int (*create)(struct vfs_inode *dir, const char *name, uint16_t mode,
+		      struct vfs_inode **out);
+	int (*unlink)(struct vfs_inode *dir, const char *name);
+	int (*mkdir)(struct vfs_inode *dir, const char *name, uint16_t mode);
+	int (*rmdir)(struct vfs_inode *dir, const char *name);
+	int (*rename)(struct vfs_inode *old_dir, const char *old_name,
+		      struct vfs_inode *new_dir, const char *new_name);
+	int (*fsync)(struct vfs_inode *ino);
 	void (*close)(struct vfs_inode *ino);
 };
 
@@ -56,6 +67,15 @@ int vfs_mount(const char *bdev_name, const char *fstype, const char *target);
 int vfs_open(const char *path, struct vfs_inode **out);
 
 ssize_t vfs_read(struct vfs_inode *ino, uint64_t offset, size_t len, void *buf);
+ssize_t vfs_write(struct vfs_inode *ino, uint64_t offset, size_t len,
+		  const void *buf);
+int vfs_truncate(struct vfs_inode *ino, uint64_t size);
+int vfs_create(const char *path, uint16_t mode, struct vfs_inode **out);
+int vfs_unlink(const char *path);
+int vfs_mkdir(const char *path, uint16_t mode);
+int vfs_rmdir(const char *path);
+int vfs_rename(const char *old_path, const char *new_path);
+int vfs_fsync(struct vfs_inode *ino);
 
 int vfs_readdir(struct vfs_inode *dir, size_t index, struct vfs_dirent *out);
 
