@@ -7,6 +7,9 @@
  *
  * Copyright (c) 2026 The JNU Authors.
  * SPDX-License-Identifier: GPL-2.0-only
+ * warrant for splitting from author, FIXME(atandant).
+ * GPT stop bunching up FS syscalls in one file, bad
+ * practice to me not gonna lie.
  */
 
 #include <jnu/errno.h>

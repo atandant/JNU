@@ -108,7 +108,8 @@ uint32_t minix_bmap(struct vfs_mount *mnt, struct minix_inode_info *mi,
 		}
 		if (ino->i_zone[7] == 0)
 			return 0;
-		if (ino->i_zone[7] >= priv->sb.s_nzones) {
+		if (ino->i_zone[7] < priv->sb.s_firstdatazone ||
+		    ino->i_zone[7] >= priv->sb.s_nzones) {
 			pr_err("minix: out of bounds single indirect pointer %u\n",
 			       ino->i_zone[7]);
 			return 0;
@@ -134,7 +135,8 @@ uint32_t minix_bmap(struct vfs_mount *mnt, struct minix_inode_info *mi,
 		}
 		if (ino->i_zone[8] == 0)
 			return 0;
-		if (ino->i_zone[8] >= priv->sb.s_nzones) {
+		if (ino->i_zone[8] < priv->sb.s_firstdatazone ||
+		    ino->i_zone[8] >= priv->sb.s_nzones) {
 			pr_err("minix: out of bounds double indirect pointer %u\n",
 			       ino->i_zone[8]);
 			return 0;
@@ -152,7 +154,8 @@ uint32_t minix_bmap(struct vfs_mount *mnt, struct minix_inode_info *mi,
 
 		if (ind1 == 0)
 			return 0;
-		if (ind1 >= priv->sb.s_nzones) {
+		if (ind1 < priv->sb.s_firstdatazone ||
+		    ind1 >= priv->sb.s_nzones) {
 			pr_err("minix: out of bounds single indirect pointer "
 			       "in double indirect %u\n",
 			       ind1);

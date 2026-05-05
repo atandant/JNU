@@ -1,0 +1,169 @@
+JNU — Remaining audit findings (mm/ + fs/minix/)
+================================================
+
+Recorded on the v0.0.3.1 audit pass.  These were identified during the
+mm/ + fs/minix/ audit but deferred from the initial fix batch because
+each one is either (a) a larger refactor than a one-line bound check,
+or (b) acceptable under the current single-CPU + single-process boot
+target but a real liability before SMP / userspace stabilises.
+
+------------------------------------------------------------------------
+1. No inode cache → write-through-stale-copy data loss
+------------------------------------------------------------------------
+Severity: HIGH (silent data loss)
+Files:    kernel/fs/minix/dir.c (minix_lookup),
+          kernel/fs/minix/inode.c (minix_inode_from_raw, minix_close)
+
+minix_lookup() and minix_inode_from_raw() build a fresh `vfs_inode` +
+`minix_inode_info` from disk on every open.  Two opens of the same path
+produce two independent in-memory inodes; a write through one is
+invisible to the other until close+reopen, and a crashed close loses
+changes the *other* instance just made.
+
+Fix sketch: introduce a per-mount inode cache keyed by `ino`, with
+ref-counting on vfs_open / vfs_close.  Lookup, create, and rename all
+fetch through the cache so there is exactly one in-memory copy of any
+on-disk inode.  Spec §2.5.1 ("TOCTOU: confirm we never trust a re-read
+of the same block to contain the same value") implicitly assumes such
+a cache.
+
+------------------------------------------------------------------------
+2. minix_unlink is a use-after-free against open file descriptors
+------------------------------------------------------------------------
+Severity: HIGH (UAF on freed disk zones)
+Files:    kernel/fs/minix/dir.c (minix_unlink, minix_free_tree_inode)
+
+unlink() immediately calls minix_truncate(0) + minix_free_inode().  If
+another fd holds the inode open, its cached i_zone[] still references
+the freed zones; reads/writes from that fd hit zones that may already
+be re-allocated to another file.
+
+Fix sketch: add an open-count to vfs_inode (or piggy-back on the inode
+cache from item 1).  unlink() detaches the dirent immediately but only
+frees zones + inode bit when both `i_nlinks == 0` and open-count == 0.
+This is the standard Unix semantics.
+
+------------------------------------------------------------------------
+3. Bufcache get/read race window (SMP-unsafe)
+------------------------------------------------------------------------
+Severity: MEDIUM-LOW today, HIGH on SMP
+File:     kernel/fs/minix/buffer.c (bufcache_get)
+
+bufcache_get() drops bufcache_lock to call block_read().  A concurrent
+bufcache_get() for the same (bdev, block) misses the slot (`valid` is
+false during the in-flight read), picks another victim, and creates a
+duplicate slot — both with refcount==1, only one becoming the "real"
+cached copy.  Single-CPU + IRQ-disable hides this today; it will bite
+the moment a second CPU is spun up.
+
+Fix sketch: introduce a per-slot `loading` flag and a wait condition.
+bufcache_get on a `loading` slot for the same key waits for the load
+to finish instead of picking a fresh victim.
+
+------------------------------------------------------------------------
+4. minix_rename has no ancestor / cycle check
+------------------------------------------------------------------------
+Severity: MEDIUM (corrupts directory tree)
+File:     kernel/fs/minix/dir.c (minix_rename)
+
+`mv /a /a/b` (rename a directory into one of its own descendants)
+produces a detached cycle that is unreachable from the root yet still
+holds zones.
+
+Fix sketch: when old_inode->is_dir and old_dir != new_dir, walk `..`
+up from new_dir checking each parent inode against old_inode->ino;
+abort with -EINVAL on a hit.  Bound the walk by max-depth so a corrupt
+image cannot loop the kernel.
+
+------------------------------------------------------------------------
+5. pmm_put_user_page big memset under pmm_lock
+------------------------------------------------------------------------
+Severity: LOW (latency / IRQ-off window)
+File:     kernel/mm/pmm.c
+
+pmm_put_user_page() calls pmm_free_pages_locked() while holding
+pmm_lock with IRQs disabled; pmm_free_pages_locked() then memsets the
+freed block (up to 4 MiB at order-10) to zero for the §2.6
+zero-on-free invariant.  IRQ-off window scales with allocation size.
+
+Fix sketch: zero the page outside the lock — drop pmm_lock, memset,
+then re-acquire to push onto the buddy free list.  Requires marking
+the slot "draining" so a racing alloc cannot grab it before the zero
+completes (or accept that the alloc path's "slot is free" check
+already guarantees the page is on no list at the time of memset, in
+which case just unlock-memset-relock works).
+
+------------------------------------------------------------------------
+6. Stats drift in pmm_init
+------------------------------------------------------------------------
+Severity: COSMETIC
+File:     kernel/mm/pmm.c (pmm_init)
+
+stats.zone_total[] is computed from `highest_end` directly, ignoring
+metadata-array carve, kernel-image reservation, and any non-USABLE
+holes.  Boot prints `total=N free=M` where N != M + (correctly
+reserved).  Misleads any future leak-detection delta arithmetic.
+
+Fix sketch: count only the pages actually folded into the buddy lists
+during pmm_register_range().  zone_total[] then equals zone_free[] at
+boot's end-of-init.
+
+------------------------------------------------------------------------
+7. large_alloc magic-collision is fragile
+------------------------------------------------------------------------
+Severity: LOW (latent footgun)
+File:     kernel/mm/slab.c (kfree)
+
+kfree() distinguishes large_alloc payloads from slab objects via
+`maybe_hdr->magic == LARGE_MAGIC && offset == sizeof(*maybe_hdr)`.
+Today the slab_page header is wider than `sizeof(large_hdr)` so the
+collision window is empty; if the slab header ever shrinks (e.g.
+moving the bitmap out of the page header), kfree may misclassify and
+panic on a perfectly valid slab object.
+
+Fix sketch: stash a 1-byte "kind" tag at a fixed offset of every page
+that is either a slab page or a large allocation, and dispatch on
+that tag.  Or: maintain a small registry of large allocations and
+look up by virt-addr on free.
+
+------------------------------------------------------------------------
+8. minix VFS layer ".." escape rejection not verified
+------------------------------------------------------------------------
+Severity: MEDIUM (potential mount-root escape)
+File:     kernel/fs/vfs.c  (lookup path resolver)
+
+Spec §2.5.1 explicitly requires that `..` at the mount root be
+rejected at the VFS layer.  Audit did not confirm this is in place;
+minix_lookup itself contains no such check (and shouldn't — it is the
+VFS's job).  Verify and add a path-walker test that asserts `/../etc`
+resolves to `/etc`, not above it.
+
+------------------------------------------------------------------------
+9. Misc trivia
+------------------------------------------------------------------------
+- pmm_zerofree_selftest() not wired into the boot selftest list (verify
+  in kernel/kernel/main.c).
+- bufcache_log_stats() reads bufcache_hits / bufcache_misses without
+  the lock — fine on single CPU, racy under SMP.
+- pmm_alloc_dma() does not fall back to splitting a higher-order block
+  from ZONE_NORMAL when ZONE_DMA is empty.  Documented decision; add
+  a one-line comment.
+- minix_close() ignores the return value of minix_write_inode(); a
+  failed writeback silently loses the dirty inode update.  Either log
+  the failure or surface it via a separate flush API.
+
+------------------------------------------------------------------------
+Already fixed in this pass
+------------------------------------------------------------------------
+- Indirect / double-indirect pointer bounds now also reject any value
+  below s_firstdatazone (was only rejecting >= s_nzones).
+- Truncate / free paths route every minix_free_zone through a
+  corruption-safe wrapper that logs and skips out-of-range zones
+  instead of panicking; satisfies the v0.0.3.1 §2.5.3 fuzz contract.
+- minix_write() len capped at 64 KiB per call to bound the rollback
+  backup buffer; oversized writes return short.
+- Directory entry name validation: reject empty names, names
+  containing '/', and names longer than MINIX_NAME_LEN.
+- mkdir() now refuses with -EMLINK when the parent's i_nlinks would
+  overflow uint8_t.
+- EMLINK added to <jnu/errno.h>.

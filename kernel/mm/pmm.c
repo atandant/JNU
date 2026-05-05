@@ -163,6 +163,13 @@ static void pmm_register_block(uint64_t pfn, int order)
 	stats.free_pages += (1ull << order);
 	stats.free_by_order[order]++;
 	stats.zone_free[z] += (1ull << order);
+	/*
+	 * v0.0.3.1 audit (item 6): count zone_total[] from pages
+	 * actually folded into the buddy, not from highest_end.  This
+	 * keeps zone_total[] == zone_free[] at end-of-init so future
+	 * leak-detection delta arithmetic compares like-for-like.
+	 */
+	stats.zone_total[z] += (1ull << order);
 }
 
 static void pmm_register_range(uint64_t start_pa, uint64_t end_pa)
@@ -257,6 +264,13 @@ paddr_t pmm_alloc_dma(int order)
 {
 	uint64_t flags = spin_lock_irqsave(&pmm_lock);
 	int o = order;
+	/*
+	 * v0.0.3.1 audit item 9: by design we never split a higher-
+	 * order block from ZONE_NORMAL when ZONE_DMA is empty.  DMA
+	 * memory has the hard <16 MiB physical-address constraint and
+	 * NORMAL pages are not eligible regardless of order.  Callers
+	 * that get 0 must fail upward; there is no fallback.
+	 */
 	while (o < PMM_MAX_ORDER &&
 	       free_list_head[PMM_ZONE_DMA][o] == NO_LINK) {
 		o++;
@@ -287,37 +301,17 @@ paddr_t pmm_alloc_dma(int order)
 }
 
 /*
- * Internal free core. Caller MUST hold pmm_lock.
+ * Internal free core: coalesce buddies and push onto the free list.
+ *
+ * Caller MUST hold pmm_lock and MUST have already zeroed the block
+ * at `pa` of `(1 << order)` pages.  The "zeroed by caller" contract
+ * lets the public free path (and pmm_put_user_page) drop the lock
+ * across the memset so the IRQ-off window does not scale with
+ * allocation size — see v0.0.3.1 audit item 5.
  */
 static void pmm_free_pages_locked(paddr_t pa, int order)
 {
-	if (order < 0 || order >= PMM_MAX_ORDER) {
-		panic("pmm_free_pages: bad order %d", order);
-	}
-	if (pa & ((1ull << (12 + order)) - 1)) {
-		panic("pmm_free_pages: misaligned 0x%lx order %d",
-		      (unsigned long)pa, order);
-	}
-
 	uint64_t pfn = pa_to_pfn(pa);
-	if (pfn >= pfn_count) {
-		panic("pmm_free_pages: pfn out of range");
-	}
-	if (pfn_table[pfn].flags & PFN_FREE) {
-		panic("pmm_free_pages: double-free at 0x%lx",
-		      (unsigned long)pa);
-	}
-
-	/*
-	 * v0.0.3 §2.6: zero on free. The freelist invariant is that
-	 * every page reachable from a free list is zero. This closes
-	 * the §12 (jnuspec.md) information-leak risk and lets
-	 * pmm_alloc_pages skip its own zeroing path. Buddies that
-	 * coalesce below are already zero (they were zeroed on their
-	 * own free), so zeroing only the incoming block is sufficient.
-	 */
-	memset(phys_to_virt(pa), 0, PMM_ORDER_SIZE(order));
-
 	enum pmm_zone z = zone_of(pa);
 
 	while (order + 1 < PMM_MAX_ORDER) {
@@ -352,9 +346,53 @@ static void pmm_free_pages_locked(paddr_t pa, int order)
 	stats.zone_free[z] += (1ull << order);
 }
 
+/*
+ * Validate a free request and reserve the block.  Caller MUST hold
+ * pmm_lock.  After this returns the page is detached: it has refcount
+ * 0, PFN_FREE clear, and is on no free list — so no concurrent
+ * allocator can hand it out, and the caller is free to drop the lock
+ * to zero the block before calling pmm_free_pages_locked().
+ */
+static void pmm_free_validate_locked(paddr_t pa, int order)
+{
+	if (order < 0 || order >= PMM_MAX_ORDER) {
+		panic("pmm_free_pages: bad order %d", order);
+	}
+	if (pa & ((1ull << (12 + order)) - 1)) {
+		panic("pmm_free_pages: misaligned 0x%lx order %d",
+		      (unsigned long)pa, order);
+	}
+
+	uint64_t pfn = pa_to_pfn(pa);
+	if (pfn >= pfn_count) {
+		panic("pmm_free_pages: pfn out of range");
+	}
+	if (pfn_table[pfn].flags & PFN_FREE) {
+		panic("pmm_free_pages: double-free at 0x%lx",
+		      (unsigned long)pa);
+	}
+}
+
 void pmm_free_pages(paddr_t pa, int order)
 {
-	uint64_t flags = spin_lock_irqsave(&pmm_lock);
+	uint64_t flags;
+
+	/*
+	 * v0.0.3.1 audit item 5: validate under the lock, then drop
+	 * the lock to zero the block, then re-acquire the lock to
+	 * coalesce + push.  The page is unreachable to any other
+	 * allocator across the unlocked window because PFN_FREE is
+	 * still clear and the page is on no free list.  This caps the
+	 * IRQ-off region at validation + a few list ops, even for
+	 * order-10 (4 MiB) frees.
+	 */
+	flags = spin_lock_irqsave(&pmm_lock);
+	pmm_free_validate_locked(pa, order);
+	spin_unlock_irqrestore(&pmm_lock, flags);
+
+	memset(phys_to_virt(pa), 0, PMM_ORDER_SIZE(order));
+
+	flags = spin_lock_irqsave(&pmm_lock);
 	pmm_free_pages_locked(pa, order);
 	spin_unlock_irqrestore(&pmm_lock, flags);
 }
@@ -421,19 +459,25 @@ void pmm_put_user_page(paddr_t pa)
 	}
 
 	if (--pfn_table[pfn].refcount == 0) {
-		/*
-		 * Free under the same lock — pmm_free_pages_locked does
-		 * not re-acquire it, so no recursion. Doing the free
-		 * inline keeps the (refcount==0 → free) transition
-		 * atomic against any concurrent pmm_user_refcount /
-		 * pmm_get_user_page observation.
-		 */
 		do_free = true;
 	}
-	if (do_free) {
-		pmm_free_pages_locked(pa, 0);
-	}
 	spin_unlock_irqrestore(&pmm_lock, flags);
+
+	if (do_free) {
+		/*
+		 * v0.0.3.1 audit item 5: drop the lock before freeing.
+		 * The page now has refcount 0, PFN_FREE clear, and is on
+		 * no free list, so no concurrent allocator/refcount
+		 * observer can race with us.  pmm_free_pages does its
+		 * own validation + zero outside the lock.
+		 *
+		 * Callers must hold a refcount before calling
+		 * pmm_get_user_page, so the brief window where another
+		 * thread could observe refcount == 0 is not a race —
+		 * a caller without a ref is already buggy.
+		 */
+		pmm_free_pages(pa, 0);
+	}
 }
 
 uint64_t pmm_lock_acquire(void) { return spin_lock_irqsave(&pmm_lock); }
@@ -564,15 +608,16 @@ void pmm_init(const struct limine_memmap_response *mm, uint64_t hhdm_offset)
 		(void)z_hi;
 	}
 
-	stats.total_pages = pfn_count;
-	stats.zone_total[PMM_ZONE_DMA] =
-	    (highest_end < 16ull * 1024 * 1024 ? highest_end
-					       : 16ull * 1024 * 1024) /
-	    PAGE_SIZE;
-	stats.zone_total[PMM_ZONE_NORMAL] =
-	    (highest_end > 16ull * 1024 * 1024)
-		? (highest_end - 16ull * 1024 * 1024) / PAGE_SIZE
-		: 0;
+	/*
+	 * v0.0.3.1 audit (item 6): total_pages reflects pages actually
+	 * fed into the buddy.  Per-zone totals are accumulated in
+	 * pmm_register_block as ranges are folded in.  zone_total[] now
+	 * matches zone_free[] at this point, so any later drift is a
+	 * real leak.
+	 */
+	stats.total_pages = stats.free_pages;
+	(void)pfn_count;
+	(void)highest_end;
 	(void)total_free_pages;
 
 	/*

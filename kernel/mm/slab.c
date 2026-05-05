@@ -33,7 +33,20 @@
 
 #define SLAB_BITMAP_WORDS 8 /* up to 512 objects/slab */
 
+/*
+ * v0.0.3.1 audit item 7: kfree must distinguish a slab page from a
+ * large_alloc page without ambiguity.  Both layouts now begin with a
+ * one-byte `kind` tag at page offset 0.  PAGE_KIND_SLAB and
+ * PAGE_KIND_LARGE are intentionally non-zero so a freshly-allocated
+ * (or zero-on-free) page that has not yet been initialised by either
+ * code path is rejected by kfree() instead of silently misclassified.
+ */
+#define PAGE_KIND_SLAB 0xA1u
+#define PAGE_KIND_LARGE 0xA2u
+
 struct slab_page {
+	uint8_t kind; /* PAGE_KIND_SLAB */
+	uint8_t _pad[7];
 	struct slab_page *next;
 	struct slab_page *prev;
 	struct kmem_cache *cache;
@@ -92,6 +105,7 @@ static struct slab_page *new_slab(struct kmem_cache *c)
 
 	struct slab_page *sp = phys_to_virt(pa);
 	memset(sp, 0, sizeof(*sp));
+	sp->kind = PAGE_KIND_SLAB;
 	sp->cache = c;
 
 	uintptr_t obj0 = (uintptr_t)first_object(sp) - (uintptr_t)sp;
@@ -251,7 +265,15 @@ void slab_init(void)
 		static char names[KMALLOC_NCLASSES][32];
 		snprintf(names[i], sizeof(names[i]), "kmalloc-%lu",
 			 (unsigned long)sz);
-		kmalloc_caches[i] = kmem_cache_create(names[i], sz, 8);
+		/*
+		 * Natural alignment: align to the size class, capped at
+		 * 64 (cacheline).  This mirrors Linux SLUB's
+		 * SLAB_HWCACHE_ALIGN policy and is required for structs
+		 * with _Alignas(64) members (e.g. struct task's
+		 * fpu_state — FXRSTOR #GPs on misaligned operands).
+		 */
+		size_t align = sz < 64 ? sz : 64;
+		kmalloc_caches[i] = kmem_cache_create(names[i], sz, align);
 		if (!kmalloc_caches[i]) {
 			panic("slab: kmalloc cache init failed");
 		}
@@ -261,14 +283,27 @@ void slab_init(void)
 }
 
 /*
- * Large allocations: physical pages tagged with a 4-byte order at the
- * start of the page. We sacrifice the first 16 bytes (8 for order +
- * padding) of the allocation; the returned pointer is offset.
+ * Large allocations: physical pages tagged with a one-byte `kind`
+ * (PAGE_KIND_LARGE) at offset 0 plus a magic + order tail.  We
+ * sacrifice the first sizeof(struct large_hdr) bytes of the
+ * allocation; the returned pointer is offset past the header.
+ *
+ * v0.0.3.1 audit item 7: dispatch in kfree() is by `kind` byte at
+ * page offset 0, identical to slab_page.  The magic and order fields
+ * remain as a corruption sanity check inside large_free().
+ */
+/*
+ * Padded to 64 bytes so the returned pointer from large_alloc() is
+ * 64-byte aligned (pages are 4096-aligned).  This is required for
+ * structs containing _Alignas(64) fields such as struct task's
+ * fpu_state buffer — FXSAVE/FXRSTOR #GP on misaligned operands.
  */
 struct large_hdr {
+	uint8_t kind; /* PAGE_KIND_LARGE */
+	uint8_t _pad[7];
 	uint64_t magic;
 	uint32_t order;
-	uint32_t pad;
+	uint32_t _reserved[9]; /* pad to 64 bytes total */
 };
 
 #define LARGE_MAGIC 0x534C4142504B5350ull /* "SLABPKSP" */
@@ -293,6 +328,7 @@ static void *large_alloc(size_t size)
 		return NULL;
 	}
 	struct large_hdr *h = phys_to_virt(pa);
+	h->kind = PAGE_KIND_LARGE;
 	h->magic = LARGE_MAGIC;
 	h->order = (uint32_t)order;
 	return (uint8_t *)h + sizeof(*h);
@@ -302,11 +338,12 @@ static void large_free(void *p)
 {
 	struct large_hdr *h =
 	    (struct large_hdr *)((uint8_t *)p - sizeof(struct large_hdr));
-	if (h->magic != LARGE_MAGIC) {
+	if (h->kind != PAGE_KIND_LARGE || h->magic != LARGE_MAGIC) {
 		panic("kfree: corrupt large header at %p", p);
 	}
 	int order = (int)h->order;
 	paddr_t pa = virt_to_phys(h);
+	h->kind = 0;
 	h->magic = 0;
 	pmm_free_pages(pa, order);
 }
@@ -336,18 +373,35 @@ void kfree(void *p)
 	}
 
 	uintptr_t page = (uintptr_t)p & ~(uintptr_t)PAGE_MASK;
-	struct large_hdr *maybe_hdr = (struct large_hdr *)page;
-	if (maybe_hdr->magic == LARGE_MAGIC &&
-	    (uintptr_t)p == page + sizeof(*maybe_hdr)) {
+	/*
+	 * v0.0.3.1 audit item 7: dispatch on the one-byte `kind` tag
+	 * at page offset 0.  Both slab_page and large_hdr place the
+	 * tag there with disjoint values, so this is unambiguous and
+	 * does not depend on relative struct sizes.  An invalid tag
+	 * indicates either a corrupt heap or a free of a non-kmalloc
+	 * pointer; either is a kernel bug.
+	 */
+	uint8_t kind = *(volatile uint8_t *)page;
+
+	if (kind == PAGE_KIND_LARGE) {
+		struct large_hdr *h = (struct large_hdr *)page;
+
+		if ((uintptr_t)p != page + sizeof(*h)) {
+			panic("kfree: %p mid-large-allocation", p);
+		}
 		large_free(p);
 		return;
 	}
+	if (kind == PAGE_KIND_SLAB) {
+		struct slab_page *sp = (struct slab_page *)page;
 
-	struct slab_page *sp = (struct slab_page *)page;
-	if (!sp->cache) {
-		panic("kfree: %p has no slab header", p);
+		if (!sp->cache) {
+			panic("kfree: %p slab header missing cache", p);
+		}
+		kmem_cache_free(sp->cache, p);
+		return;
 	}
-	kmem_cache_free(sp->cache, p);
+	panic("kfree: %p has unknown page kind 0x%02x", p, kind);
 }
 
 void *kzalloc(size_t size)

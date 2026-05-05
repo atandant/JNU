@@ -33,6 +33,7 @@
 #define ENAMETOOLONG 36 /* File name too long */
 #define ENOSYS 38	/* Not implemented */
 #define EXDEV 18	/* Cross-device link */
+#define EMLINK 31	/* Too many links */
 #define ESPIPE 29	/* Illegal seek */
 #define ENOTTY 25	/* Not a typewriter (inappropriate ioctl) */
 #define ENOTSUP 95	/* Not supported */

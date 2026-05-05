@@ -252,6 +252,29 @@ static int minix_write_dirent_at(struct vfs_inode *dir, uint32_t offset,
 	return n == (ssize_t)sizeof(*de) ? 0 : -EIO;
 }
 
+/*
+ * MINIX v1 stores names in fixed 14-byte slots with no length prefix,
+ * so anything that would survive a literal memcpy can land on disk.
+ * Reject the few inputs that would either be unrepresentable in the
+ * directory format or unrecoverable by future path lookups.
+ */
+static bool minix_name_valid(const char *name)
+{
+	size_t i;
+
+	if (!name || name[0] == '\0')
+		return false;
+	for (i = 0; i < MINIX_NAME_LEN + 1; i++) {
+		char c = name[i];
+
+		if (c == '\0')
+			return i > 0;
+		if (c == '/')
+			return false;
+	}
+	return false; /* longer than MINIX_NAME_LEN */
+}
+
 static int minix_add_dirent(struct vfs_inode *dir, const char *name,
 			    uint32_t ino)
 {
@@ -259,6 +282,8 @@ static int minix_add_dirent(struct vfs_inode *dir, const char *name,
 	struct minix_dir_entry de;
 	uint32_t offset = 0;
 
+	if (!minix_name_valid(name))
+		return -EINVAL;
 	if (strlen(name) > MINIX_NAME_LEN)
 		return -ENAMETOOLONG;
 	if (minix_find_dirent(dir, name, NULL, NULL) == 0)
@@ -333,6 +358,56 @@ static bool minix_dir_empty(struct vfs_inode *dir)
 		if (strcmp(dent.name, ".") != 0 && strcmp(dent.name, "..") != 0)
 			return false;
 	}
+	return true;
+}
+
+/*
+ * v0.0.3.1 audit item 4: refuse a rename that would graft a
+ * directory under one of its own descendants — `mv /a /a/b`.
+ * Walk `..` upward from `start` until we either hit `target` (cycle)
+ * or reach the filesystem root.  Bound the walk by MAX_DEPTH so a
+ * corrupt image whose `..` chain loops cannot wedge the kernel.
+ *
+ * Returns true iff `target_ino` appears at or above `start` in the
+ * directory tree, i.e. moving `target` under `start` would create a
+ * detached cycle.
+ */
+#define MINIX_RENAME_MAX_DEPTH 256
+
+static bool minix_is_ancestor_or_self(struct vfs_inode *start,
+				      uint32_t target_ino)
+{
+	struct vfs_mount *mnt = start->mnt;
+	uint32_t curr = start->ino;
+	uint32_t root_ino = mnt->root ? mnt->root->ino : 1;
+
+	for (uint32_t depth = 0; depth < MINIX_RENAME_MAX_DEPTH; depth++) {
+		struct minix_raw_inode raw;
+		struct vfs_inode *node;
+		struct minix_dir_entry parent_de;
+		int err;
+
+		if (curr == target_ino)
+			return true;
+		if (curr == root_ino)
+			return false;
+
+		err = minix_get_raw_inode(mnt, curr, &raw);
+		if (err)
+			return true; /* fail closed */
+		err = minix_inode_from_raw(mnt, curr, &raw, &node);
+		if (err)
+			return true;
+		err = minix_find_dirent(node, "..", NULL, &parent_de);
+		vfs_close(node);
+		if (err)
+			return true;
+		if (parent_de.inode == 0 || parent_de.inode == curr)
+			return false;
+		curr = parent_de.inode;
+	}
+	pr_err("minix: rename ancestor walk exceeded depth %u\n",
+	       MINIX_RENAME_MAX_DEPTH);
 	return true;
 }
 
@@ -429,10 +504,20 @@ int minix_unlink(struct vfs_inode *dir, const char *name)
 
 int minix_mkdir(struct vfs_inode *dir, const char *name, uint16_t mode)
 {
+	struct minix_inode_info *parent = dir->priv;
 	struct minix_inode_info mi;
 	struct vfs_inode tmp;
 	uint32_t ino;
 	int err;
+
+	/*
+	 * MINIX v1 i_nlinks is 8 bits.  We need room for the new
+	 * subdirectory's ".." backlink, which bumps the parent's
+	 * nlinks by one — refuse before allocating anything if the
+	 * parent is already at the limit.
+	 */
+	if (parent->raw.i_nlinks >= 0xff)
+		return -EMLINK;
 
 	ino = minix_alloc_inode(dir->mnt);
 	if (ino == 0)
@@ -463,12 +548,8 @@ int minix_mkdir(struct vfs_inode *dir, const char *name, uint16_t mode)
 	err = minix_add_dirent(dir, name, ino);
 	if (err)
 		goto fail_inode;
-	{
-		struct minix_inode_info *parent = dir->priv;
-
-		parent->raw.i_nlinks++;
-		parent->dirty = true;
-	}
+	parent->raw.i_nlinks++;
+	parent->dirty = true;
 	return 0;
 
 fail_inode:
@@ -537,6 +618,13 @@ int minix_rename(struct vfs_inode *old_dir, const char *old_name,
 	err = minix_inode_from_raw(old_dir->mnt, de.inode, &old_raw, &old_inode);
 	if (err)
 		return err;
+
+	if (old_inode->is_dir && old_dir != new_dir) {
+		if (minix_is_ancestor_or_self(new_dir, old_inode->ino)) {
+			err = -EINVAL;
+			goto out_old_inode;
+		}
+	}
 
 	err = minix_find_dirent(new_dir, new_name, NULL, &replaced);
 	if (err == 0) {

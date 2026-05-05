@@ -22,6 +22,29 @@ static void minix_clear_block_mapping(struct vfs_inode *ino, uint32_t lblk);
 static void minix_prune_empty_indirects(struct vfs_inode *ino);
 
 /*
+ * Corruption-safe wrapper for minix_free_zone.  A fuzzed image can
+ * carry indirect-table entries that point outside the data zone or
+ * into the metadata area; minix_free_zone() panics on those, which
+ * the v0.0.3.1 fuzz contract (§2.5.3) explicitly forbids.  Validate
+ * here, log, and skip — leaving the zone as a leaked bit in the zmap
+ * is preferable to taking down the kernel on a hostile image.
+ */
+static void minix_safe_free_zone(struct vfs_mount *mnt, uint32_t zone)
+{
+	struct minix_priv *priv = mnt->priv;
+
+	if (zone == 0)
+		return;
+	if (zone < priv->sb.s_firstdatazone || zone >= priv->sb.s_nzones) {
+		pr_err("minix: refusing to free out-of-range zone %u "
+		       "(firstdatazone=%u, nzones=%u)\n",
+		       zone, priv->sb.s_firstdatazone, priv->sb.s_nzones);
+		return;
+	}
+	minix_free_zone(mnt, zone);
+}
+
+/*
  * Read bytes from a MINIX inode.
  *
  * Returns:
@@ -72,6 +95,17 @@ ssize_t minix_read(struct vfs_inode *ino, uint64_t offset, size_t len,
 	return (ssize_t)len;
 }
 
+/*
+ * Maximum bytes accepted by a single minix_write() call.  The
+ * implementation snapshots the to-be-overwritten range and the list of
+ * newly-allocated logical blocks for rollback, both via kmalloc, so an
+ * unbounded `len` from userspace is a trivial OOM/DoS vector (a single
+ * 4 GiB write would request a 4 GiB backup buffer).  Cap to a generous
+ * but bounded chunk; the VFS layer / syscall wrapper is responsible for
+ * iterating to satisfy larger user requests.
+ */
+#define MINIX_WRITE_MAX_CHUNK (64u * 1024u)
+
 ssize_t minix_write(struct vfs_inode *ino, uint64_t offset, size_t len,
 		    const void *buf)
 {
@@ -86,12 +120,15 @@ ssize_t minix_write(struct vfs_inode *ino, uint64_t offset, size_t len,
 	uint64_t end;
 	uint64_t old_size = ino->size;
 	uint32_t old_time = mi->raw.i_time;
-	size_t left = len;
+	size_t left;
 	uint64_t curr_off = offset;
 	int err = 0;
 
 	if (len == 0)
 		return 0;
+	if (len > MINIX_WRITE_MAX_CHUNK)
+		len = MINIX_WRITE_MAX_CHUNK;
+	left = len;
 	if (__builtin_add_overflow(offset, (uint64_t)len, &end))
 		return -EINVAL;
 	if (end > 0xffffffffu)
@@ -227,10 +264,10 @@ static void minix_free_indirect(struct vfs_mount *mnt, uint32_t zone)
 	table = (uint16_t *)buf->data;
 	for (uint32_t i = 0; i < MINIX_BLOCK_SIZE / sizeof(uint16_t); i++) {
 		if (table[i] != 0)
-			minix_free_zone(mnt, table[i]);
+			minix_safe_free_zone(mnt, table[i]);
 	}
 	bufcache_put(buf);
-	minix_free_zone(mnt, zone);
+	minix_safe_free_zone(mnt, zone);
 }
 
 static void minix_free_double_indirect(struct vfs_mount *mnt, uint32_t zone)
@@ -251,7 +288,7 @@ static void minix_free_double_indirect(struct vfs_mount *mnt, uint32_t zone)
 		if (copy[i] != 0)
 			minix_free_indirect(mnt, copy[i]);
 	}
-	minix_free_zone(mnt, zone);
+	minix_safe_free_zone(mnt, zone);
 }
 
 static void minix_clear_block_mapping(struct vfs_inode *ino, uint32_t lblk)
@@ -262,7 +299,7 @@ static void minix_clear_block_mapping(struct vfs_inode *ino, uint32_t lblk)
 
 	if (lblk < 7) {
 		if (mi->raw.i_zone[lblk] != 0) {
-			minix_free_zone(ino->mnt, mi->raw.i_zone[lblk]);
+			minix_safe_free_zone(ino->mnt, mi->raw.i_zone[lblk]);
 			mi->raw.i_zone[lblk] = 0;
 		}
 		return;
@@ -275,8 +312,8 @@ static void minix_clear_block_mapping(struct vfs_inode *ino, uint32_t lblk)
 		if (!buf)
 			return;
 		if (((uint16_t *)buf->data)[lblk] != 0) {
-			minix_free_zone(ino->mnt,
-					((uint16_t *)buf->data)[lblk]);
+			minix_safe_free_zone(ino->mnt,
+					     ((uint16_t *)buf->data)[lblk]);
 			((uint16_t *)buf->data)[lblk] = 0;
 			bufcache_mark_dirty(buf);
 		}
@@ -301,8 +338,8 @@ static void minix_clear_block_mapping(struct vfs_inode *ino, uint32_t lblk)
 		if (!buf)
 			return;
 		if (((uint16_t *)buf->data)[inner] != 0) {
-			minix_free_zone(ino->mnt,
-					((uint16_t *)buf->data)[inner]);
+			minix_safe_free_zone(ino->mnt,
+					     ((uint16_t *)buf->data)[inner]);
 			((uint16_t *)buf->data)[inner] = 0;
 			bufcache_mark_dirty(buf);
 		}
@@ -337,7 +374,7 @@ static void minix_prune_empty_indirects(struct vfs_inode *ino)
 
 	if (mi->raw.i_zone[7] != 0 &&
 	    minix_indirect_empty(ino->mnt, mi->raw.i_zone[7])) {
-		minix_free_zone(ino->mnt, mi->raw.i_zone[7]);
+		minix_safe_free_zone(ino->mnt, mi->raw.i_zone[7]);
 		mi->raw.i_zone[7] = 0;
 	}
 	if (mi->raw.i_zone[8] == 0)
@@ -350,14 +387,14 @@ static void minix_prune_empty_indirects(struct vfs_inode *ino)
 		uint16_t ind = ((uint16_t *)buf->data)[i];
 
 		if (ind != 0 && minix_indirect_empty(ino->mnt, ind)) {
-			minix_free_zone(ino->mnt, ind);
+			minix_safe_free_zone(ino->mnt, ind);
 			((uint16_t *)buf->data)[i] = 0;
 			bufcache_mark_dirty(buf);
 		}
 	}
 	bufcache_put(buf);
 	if (minix_indirect_empty(ino->mnt, mi->raw.i_zone[8])) {
-		minix_free_zone(ino->mnt, mi->raw.i_zone[8]);
+		minix_safe_free_zone(ino->mnt, mi->raw.i_zone[8]);
 		mi->raw.i_zone[8] = 0;
 	}
 }
@@ -395,7 +432,7 @@ int minix_truncate(struct vfs_inode *ino, uint64_t size)
 
 	for (uint32_t i = 0; i < 7; i++) {
 		if (mi->raw.i_zone[i] != 0) {
-			minix_free_zone(ino->mnt, mi->raw.i_zone[i]);
+			minix_safe_free_zone(ino->mnt, mi->raw.i_zone[i]);
 			mi->raw.i_zone[i] = 0;
 		}
 	}

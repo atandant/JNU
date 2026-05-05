@@ -25,9 +25,20 @@
 #define BUFCACHE_SECTORS_PER_BLOCK (MINIX_BLOCK_SIZE / 512)
 #define BUFCACHE_SELFTEST_BLOCKS 96
 
+/*
+ * v0.0.3.1 audit item 3: a `loading` flag closes the get/read race.
+ * When a miss starts an in-flight block_read for (bdev, block), the
+ * slot is marked loading=true, valid=false, and `key` (bdev/block_no)
+ * is set so a concurrent bufcache_get for the same key can detect the
+ * pending load and wait instead of picking another victim and
+ * creating a duplicate slot.  Single-CPU + IRQ-disable hides the race
+ * today; the wait loop is therefore a placeholder that compiles to a
+ * relax+retry under the existing spinlock semantics.
+ */
 struct bufcache_slot {
 	struct minix_buffer buf;
 	bool valid;
+	bool loading;
 	uint64_t lru;
 };
 
@@ -50,6 +61,9 @@ static struct bufcache_slot *bufcache_pick_victim(void)
 	struct bufcache_slot *victim = NULL;
 
 	for (size_t i = 0; i < BUFCACHE_SLOTS; i++) {
+		/* Never evict a slot that is currently loading. */
+		if (slots[i].loading)
+			continue;
 		if (!slots[i].valid && slots[i].buf.refcount == 0)
 			return &slots[i];
 		if (slots[i].buf.refcount != 0 || slots[i].buf.dirty)
@@ -83,12 +97,27 @@ struct minix_buffer *bufcache_get(struct block_device *bdev, uint32_t block)
 	if (!bdev || bdev->sector_size != 512)
 		return NULL;
 
+retry:
 	flags = spin_lock_irqsave(&bufcache_lock);
 	for (size_t i = 0; i < BUFCACHE_SLOTS; i++) {
-		if (!slots[i].valid)
-			continue;
 		if (slots[i].buf.bdev != bdev || slots[i].buf.block_no != block)
 			continue;
+		if (!slots[i].valid && !slots[i].loading)
+			continue;
+		if (slots[i].loading) {
+			/*
+			 * v0.0.3.1 audit item 3: another thread is
+			 * loading this exact (bdev, block) right now.
+			 * Wait for it to finish instead of picking a
+			 * fresh victim and creating a duplicate slot.
+			 * Single-CPU + IRQ-disable means this branch
+			 * is currently unreachable, but the structure
+			 * is in place for SMP.
+			 */
+			spin_unlock_irqrestore(&bufcache_lock, flags);
+			__asm__ __volatile__("pause");
+			goto retry;
+		}
 
 		slots[i].buf.refcount++;
 		slots[i].lru = ++bufcache_clock;
@@ -109,6 +138,7 @@ struct minix_buffer *bufcache_get(struct block_device *bdev, uint32_t block)
 	if (slot->valid && slot->buf.dirty && bufcache_dirty_count > 0)
 		bufcache_dirty_count--;
 	slot->valid = false;
+	slot->loading = true; /* publish (bdev, block) before dropping lock */
 	slot->buf.bdev = bdev;
 	slot->buf.block_no = block;
 	slot->buf.refcount = 1;
@@ -121,6 +151,7 @@ struct minix_buffer *bufcache_get(struct block_device *bdev, uint32_t block)
 	if (err) {
 		flags = spin_lock_irqsave(&bufcache_lock);
 		slot->valid = false;
+		slot->loading = false;
 		slot->buf.refcount = 0;
 		spin_unlock_irqrestore(&bufcache_lock, flags);
 		return NULL;
@@ -128,6 +159,7 @@ struct minix_buffer *bufcache_get(struct block_device *bdev, uint32_t block)
 
 	flags = spin_lock_irqsave(&bufcache_lock);
 	slot->valid = true;
+	slot->loading = false;
 	spin_unlock_irqrestore(&bufcache_lock, flags);
 	return &slot->buf;
 }
@@ -231,18 +263,31 @@ int bufcache_sync(struct block_device *bdev)
 
 void bufcache_log_stats(void)
 {
-	uint64_t total = bufcache_hits + bufcache_misses;
-	uint64_t hit_pct = total ? (bufcache_hits * 100u) / total : 100u;
 	uint64_t flags;
+	uint64_t hits;
+	uint64_t misses;
+	uint64_t total;
+	uint64_t hit_pct;
 	uint32_t dirty;
 
+	/*
+	 * v0.0.3.1 audit item 9: snapshot all counters under the
+	 * lock so the printed numbers are mutually consistent and
+	 * SMP-safe.  Reading hits/misses lockless is fine on a
+	 * single CPU but races on SMP and can produce nonsense
+	 * hit_rate values when one counter is observed mid-update.
+	 */
 	flags = spin_lock_irqsave(&bufcache_lock);
+	hits = bufcache_hits;
+	misses = bufcache_misses;
 	dirty = bufcache_dirty_count;
 	spin_unlock_irqrestore(&bufcache_lock, flags);
 
+	total = hits + misses;
+	hit_pct = total ? (hits * 100u) / total : 100u;
+
 	pr_info("bufcache: hits=%llu misses=%llu hit_rate=%llu%% dirty=%u/%u\n",
-		(unsigned long long)bufcache_hits,
-		(unsigned long long)bufcache_misses,
+		(unsigned long long)hits, (unsigned long long)misses,
 		(unsigned long long)hit_pct, (unsigned)dirty,
 		(unsigned)BUFCACHE_SLOTS);
 }
