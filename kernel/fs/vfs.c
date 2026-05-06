@@ -15,6 +15,7 @@
 #include <jnu/minix.h>
 #include <jnu/string.h>
 #include <jnu/vfs.h>
+#include <jnu/mutex.h>
 
 static struct vfs_mount root_mount;
 static bool root_mounted = false;
@@ -214,9 +215,13 @@ ssize_t vfs_read(struct vfs_inode *ino, uint64_t offset, size_t len, void *buf)
 		return -EINVAL;
 	if (ino->is_dir)
 		return -EISDIR;
+	ssize_t ret;
 	if (!(ino->mode & 0444))
 		return -EACCES;
-	return ino->mnt->ops->read(ino, offset, len, buf);
+	mutex_lock(&ino->lock);
+	ret = ino->mnt->ops->read(ino, offset, len, buf);
+	mutex_unlock(&ino->lock);
+	return ret;
 }
 
 ssize_t vfs_write(struct vfs_inode *ino, uint64_t offset, size_t len,
@@ -226,18 +231,26 @@ ssize_t vfs_write(struct vfs_inode *ino, uint64_t offset, size_t len,
 		return -EINVAL;
 	if (ino->is_dir)
 		return -EISDIR;
+	ssize_t ret;
 	if (!(ino->mode & 0222))
 		return -EACCES;
-	return ino->mnt->ops->write(ino, offset, len, buf);
+	mutex_lock(&ino->lock);
+	ret = ino->mnt->ops->write(ino, offset, len, buf);
+	mutex_unlock(&ino->lock);
+	return ret;
 }
 
 int vfs_truncate(struct vfs_inode *ino, uint64_t size)
 {
 	if (!ino || !ino->mnt || !ino->mnt->ops || !ino->mnt->ops->truncate)
 		return -EINVAL;
+	int ret;
 	if (ino->is_dir)
 		return -EISDIR;
-	return ino->mnt->ops->truncate(ino, size);
+	mutex_lock(&ino->lock);
+	ret = ino->mnt->ops->truncate(ino, size);
+	mutex_unlock(&ino->lock);
+	return ret;
 }
 
 int vfs_create(const char *path, uint16_t mode, struct vfs_inode **out)
@@ -253,7 +266,9 @@ int vfs_create(const char *path, uint16_t mode, struct vfs_inode **out)
 		vfs_close(dir);
 		return -ENOSYS;
 	}
+	mutex_lock(&dir->lock);
 	err = dir->mnt->ops->create(dir, name, mode, out);
+	mutex_unlock(&dir->lock);
 	vfs_close(dir);
 	return err;
 }
@@ -267,7 +282,9 @@ int vfs_unlink(const char *path)
 	err = vfs_parent(path, &dir, name, sizeof(name));
 	if (err)
 		return err;
+	mutex_lock(&dir->lock);
 	err = dir->mnt->ops->unlink ? dir->mnt->ops->unlink(dir, name) : -ENOSYS;
+	mutex_unlock(&dir->lock);
 	vfs_close(dir);
 	return err;
 }
@@ -281,7 +298,9 @@ int vfs_mkdir(const char *path, uint16_t mode)
 	err = vfs_parent(path, &dir, name, sizeof(name));
 	if (err)
 		return err;
+	mutex_lock(&dir->lock);
 	err = dir->mnt->ops->mkdir ? dir->mnt->ops->mkdir(dir, name, mode) : -ENOSYS;
+	mutex_unlock(&dir->lock);
 	vfs_close(dir);
 	return err;
 }
@@ -295,7 +314,9 @@ int vfs_rmdir(const char *path)
 	err = vfs_parent(path, &dir, name, sizeof(name));
 	if (err)
 		return err;
+	mutex_lock(&dir->lock);
 	err = dir->mnt->ops->rmdir ? dir->mnt->ops->rmdir(dir, name) : -ENOSYS;
+	mutex_unlock(&dir->lock);
 	vfs_close(dir);
 	return err;
 }
@@ -316,6 +337,18 @@ int vfs_rename(const char *old_path, const char *new_path)
 		vfs_close(old_dir);
 		return err;
 	}
+	if (old_dir != new_dir) {
+		if (old_dir < new_dir) {
+			mutex_lock(&old_dir->lock);
+			mutex_lock(&new_dir->lock);
+		} else {
+			mutex_lock(&new_dir->lock);
+			mutex_lock(&old_dir->lock);
+		}
+	} else {
+		mutex_lock(&old_dir->lock);
+	}
+
 	if (old_dir->mnt != new_dir->mnt) {
 		err = -EXDEV;
 	} else if (!old_dir->mnt->ops->rename) {
@@ -324,6 +357,13 @@ int vfs_rename(const char *old_path, const char *new_path)
 		err = old_dir->mnt->ops->rename(old_dir, old_name, new_dir,
 						new_name);
 	}
+
+	if (old_dir != new_dir) {
+		mutex_unlock(&new_dir->lock);
+		mutex_unlock(&old_dir->lock);
+	} else {
+		mutex_unlock(&old_dir->lock);
+	}
 	vfs_close(new_dir);
 	vfs_close(old_dir);
 	return err;
@@ -331,18 +371,26 @@ int vfs_rename(const char *old_path, const char *new_path)
 
 int vfs_fsync(struct vfs_inode *ino)
 {
+	int ret;
 	if (!ino || !ino->mnt || !ino->mnt->ops || !ino->mnt->ops->fsync)
 		return -EINVAL;
-	return ino->mnt->ops->fsync(ino);
+	mutex_lock(&ino->lock);
+	ret = ino->mnt->ops->fsync(ino);
+	mutex_unlock(&ino->lock);
+	return ret;
 }
 
 int vfs_readdir(struct vfs_inode *dir, size_t index, struct vfs_dirent *out)
 {
+	int ret;
 	if (!dir || !dir->mnt || !dir->mnt->ops || !dir->mnt->ops->readdir)
 		return -EINVAL;
 	if (!dir->is_dir)
 		return -ENOTDIR;
-	return dir->mnt->ops->readdir(dir, index, out);
+	mutex_lock(&dir->lock);
+	ret = dir->mnt->ops->readdir(dir, index, out);
+	mutex_unlock(&dir->lock);
+	return ret;
 }
 
 void vfs_close(struct vfs_inode *ino)

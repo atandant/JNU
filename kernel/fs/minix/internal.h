@@ -15,6 +15,7 @@
 #include <jnu/compiler.h>
 #include <jnu/types.h>
 #include <jnu/vfs.h>
+#include <jnu/mutex.h>
 
 #define MINIX_BLOCK_SIZE 1024
 #define MINIX_V1_MAGIC 0x137F
@@ -50,6 +51,7 @@ struct minix_dir_entry {
 } __packed;
 
 struct minix_priv {
+	struct mutex bitmap_lock;
 	struct minix_super sb;
 	uint32_t inodes_start_block;
 };

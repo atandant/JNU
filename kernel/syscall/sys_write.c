@@ -25,6 +25,7 @@
 #include <jnu/syscall.h>
 #include <jnu/usercopy.h>
 #include <jnu/vfs.h>
+#include <jnu/mutex.h>
 
 #define WRITE_CHUNK 128
 #define JNU_O_ACCMODE 03
@@ -72,6 +73,7 @@ int64_t sys_write(int fd, const void *ubuf, size_t len)
 		if ((file->flags & JNU_O_ACCMODE) == JNU_O_RDONLY)
 			return -EACCES;
 
+		mutex_lock(&file->lock);
 		while (done < len) {
 			size_t chunk = len - done;
 			ssize_t n;
@@ -81,16 +83,21 @@ int64_t sys_write(int fd, const void *ubuf, size_t len)
 				chunk = WRITE_CHUNK;
 			err = copy_from_user(buf, (const uint8_t *)ubuf + done,
 					     chunk);
-			if (err)
+			if (err) {
+				mutex_unlock(&file->lock);
 				return done ? (int64_t)done : err;
+			}
 			n = vfs_write(file->u.vfs, file->offset, chunk, buf);
-			if (n < 0)
+			if (n < 0) {
+				mutex_unlock(&file->lock);
 				return done ? (int64_t)done : n;
+			}
 			file->offset += (uint64_t)n;
 			done += (size_t)n;
 			if ((size_t)n < chunk)
 				break;
 		}
+		mutex_unlock(&file->lock);
 		return (int64_t)done;
 	}
 

@@ -88,6 +88,7 @@ C_SRCS := \
     kernel/lib/printk.c \
     kernel/lib/rbtree.c \
     kernel/lib/spinlock.c \
+    kernel/lib/mutex.c \
     kernel/drivers/serial.c \
     kernel/drivers/fbcon.c \
     kernel/drivers/pit.c \

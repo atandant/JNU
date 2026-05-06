@@ -88,6 +88,8 @@ static int minix_mount(struct vfs_mount *mnt, struct block_device *bdev)
 		return -ENOMEM;
 	}
 
+	memset(priv, 0, sizeof(*priv));
+	mutex_init(&priv->bitmap_lock);
 	memcpy(&priv->sb, sb, sizeof(*sb));
 	priv->inodes_start_block = 2 + sb->s_imap_blocks + sb->s_zmap_blocks;
 	bufcache_put(buf);

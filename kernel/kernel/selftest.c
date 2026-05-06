@@ -25,6 +25,7 @@
 #include <jnu/selftest.h>
 #include <jnu/slab.h>
 #include <jnu/spinlock.h>
+#include <jnu/mutex.h>
 #include <jnu/syscall.h>
 #include <jnu/types.h>
 #include <jnu/usercopy.h>
@@ -42,6 +43,7 @@ static const struct selftest tests[] = {
     {"initramfs", initramfs_selftest},
     {"usercopy", usercopy_selftest},
     {"sched", sched_selftest},
+    {"mutex", mutex_selftest},
     {"lapic_timer", lapic_timer_selftest},
     {"process", process_selftest},
     {"file_refcount", file_refcount_selftest},

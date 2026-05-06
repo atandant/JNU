@@ -8,6 +8,7 @@
 #pragma once
 
 #include <jnu/types.h>
+#include <jnu/mutex.h>
 
 struct vfs_inode;
 struct vfs_mount;
@@ -50,6 +51,7 @@ struct vfs_mount {
 };
 
 struct vfs_inode {
+	struct mutex lock;
 	struct vfs_mount *mnt;
 	uint32_t ino;
 	uint64_t size;

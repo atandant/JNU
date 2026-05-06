@@ -74,6 +74,7 @@ int64_t sys_open(const char *upath, int flags)
 	 */
 	file->refcount = 1;
 	file->flags = (uint32_t)flags;
+	mutex_init(&file->lock);
 
 	cdev = resolve_dev_chardev(path);
 	if (cdev) {

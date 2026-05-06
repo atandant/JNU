@@ -16,6 +16,7 @@
 #include <jnu/klog.h>
 #include <jnu/kmalloc.h>
 #include <jnu/string.h>
+#include <jnu/mutex.h>
 
 /*
  * Read one raw MINIX inode from the inode table.
@@ -254,6 +255,7 @@ int minix_inode_from_raw(struct vfs_mount *mnt, uint32_t ino,
 	inode->uid = mi->raw.i_uid;
 	inode->gid = mi->raw.i_gid;
 	inode->priv = mi;
+	mutex_init(&inode->lock);
 
 	*out = inode;
 	return 0;

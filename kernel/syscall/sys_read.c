@@ -12,6 +12,7 @@
 #include <jnu/sched.h>
 #include <jnu/syscall.h>
 #include <jnu/usercopy.h>
+#include <jnu/mutex.h>
 
 #define READ_CHUNK 256
 #define JNU_O_ACCMODE 03
@@ -104,12 +105,16 @@ int64_t sys_read(int fd, void *ubuf, size_t len)
 		    !file->u.chardev->ops->read) {
 			return -EINVAL;
 		}
-		return chardev_read_to_user(file->u.chardev, ubuf, len);
+		mutex_lock(&file->lock);
+		int64_t ret = chardev_read_to_user(file->u.chardev, ubuf, len);
+		mutex_unlock(&file->lock);
+		return ret;
 	}
 	if ((file->flags & JNU_O_ACCMODE) == JNU_O_WRONLY) {
 		return -EACCES;
 	}
 
+	mutex_lock(&file->lock);
 	while (done < len) {
 		size_t chunk = len - done;
 		ssize_t n;
@@ -121,6 +126,7 @@ int64_t sys_read(int fd, void *ubuf, size_t len)
 
 		n = file_read_at(file, file->offset, buf, chunk);
 		if (n < 0) {
+			mutex_unlock(&file->lock);
 			return done ? (int64_t)done : n;
 		}
 		if (n == 0) {
@@ -129,6 +135,7 @@ int64_t sys_read(int fd, void *ubuf, size_t len)
 
 		err = copy_to_user((uint8_t *)ubuf + done, buf, (size_t)n);
 		if (err) {
+			mutex_unlock(&file->lock);
 			return done ? (int64_t)done : err;
 		}
 
@@ -138,6 +145,7 @@ int64_t sys_read(int fd, void *ubuf, size_t len)
 			break;
 		}
 	}
+	mutex_unlock(&file->lock);
 
 	return (int64_t)done;
 }

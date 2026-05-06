@@ -23,6 +23,7 @@
 
 #include <jnu/errno.h>
 #include <jnu/fd.h>
+#include <jnu/mutex.h>
 #include <jnu/kmalloc.h>
 #include <jnu/string.h>
 
@@ -42,13 +43,19 @@ static void file_destroy(struct file *file)
 	kfree(file);
 }
 
-void fd_table_init(struct fd_table *table) { memset(table, 0, sizeof(*table)); }
+void fd_table_init(struct fd_table *table)
+{
+	memset(table, 0, sizeof(*table));
+	mutex_init(&table->lock);
+}
 
 void fd_table_clone(struct fd_table *dst, struct fd_table *src)
 {
 	if (!dst || !src) {
 		return;
 	}
+	mutex_lock(&src->lock);
+	mutex_lock(&dst->lock);
 	for (int fd = 0; fd < JNU_MAX_FDS; fd++) {
 		struct file *f = src->slots[fd];
 
@@ -59,6 +66,8 @@ void fd_table_clone(struct fd_table *dst, struct fd_table *src)
 		file_get(f);
 		dst->slots[fd] = f;
 	}
+	mutex_unlock(&dst->lock);
+	mutex_unlock(&src->lock);
 }
 
 int fd_alloc(struct fd_table *table, struct file *file)
@@ -67,22 +76,29 @@ int fd_alloc(struct fd_table *table, struct file *file)
 		return -EINVAL;
 	}
 
+	mutex_lock(&table->lock);
 	for (int fd = 3; fd < JNU_MAX_FDS; fd++) {
 		if (!table->slots[fd]) {
 			table->slots[fd] = file;
+			mutex_unlock(&table->lock);
 			return fd;
 		}
 	}
 
+	mutex_unlock(&table->lock);
 	return -EMFILE;
 }
 
 struct file *fd_get(struct fd_table *table, int fd)
 {
+	struct file *f;
 	if (!table || fd < 0 || fd >= JNU_MAX_FDS) {
 		return NULL;
 	}
-	return table->slots[fd];
+	mutex_lock(&table->lock);
+	f = table->slots[fd];
+	mutex_unlock(&table->lock);
+	return f;
 }
 
 struct file *fd_close(struct fd_table *table, int fd)
@@ -93,8 +109,10 @@ struct file *fd_close(struct fd_table *table, int fd)
 		return NULL;
 	}
 
+	mutex_lock(&table->lock);
 	file = table->slots[fd];
 	table->slots[fd] = NULL;
+	mutex_unlock(&table->lock);
 	return file;
 }
 
@@ -103,7 +121,7 @@ void file_get(struct file *file)
 	if (!file) {
 		return;
 	}
-	file->refcount++;
+	__atomic_add_fetch(&file->refcount, 1, __ATOMIC_SEQ_CST);
 }
 
 void file_put(struct file *file)
@@ -111,7 +129,8 @@ void file_put(struct file *file)
 	if (!file) {
 		return;
 	}
-	if (--file->refcount > 0) {
+	/* Uses __atomic_sub_fetch to decrement refcount and return the new value safely */
+	if (__atomic_sub_fetch(&file->refcount, 1, __ATOMIC_SEQ_CST) > 0) {
 		return;
 	}
 	file_destroy(file);
@@ -135,6 +154,7 @@ int file_refcount_selftest(void)
 	f->type = JNU_FILE_CHARDEV; /* destroy is a no-op besides kfree */
 	f->u.chardev = NULL;
 	f->refcount = 1;
+	mutex_init(&f->lock);
 
 	fd_table_init(&table_a);
 	fd_table_init(&table_b);

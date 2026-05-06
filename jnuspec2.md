@@ -75,9 +75,9 @@ The following are explicitly out of scope for v0.0.2:
 | Linux syscall compatibility     | v0.0.4+       |
 | `fork` copy semantics           | v0.0.2.1+     |
 | MLFQ scheduler                  | v0.0.2.1+     |
-| Signals                         | v0.0.3+       |
-| Futexes                         | v0.0.3+       |
-| Networking                      | v0.0.3+       |
+| Signals                         | v0.0.3.2+     |
+| Futexes & Mutexes               | v0.0.3+       |
+| Networking                      | v0.0.5+       |
 | AHCI / SATA                     | v0.0.3+       |
 | HPET                            | v0.0.3+       |
 | Copy-on-write fork              | v0.0.2.2+     |

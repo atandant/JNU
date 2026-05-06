@@ -91,19 +91,25 @@ static void minix_free_from_map(struct vfs_mount *mnt, uint32_t start_block,
 uint32_t minix_alloc_inode(struct vfs_mount *mnt)
 {
 	struct minix_priv *priv = mnt->priv;
+	uint32_t ret;
 
-	return minix_alloc_from_map(mnt, 2, priv->sb.s_imap_blocks,
-				    priv->sb.s_ninodes);
+	mutex_lock(&priv->bitmap_lock);
+	ret = minix_alloc_from_map(mnt, 2, priv->sb.s_imap_blocks,
+				   priv->sb.s_ninodes);
+	mutex_unlock(&priv->bitmap_lock);
+	return ret;
 }
 
 void minix_free_inode(struct vfs_mount *mnt, uint32_t ino)
 {
 	struct minix_priv *priv = mnt->priv;
 
+	mutex_lock(&priv->bitmap_lock);
 	if (ino == 0 || ino > priv->sb.s_ninodes)
 		panic("minix: free invalid inode %u", ino);
 
 	minix_free_from_map(mnt, 2, ino);
+	mutex_unlock(&priv->bitmap_lock);
 }
 
 uint32_t minix_alloc_zone(struct vfs_mount *mnt)
@@ -111,12 +117,16 @@ uint32_t minix_alloc_zone(struct vfs_mount *mnt)
 	struct minix_priv *priv = mnt->priv;
 	uint32_t zidx;
 
+	mutex_lock(&priv->bitmap_lock);
 	zidx = minix_alloc_from_map(mnt, 2 + priv->sb.s_imap_blocks,
 				    priv->sb.s_zmap_blocks,
 				    priv->sb.s_nzones - priv->sb.s_firstdatazone);
-	if (zidx == 0)
+	if (zidx == 0) {
+		mutex_unlock(&priv->bitmap_lock);
 		return 0;
+	}
 
+	mutex_unlock(&priv->bitmap_lock);
 	return priv->sb.s_firstdatazone + zidx - 1;
 }
 
@@ -125,11 +135,13 @@ void minix_free_zone(struct vfs_mount *mnt, uint32_t zone)
 	struct minix_priv *priv = mnt->priv;
 	uint32_t zidx;
 
+	mutex_lock(&priv->bitmap_lock);
 	if (zone < priv->sb.s_firstdatazone || zone >= priv->sb.s_nzones)
 		panic("minix: free invalid zone %u", zone);
 
 	zidx = zone - priv->sb.s_firstdatazone + 1;
 	minix_free_from_map(mnt, 2 + priv->sb.s_imap_blocks, zidx);
+	mutex_unlock(&priv->bitmap_lock);
 }
 
 static uint8_t bitmap_selftest_storage[BITMAP_SELFTEST_BLOCKS][MINIX_BLOCK_SIZE];
@@ -185,6 +197,7 @@ int minix_bitmap_selftest(void)
 
 	memset(bitmap_selftest_storage, 0, sizeof(bitmap_selftest_storage));
 	memset(&priv, 0, sizeof(priv));
+	mutex_init(&priv.bitmap_lock);
 	memset(&mnt, 0, sizeof(mnt));
 
 	priv.sb.s_ninodes = 16;

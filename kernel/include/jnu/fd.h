@@ -17,6 +17,7 @@
 #include <jnu/chardev.h>
 #include <jnu/initramfs.h>
 #include <jnu/types.h>
+#include <jnu/mutex.h>
 #include <jnu/vfs.h>
 
 #define JNU_MAX_FDS 32
@@ -46,6 +47,7 @@ struct jnu_stat {
  * int; SMP atomicity is Stage B's concern.
  */
 struct file {
+	struct mutex lock;
 	enum jnu_file_type type;
 	uint64_t offset;
 	uint32_t flags;
@@ -58,6 +60,7 @@ struct file {
 };
 
 struct fd_table {
+	struct mutex lock;
 	struct file *slots[JNU_MAX_FDS];
 };
 

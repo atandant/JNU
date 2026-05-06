@@ -12,6 +12,7 @@
 
 #include <jnu/rbtree.h>
 #include <jnu/types.h>
+#include <jnu/mutex.h>
 
 #define VMA_READ (1u << 0)
 #define VMA_WRITE (1u << 1)
@@ -26,6 +27,7 @@ struct vma {
 };
 
 struct addr_space {
+	struct mutex lock;
 	uint64_t *pml4; /* HHDM-virt pointer */
 	paddr_t pml4_phys;
 	struct rb_root vmas;

@@ -10,6 +10,7 @@
 #include <jnu/process.h>
 #include <jnu/sched.h>
 #include <jnu/syscall.h>
+#include <jnu/mutex.h>
 
 #define JNU_SEEK_SET 0
 #define JNU_SEEK_CUR 1
@@ -47,6 +48,8 @@ int64_t sys_lseek(int fd, int64_t off, int whence)
 		return -ESPIPE;
 	}
 
+	mutex_lock(&file->lock);
+
 	switch (whence) {
 	case JNU_SEEK_SET:
 		base = 0;
@@ -58,6 +61,7 @@ int64_t sys_lseek(int fd, int64_t off, int whence)
 		base = (int64_t)file_size(file);
 		break;
 	default:
+		mutex_unlock(&file->lock);
 		return -EINVAL;
 	}
 	/*
@@ -72,9 +76,11 @@ int64_t sys_lseek(int fd, int64_t off, int whence)
 	 */
 	if (__builtin_add_overflow(base, off, &next) || next < 0 ||
 	    next > (int64_t)file_size(file)) {
+		mutex_unlock(&file->lock);
 		return -EINVAL;
 	}
 
 	file->offset = (uint64_t)next;
+	mutex_unlock(&file->lock);
 	return next;
 }

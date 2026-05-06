@@ -17,7 +17,8 @@
 #include <jnu/errno.h>
 #include <jnu/klog.h>
 #include <jnu/minix.h>
-#include <jnu/spinlock.h>
+#include <jnu/mutex.h>
+#include <jnu/sched.h>
 #include <jnu/string.h>
 
 #define BUFCACHE_SLOTS 64
@@ -43,7 +44,7 @@ struct bufcache_slot {
 };
 
 static struct bufcache_slot slots[BUFCACHE_SLOTS];
-static struct spinlock bufcache_lock = SPINLOCK_INITIALIZER;
+static struct mutex bufcache_mutex = MUTEX_INITIALIZER;
 static uint64_t bufcache_clock;
 static uint32_t bufcache_dirty_count;
 static uint64_t bufcache_hits;
@@ -91,14 +92,13 @@ static struct bufcache_slot *bufcache_pick_victim(void)
 struct minix_buffer *bufcache_get(struct block_device *bdev, uint32_t block)
 {
 	struct bufcache_slot *slot;
-	uint64_t flags;
 	int err;
 
 	if (!bdev || bdev->sector_size != 512)
 		return NULL;
 
 retry:
-	flags = spin_lock_irqsave(&bufcache_lock);
+	mutex_lock(&bufcache_mutex);
 	for (size_t i = 0; i < BUFCACHE_SLOTS; i++) {
 		if (slots[i].buf.bdev != bdev || slots[i].buf.block_no != block)
 			continue;
@@ -114,22 +114,22 @@ retry:
 			 * is currently unreachable, but the structure
 			 * is in place for SMP.
 			 */
-			spin_unlock_irqrestore(&bufcache_lock, flags);
-			__asm__ __volatile__("pause");
+			mutex_unlock(&bufcache_mutex);
+			sched_yield();
 			goto retry;
 		}
 
 		slots[i].buf.refcount++;
 		slots[i].lru = ++bufcache_clock;
 		bufcache_hits++;
-		spin_unlock_irqrestore(&bufcache_lock, flags);
+		mutex_unlock(&bufcache_mutex);
 		return &slots[i].buf;
 	}
 
 	bufcache_misses++;
 	slot = bufcache_pick_victim();
 	if (!slot) {
-		spin_unlock_irqrestore(&bufcache_lock, flags);
+		mutex_unlock(&bufcache_mutex);
 		pr_err("bufcache: no clean unreferenced slot for block %u\n",
 		       block);
 		return NULL;
@@ -144,23 +144,23 @@ retry:
 	slot->buf.refcount = 1;
 	slot->buf.dirty = false;
 	slot->lru = ++bufcache_clock;
-	spin_unlock_irqrestore(&bufcache_lock, flags);
+	mutex_unlock(&bufcache_mutex);
 
 	err = block_read(bdev, (uint64_t)block * BUFCACHE_SECTORS_PER_BLOCK,
 			 BUFCACHE_SECTORS_PER_BLOCK, slot->buf.data);
 	if (err) {
-		flags = spin_lock_irqsave(&bufcache_lock);
+		mutex_lock(&bufcache_mutex);
 		slot->valid = false;
 		slot->loading = false;
 		slot->buf.refcount = 0;
-		spin_unlock_irqrestore(&bufcache_lock, flags);
+		mutex_unlock(&bufcache_mutex);
 		return NULL;
 	}
 
-	flags = spin_lock_irqsave(&bufcache_lock);
+	mutex_lock(&bufcache_mutex);
 	slot->valid = true;
 	slot->loading = false;
-	spin_unlock_irqrestore(&bufcache_lock, flags);
+	mutex_unlock(&bufcache_mutex);
 	return &slot->buf;
 }
 
@@ -175,41 +175,37 @@ retry:
  */
 void bufcache_put(struct minix_buffer *buf)
 {
-	uint64_t flags;
-
 	if (!buf)
 		return;
 
-	flags = spin_lock_irqsave(&bufcache_lock);
+	mutex_lock(&bufcache_mutex);
 	if (buf->refcount == 0) {
-		spin_unlock_irqrestore(&bufcache_lock, flags);
+		mutex_unlock(&bufcache_mutex);
 		pr_err("bufcache: put on unreferenced block %u\n",
 		       buf->block_no);
 		return;
 	}
 	buf->refcount--;
-	spin_unlock_irqrestore(&bufcache_lock, flags);
+	mutex_unlock(&bufcache_mutex);
 }
 
 void bufcache_mark_dirty(struct minix_buffer *buf)
 {
-	uint64_t flags;
-
 	if (!buf)
 		return;
 
-	flags = spin_lock_irqsave(&bufcache_lock);
+	mutex_lock(&bufcache_mutex);
 	if (!buf->dirty && bufcache_dirty_count >= BUFCACHE_DIRTY_LIMIT) {
 		struct block_device *bdev = buf->bdev;
 
-		spin_unlock_irqrestore(&bufcache_lock, flags);
+		mutex_unlock(&bufcache_mutex);
 		(void)bufcache_sync(bdev);
-		flags = spin_lock_irqsave(&bufcache_lock);
+		mutex_lock(&bufcache_mutex);
 	}
 	if (!buf->dirty)
 		bufcache_dirty_count++;
 	buf->dirty = true;
-	spin_unlock_irqrestore(&bufcache_lock, flags);
+	mutex_unlock(&bufcache_mutex);
 }
 
 /*
@@ -220,31 +216,29 @@ void bufcache_mark_dirty(struct minix_buffer *buf)
  */
 int bufcache_sync(struct block_device *bdev)
 {
-	uint64_t flags;
-
 	for (size_t i = 0; i < BUFCACHE_SLOTS; i++) {
 		struct block_device *slot_bdev;
 		uint32_t block;
 		bool do_write;
 		int err;
 
-		flags = spin_lock_irqsave(&bufcache_lock);
+		mutex_lock(&bufcache_mutex);
 		slot_bdev = slots[i].buf.bdev;
 		block = slots[i].buf.block_no;
 		do_write = slots[i].valid && slots[i].buf.dirty &&
 			   (!bdev || slot_bdev == bdev);
 		if (do_write)
 			slots[i].buf.refcount++;
-		spin_unlock_irqrestore(&bufcache_lock, flags);
+		mutex_unlock(&bufcache_mutex);
 
 		if (!do_write)
 			continue;
 
-		err = block_write(slot_bdev,
-				  (uint64_t)block * BUFCACHE_SECTORS_PER_BLOCK,
-				  BUFCACHE_SECTORS_PER_BLOCK, slots[i].buf.data);
+		err = block_write(
+		    slot_bdev, (uint64_t)block * BUFCACHE_SECTORS_PER_BLOCK,
+		    BUFCACHE_SECTORS_PER_BLOCK, slots[i].buf.data);
 
-		flags = spin_lock_irqsave(&bufcache_lock);
+		mutex_lock(&bufcache_mutex);
 		if (!err) {
 			if (slots[i].buf.dirty && bufcache_dirty_count > 0)
 				bufcache_dirty_count--;
@@ -252,7 +246,7 @@ int bufcache_sync(struct block_device *bdev)
 		}
 		if (slots[i].buf.refcount > 0)
 			slots[i].buf.refcount--;
-		spin_unlock_irqrestore(&bufcache_lock, flags);
+		mutex_unlock(&bufcache_mutex);
 
 		if (err)
 			return err;
@@ -263,7 +257,6 @@ int bufcache_sync(struct block_device *bdev)
 
 void bufcache_log_stats(void)
 {
-	uint64_t flags;
 	uint64_t hits;
 	uint64_t misses;
 	uint64_t total;
@@ -277,11 +270,11 @@ void bufcache_log_stats(void)
 	 * single CPU but races on SMP and can produce nonsense
 	 * hit_rate values when one counter is observed mid-update.
 	 */
-	flags = spin_lock_irqsave(&bufcache_lock);
+	mutex_lock(&bufcache_mutex);
 	hits = bufcache_hits;
 	misses = bufcache_misses;
 	dirty = bufcache_dirty_count;
-	spin_unlock_irqrestore(&bufcache_lock, flags);
+	mutex_unlock(&bufcache_mutex);
 
 	total = hits + misses;
 	hit_pct = total ? (hits * 100u) / total : 100u;
