@@ -87,7 +87,10 @@
         an emulator, however I'm kind of confident it can boot
         on ancient hardware.
 
-    License: GPLv2.0 GNU, see LICENSE in the root file tree.    
+                Licenses:
+    The third party copyright text is in the
+    LICENSES folder, also containing our LICENSE
+    aswell. For legal issues this is needed.
 
     How to Build and Setup the Kernel:
             --Prerequisites--
