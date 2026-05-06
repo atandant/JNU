@@ -3,7 +3,7 @@
 
 QEMU="${QEMU:-qemu-system-x86_64}"
 ISO="build/kernel.iso"
-MEMORY="256M"
+MEMORY="850M"
 DEBUG=0
 DISK=""
 

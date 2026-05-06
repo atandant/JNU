@@ -79,10 +79,7 @@ struct vma *vma_find(const struct rb_root *root, vaddr_t addr)
 	return NULL;
 }
 
-void vma_remove(struct rb_root *root, struct vma *v)
-{
-	rb_erase(root, &v->rb);
-}
+void vma_remove(struct rb_root *root, struct vma *v) { rb_erase(root, &v->rb); }
 
 /* ------------------------------------------------------------------------- */
 /* Iteration                                                                  */
@@ -264,10 +261,10 @@ int vma_remove_range(struct rb_root *root, struct addr_space *space,
  * the ceiling.  Return the base address of the best (highest) gap,
  * or 0 if none fits.
  */
-vaddr_t vma_find_gap_top_down(const struct rb_root *root, size_t size)
+vaddr_t vma_find_gap_top_down(const struct rb_root *root, size_t size,
+			      vaddr_t ceiling)
 {
-	const vaddr_t floor   = PAGE_SIZE;   /* lowest usable user VA */
-	const vaddr_t ceiling = MMAP_BASE;
+	const vaddr_t floor = PAGE_SIZE; /* lowest usable user VA */
 	const struct vma *v;
 	vaddr_t prev_end;
 	vaddr_t best = 0;

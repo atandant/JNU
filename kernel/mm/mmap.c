@@ -127,7 +127,8 @@ int vmm_map_anonymous(struct addr_space *space, vaddr_t addr, size_t length,
 			return err;
 		}
 	} else {
-		chosen = vma_find_gap_top_down(&space->vmas, aligned_len);
+		chosen = vma_find_gap_top_down(&space->vmas, aligned_len,
+					       space->mmap_base);
 		if (chosen == 0) {
 			return -ENOMEM;
 		}

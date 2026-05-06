@@ -49,6 +49,7 @@
 #include <jnu/pci.h>
 #include <jnu/pit.h>
 #include <jnu/pmm.h>
+#include <jnu/prng.h>
 #include <jnu/process.h>
 #include <jnu/rtc.h>
 #include <jnu/sched.h>
@@ -471,6 +472,10 @@ void kernel_main(void)
 
 	/* TSC calibration: uses HPET if available, else PIT channel 2. */
 	cpu_calibrate_tsc();
+
+	/* Seed the PRNG from hardware entropy (RDRAND/RDTSC/HPET).
+	 * Must run after HPET and TSC calibration are done. */
+	prng_seed();
 
 	/* RTC: print wall-clock time at boot. */
 	rtc_init();

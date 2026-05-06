@@ -21,6 +21,7 @@
 #include <jnu/usercopy.h>
 #include <jnu/vma.h>
 #include <jnu/vmm.h>
+#include <jnu/prng.h>
 
 #define EI_NIDENT 16
 #define EI_CLASS 4
@@ -35,6 +36,16 @@
 
 #define USER_STACK_TOP 0x0000000080000000ull
 #define USER_STACK_SIZE (128 * 1024)
+
+/*
+ * ASLR window for stack randomization.  The stack top is shifted
+ * down by a random page-aligned offset in [0, STACK_ASLR_PAGES).
+ * 2048 pages = 8 MiB of entropy — enough to make stack address
+ * guessing infeasible without /proc/self/maps.
+ *
+ * Executable ASLR requires PIE (ET_DYN) support and is deferred.
+ */
+#define STACK_ASLR_PAGES 2048
 
 struct elf64_ehdr {
 	uint8_t e_ident[EI_NIDENT];
@@ -406,9 +417,11 @@ int elf64_setup_initial_stack(struct addr_space *space,
 			      const struct exec_strings *strings,
 			      uint64_t *stack_out)
 {
-	uint64_t guard = USER_STACK_TOP - USER_STACK_SIZE - PAGE_SIZE;
+	uint64_t aslr_offset = prng_page_offset(STACK_ASLR_PAGES);
+	uint64_t stack_top = USER_STACK_TOP - aslr_offset;
+	uint64_t guard = stack_top - USER_STACK_SIZE - PAGE_SIZE;
 	uint64_t base = guard + PAGE_SIZE;
-	uint64_t stack = USER_STACK_TOP;
+	uint64_t stack = stack_top;
 	size_t argc = strings ? strings->argc : 0;
 	size_t envc = strings ? strings->envc : 0;
 	uint64_t *argv_user = NULL;
@@ -443,7 +456,7 @@ int elf64_setup_initial_stack(struct addr_space *space,
 	}
 
 	/* Eagerly materialise stack pages. */
-	err = materialise_pages(space, base, USER_STACK_TOP,
+	err = materialise_pages(space, base, stack_top,
 				VMA_READ | VMA_WRITE | VMA_USER);
 	if (err) {
 		return err;

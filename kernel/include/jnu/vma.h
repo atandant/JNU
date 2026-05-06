@@ -55,7 +55,9 @@ int vma_remove_range(struct rb_root *root, struct addr_space *space,
 
 /*
  * Top-down first-fit gap finder.  Returns the base address of the
- * highest gap of at least `size` page-aligned bytes below MMAP_BASE,
- * or 0 if no gap large enough exists.
+ * highest gap of at least `size` page-aligned bytes below `ceiling`,
+ * or 0 if no gap large enough exists.  `ceiling` is typically
+ * space->mmap_base (randomized per-process for ASLR).
  */
-vaddr_t vma_find_gap_top_down(const struct rb_root *root, size_t size);
+vaddr_t vma_find_gap_top_down(const struct rb_root *root, size_t size,
+			      vaddr_t ceiling);

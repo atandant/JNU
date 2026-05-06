@@ -31,6 +31,13 @@ struct addr_space {
 	uint64_t *pml4; /* HHDM-virt pointer */
 	paddr_t pml4_phys;
 	struct rb_root vmas;
+	/*
+	 * Per-process randomized mmap ceiling.  Non-MAP_FIXED mmap
+	 * allocations walk top-down from this address.  Set to
+	 * MMAP_BASE minus a random page-aligned offset at space
+	 * creation time for ASLR.
+	 */
+	vaddr_t mmap_base;
 };
 
 void vmm_init(void);

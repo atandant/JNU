@@ -14,8 +14,10 @@
 #include <jnu/errno.h>
 #include <jnu/klog.h>
 #include <jnu/kmalloc.h>
+#include <jnu/mman.h>
 #include <jnu/paging.h>
 #include <jnu/pmm.h>
+#include <jnu/prng.h>
 #include <jnu/rbtree.h>
 #include <jnu/string.h>
 #include <jnu/types.h>
@@ -44,6 +46,7 @@ void vmm_init(void)
 	kernel_space.pml4 = paging_kernel_pml4();
 	kernel_space.pml4_phys = virt_to_phys(kernel_space.pml4);
 	rb_init(&kernel_space.vmas);
+	kernel_space.mmap_base = MMAP_BASE; /* no ASLR for kernel */
 
 	pr_info("vmm: kernel address space initialized\n");
 }
@@ -69,6 +72,15 @@ struct addr_space *vmm_create_space(void)
 	space->pml4 = phys_to_virt(pml4_pa);
 	space->pml4_phys = pml4_pa;
 	rb_init(&space->vmas);
+
+	/*
+	 * ASLR: randomize the mmap ceiling by subtracting a random
+	 * page-aligned offset from MMAP_BASE.  Window is 1 GiB
+	 * (262144 pages) — large enough to defeat brute-force
+	 * guessing in a single-try exploit scenario.
+	 */
+	space->mmap_base = MMAP_BASE - prng_page_offset(262144);
+
 	paging_clone_kernel_half(space->pml4);
 	return space;
 }

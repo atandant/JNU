@@ -89,6 +89,7 @@ C_SRCS := \
     kernel/lib/rbtree.c \
     kernel/lib/spinlock.c \
     kernel/lib/mutex.c \
+    kernel/lib/prng.c \
     kernel/drivers/serial.c \
     kernel/drivers/fbcon.c \
     kernel/drivers/pit.c \
@@ -110,6 +111,7 @@ C_SRCS := \
     kernel/arch/x86_64/usermode.c \
     kernel/arch/x86_64/paging.c \
     kernel/arch/x86_64/fpu.c \
+    kernel/arch/x86_64/entropy.c \
     kernel/mm/pmm.c \
     kernel/mm/vmm.c \
     kernel/mm/vma.c \
@@ -214,7 +216,7 @@ $(OBJDIR)/%.o: %.S
 
 $(BUILDINFO_OBJ): scripts/gen-buildinfo.sh FORCE
 	@mkdir -p $(dir $@)
-	@VERSION="0.0.2" \
+	@VERSION="0.0.3.1" \
 	  SHA="$$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
 	  BUILDTIME="$$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
 	  bash scripts/gen-buildinfo.sh $(OBJDIR)/buildinfo.c

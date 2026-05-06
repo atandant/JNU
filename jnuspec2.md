@@ -74,7 +74,7 @@ The following are explicitly out of scope for v0.0.2:
 | PIE / ASLR                      | v0.0.3+       |
 | Linux syscall compatibility     | v0.0.4+       |
 | `fork` copy semantics           | v0.0.2.1+     |
-| MLFQ scheduler                  | v0.0.2.1+     |
+| MLFQ scheduler                  | v0.0.4+       |
 | Signals                         | v0.0.3.2+     |
 | Futexes & Mutexes               | v0.0.3+       |
 | Networking                      | v0.0.5+       |
