@@ -42,20 +42,10 @@ ldflags=(
 	-Ttext=0x400000
 )
 
-lib_c=(
-	user/libjnu/close.c
-	user/libjnu/execve.c
-	user/libjnu/exit.c
-	user/libjnu/fstat.c
-	user/libjnu/fork.c
-	user/libjnu/getpid.c
-	user/libjnu/lseek.c
-	user/libjnu/open.c
-	user/libjnu/read.c
-	user/libjnu/waitpid.c
-	user/libjnu/write.c
-	user/libjnu/yield.c
-)
+lib_c=()
+while IFS= read -r src; do
+	lib_c+=("$src")
+done < <(find user/libjnu -maxdepth 1 -name '*.c' | sort)
 
 mkdir -p "$obj/libjnu" "$out/bin"
 

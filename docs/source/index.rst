@@ -3,6 +3,12 @@ JNU Kernel Internals Manual
 
 .. toctree::
    :maxdepth: 1
+   :caption: Setup and Build
+
+   build
+
+.. toctree::
+   :maxdepth: 1
    :caption: Architecture
 
    arch/boot

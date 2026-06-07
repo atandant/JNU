@@ -94,58 +94,53 @@
 
     How to Build and Setup the Kernel:
             --Prerequisites--
-        Build host: Windows 11 + WSL2 (Ubuntu 22.04+ or any Linux Distro).
+        Build host: Linux or Windows 11 + WSL2.
 
-        In WSL, install the required toolchain:
-            sudo apt(pacman/dnf) install clang lld nasm make xorriso mtools
+        On Debian/Ubuntu/WSL, install the normal build tools:
+            sudo apt install clang lld nasm make xorriso git mtools
 
-        For font generation (run once on host or inside WSL):
-            pip install pillow
+        For disk-image testing with a populated MINIX v1 filesystem,
+        install mkfs.minix too:
+            sudo apt install util-linux
 
-        QEMU runs from the Windows desktop install (e.g., installed from 
-        https://qemu.weilnetz.de/). The `make run` target invokes the 
-        Windows QEMU binary through a path you can override. See 
-        scripts/run-qemu.ps1 for the PowerShell counterpart you can run 
-        from Windows directly.
+        For running in QEMU:
+            sudo apt install qemu-system-x86
 
-            --Bootstrap Limine (run once)--
-        Clone Limine into boot/limine/:
-            git clone https://github.com/limine-bootloader/limine.git \
-                --branch=v8.x-binary --depth=1 boot/limine
-            make -C boot/limine
+        Or install Windows QEMU and set QEMU to the executable path before
+        running scripts\run-qemu.ps1 from PowerShell.
 
-            --Building the Kernel--
-        From WSL, in this directory:
-            make             # builds build/kernel.elf and build/kernel.iso
+            --Standard workflow--
+        From the repository root:
+            make doctor             # checks required and optional tools
+            make bootstrap-limine   # clones/builds boot/limine once
+            make                    # builds build/kernel.elf and build/kernel.iso
+            make run                # boots the ISO in QEMU
 
-            --Running the Kernel--
-        From Windows PowerShell:
-            scripts\run-qemu.ps1
-
-        Or from WSL (if Windows QEMU is on PATH or via $QEMU env var):
-            make run
+        The default build uses native JNU userspace and does not require
+        musl. Musl is optional and only used by make musltest / make iso-musl.
 
     Makefile Targets:
-        Here are all the available `make` commands:
+        make help        : Shows the supported build interface.
+        make doctor      : Checks host tools and Limine setup.
+        make bootstrap-limine: Clones/builds Limine into boot/limine.
+        make             : Builds native userspace, kernel ELF, initramfs, ISO.
+        make kernel      : Builds build/kernel.elf.
+        make user        : Builds native user/*/main.c programs.
+        make iso         : Builds build/kernel.iso.
+        make musltest    : Builds optional build/user/bin/musltest.
+        make iso-musl    : Builds build/kernel-musl.iso including musltest.
+        make font        : Regenerates the generated font header under build/.
+        make ata-disk    : Creates build/disk.img. Default is 32 MiB
+                           (override with SIZE=N). Uses mkfs.minix when present.
+        make run         : Boots in QEMU and attaches build/disk.img if it exists.
+        make run-disk    : Creates/requires build/disk.img and boots with it.
+        make debug       : Boots QEMU paused (-s -S), ready for GDB attach.
+        make debug-disk  : Debug boot with the ATA disk image attached.
+        make docs        : Builds Sphinx HTML docs.
+        make clean       : Removes reproducible build artifacts but keeps disk.img.
+        make clean-disk  : Wipes build artifacts and disk.img.
+        make distclean   : Also removes boot/limine.
 
-        make (or make all): Builds the kernel ELF and bootable ISO.
-        make iso          : Builds the bootable ISO only.
-        make font         : (Re)generates kernel/drivers/font_data.h.
-        make ata-disk     : Creates (or recreates) build/disk.img. Default is 32 MiB 
-                            (override with SIZE=N).
-        make run          : Boots in QEMU (attaches disk if build/disk.img exists, 
-                            unless NODISK is defined).
-        make run-disk     : Boots in QEMU, requires the disk image to exist.
-        make debug        : Boots QEMU paused (-s -S), ready for a GDB attach 
-                            (attaches disk if exists).
-        make debug-disk   : Boots QEMU paused, requires the disk image.
-        make clean        : Removes build artifacts but keeps build/disk.img.
-        make clean-disk   : Wipes build artifacts AND the ATA disk image.
-        make distclean    : Deletes all build artifacts, disk image, and forces 
-                            re-clone of Limine.
-        make check-limine : Checks if Limine is cloned.
-        
-    I'd like to say on the build steps that these steps might not be accurate as they were generated by Gemini 3.1 Pro 
-    (I use a wide range of models so I can get more varied results and see their strengths and treasures)
+        See docs/source/build.rst for the same setup contract in the manual.
 
     The core JNU kernel is licensed under GPL-2.0-only; see LICENSES/GPL2.0.txt for details.

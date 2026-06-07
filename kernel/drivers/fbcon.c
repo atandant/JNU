@@ -3,7 +3,7 @@
  *
  * Renders a built-in 8x16 monospace font over Limine's framebuffer.
  * The font table is generated at build time by scripts/gen-font.py
- * into kernel/drivers/font_data.h.
+ * into build/generated/include/jnu/generated/font_data.h.
  *
  * Phase-1 console behavior:
  *   - 32-bpp linear framebuffer assumed (BGR or RGB; we write a
@@ -26,7 +26,7 @@
 #include <jnu/string.h>
 #include <jnu/types.h>
 
-#include "font_data.h"
+#include <jnu/generated/font_data.h>
 
 #define GLYPH_W 8
 #define GLYPH_H 16

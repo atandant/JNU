@@ -15,7 +15,9 @@
 [CmdletBinding()]
 param(
     [string]$Iso = "build/kernel.iso",
-    [int]$Memory = 300,
+    [string]$Memory = "850M",
+    [string]$Cpu = "qemu64,+smep,+smap",
+    [string]$Disk = "",
     [switch]$Debug
 )
 
@@ -54,7 +56,8 @@ if (-not (Test-Path $Iso)) {
 
 $args = @(
     "-machine", "q35",
-    "-m",       "${Memory}M",
+    "-m",       $Memory,
+    "-cpu",     $Cpu,
     "-cdrom",   $Iso,
     "-boot",    "d",
     "-serial",  "stdio",
@@ -63,6 +66,18 @@ $args = @(
 
 if ($Debug) {
     $args += @("-s", "-S")
+}
+
+if ($Disk) {
+    if (-not (Test-Path $Disk)) {
+        Write-Error "Disk image not found at $Disk."
+        exit 1
+    }
+    $args += @(
+        "-device", "piix3-ide,id=ide",
+        "-drive",  "id=hd0,file=$Disk,format=raw,if=none",
+        "-device", "ide-hd,drive=hd0,bus=ide.0"
+    )
 }
 
 Write-Host "Launching: $qemu $($args -join ' ')"
