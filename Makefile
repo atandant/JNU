@@ -255,6 +255,7 @@ doctor:
 	if [ "$$missing" -ne 0 ]; then \
 	  echo; \
 	  echo "Debian/Ubuntu: sudo apt install clang lld nasm make xorriso git mtools util-linux qemu-system-x86 sphinx-doc"; \
+      echo "arch based distros are compatible" \
 	  exit 1; \
 	fi
 
