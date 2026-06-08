@@ -172,6 +172,18 @@ static bool ata_identify(struct ata_channel *ch, uint8_t sel, uint16_t *id_buf)
 	return true;
 }
 
+static uint64_t ata_identify_sectors(const uint16_t *id)
+{
+	uint64_t lba28 =
+	    (uint64_t)id[60] | ((uint64_t)id[61] << 16);
+
+	if (lba28 != 0 && lba28 != 0xFFFFFFFFull)
+		return lba28;
+
+	return (uint64_t)id[100] | ((uint64_t)id[101] << 16) |
+	       ((uint64_t)id[102] << 32) | ((uint64_t)id[103] << 48);
+}
+
 static void extract_model(const uint16_t *id, char *out)
 {
 	/*
@@ -200,6 +212,8 @@ static int ata_bdev_read(struct block_device *bdev, uint64_t lba, size_t count,
 
 	for (size_t i = 0; i < count; i++) {
 		uint64_t sector = lba + i;
+		int err;
+
 		if (sector >= drv->sectors)
 			return -EINVAL;
 
@@ -216,12 +230,15 @@ static int ata_bdev_read(struct block_device *bdev, uint64_t lba, size_t count,
 		     (uint8_t)((sector >> 16) & 0xFFu));
 		outb((uint16_t)(ch->io_base + ATA_REG_CMD), ATA_CMD_READ_PIO);
 
-		int err = ata_wait_drq(ch);
+		err = ata_wait_drq(ch);
 		if (err)
 			return err;
 
 		insw((uint16_t)(ch->io_base + ATA_REG_DATA), p,
 		     ATA_SECTOR_SIZE / 2);
+		err = ata_wait_ready(ch);
+		if (err)
+			return err;
 		p += ATA_SECTOR_SIZE;
 	}
 
@@ -303,6 +320,9 @@ void ata_init(void)
 		ata_400ns_delay(ch);
 		outb(ch->ctrl_base, 0x00);
 		ata_400ns_delay(ch);
+		/* VMware and some emulators need extra time after SRST. */
+		for (int settle = 0; settle < 1000; settle++)
+			ata_400ns_delay(ch);
 		(void)ata_wait_ready(ch);
 
 		for (int drv_idx = 0; drv_idx < 2; drv_idx++) {
@@ -320,9 +340,7 @@ void ata_init(void)
 			d->drive_sel = (uint8_t)(0xE0 | (drv_idx << 4));
 			d->present = true;
 
-			/* LBA28 sector count at word 60–61. */
-			d->sectors =
-			    (uint64_t)id_buf[60] | ((uint64_t)id_buf[61] << 16);
+			d->sectors = ata_identify_sectors(id_buf);
 
 			extract_model(id_buf, d->model);
 

@@ -217,7 +217,7 @@ OBJS := $(S_OBJS) $(C_OBJS) $(BUILDINFO_OBJ)
 # ---- top-level --------------------------------------------------------------
 
 .PHONY: all help doctor bootstrap bootstrap-limine check-limine iso iso-musl \
-    kernel user musltest initramfs font ata-disk docs format clean clean-disk \
+    kernel user musltest initramfs font ata-disk vmware-disk docs format clean clean-disk \
     distclean run run-disk debug debug-disk list-user-programs FORCE
 
 all: iso
@@ -230,6 +230,7 @@ help:
 	  '  make                    Build native userspace, kernel ELF, and ISO.' \
 	  '  make run                Build and boot the ISO in QEMU.' \
 	  '  make ata-disk           Create build/disk.img using mkfs.minix when available.' \
+	  '  make vmware-disk        Create build/disk.img and convert to build/disk.vmdk.' \
 	  '  make run-disk           Build, create disk image, and boot with the disk.' \
 	  '  make debug              Boot QEMU paused for GDB (-s -S).' \
 	  '  make user               Build native JNU userspace programs.' \
@@ -287,6 +288,9 @@ list-user-programs:
 	@printf '%s\n' $(USER_PROGRAM_SRCS)
 
 ata-disk: $(ATA_DISK)
+
+vmware-disk:
+	@bash scripts/prepare-vmware-disk.sh
 
 docs:
 	$(MAKE) -C docs html SPHINXBUILD=$(SPHINXBUILD)

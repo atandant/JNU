@@ -136,11 +136,22 @@
         make run-disk    : Creates/requires build/disk.img and boots with it.
         make debug       : Boots QEMU paused (-s -S), ready for GDB attach.
         make debug-disk  : Debug boot with the ATA disk image attached.
+        make vmware-disk : Builds disk.img and converts to disk.vmdk for VMware.
         make docs        : Builds Sphinx HTML docs.
         make clean       : Removes reproducible build artifacts but keeps disk.img.
         make clean-disk  : Wipes build artifacts and disk.img.
         make distclean   : Also removes boot/limine.
 
         See docs/source/build.rst for the same setup contract in the manual.
+
+    Running on VMware:
+        JNU needs a MINIX v1 disk on legacy IDE 0:0 (hda). A blank disk
+        from the VMware wizard has no filesystem and will panic with
+        "invalid magic 0x0000" at mount — this is not caused by guest RAM.
+
+            make ata-disk       # or: make vmware-disk for a .vmdk
+            # VM settings: IDE bus, IDE 0:0, attach build/disk.img or disk.vmdk
+
+        See docs/source/build.rst ("Running on VMware") for full steps.
 
     The core JNU kernel is licensed under GPL-2.0-only; see LICENSES/GPL2.0.txt for details.

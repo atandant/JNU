@@ -88,3 +88,68 @@ Targets
 
 ``make clean`` / ``make distclean``
    Remove generated outputs. ``distclean`` also removes Limine.
+
+``make vmware-disk``
+   Build ``build/disk.img`` and convert it to ``build/disk.vmdk`` for
+   VMware. Requires ``qemu-img``.
+
+Running on VMware
+-----------------
+
+JNU mounts a raw MINIX v1 filesystem from the legacy IDE primary master
+(``hda`` on I/O port ``0x1F0``). QEMU attaches ``build/disk.img`` the
+same way via ``piix3-ide``.
+
+A blank disk created by the VMware new-VM wizard has **no MINIX
+filesystem**. The kernel will panic at boot with ``invalid magic
+0x0000`` because the superblock at byte offset 1024 is zeroed. Guest
+RAM size (for example 512 MiB) does not cause this failure.
+
+**1. Build the disk image on the host**
+
+.. code-block:: sh
+
+   make ata-disk
+   make doctor    # confirms mkfs.minix is installed
+
+``make ata-disk`` must report that ``mkfs.minix`` laid a MINIX v1
+filesystem. If util-linux is missing, the image contains only a test
+signature and mount will still fail.
+
+**2. Prepare a VMware-compatible disk (optional)**
+
+.. code-block:: sh
+
+   make vmware-disk
+
+This runs ``make ata-disk`` and converts ``build/disk.img`` to
+``build/disk.vmdk``. You can also convert manually:
+
+.. code-block:: sh
+
+   qemu-img convert -f raw -O vmdk build/disk.img build/disk.vmdk
+
+**3. Attach the disk in VMware**
+
+Configure the virtual machine as follows:
+
+* **Disk bus:** IDE (not NVMe, SCSI, or SATA/AHCI).
+* **Position:** IDE 0:0 (primary master).
+* **Disk file:** ``build/disk.img`` (flat/raw) or ``build/disk.vmdk``.
+
+Remove or replace any blank wizard-created VMDK so ``hda`` is the MINIX
+image, not an empty virtual disk.
+
+**4. Boot the ISO and check the serial log**
+
+Expected lines before userspace starts:
+
+.. code-block:: text
+
+   ata: hda: '<model>' N sectors (...)
+   rootfs: N entries
+
+If mount still fails, set the Limine cmdline in ``boot/limine.cfg`` to
+``loglevel=4 dump=blocks``. Sector 2 should show ``7f 13`` at offset
+``0x10`` (MINIX v1 magic ``0x137F`` at disk byte 1040). All zeros mean
+the wrong or empty disk is still attached.
