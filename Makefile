@@ -104,6 +104,7 @@ KERNEL_DRIVER_SRCS := \
     kernel/drivers/scandata.c \
     kernel/drivers/pci.c \
     kernel/drivers/ata.c \
+    kernel/drivers/virtio_blk.c \
     kernel/drivers/acpi.c \
     kernel/drivers/acpi_pm.c \
     kernel/drivers/hpet.c
@@ -218,7 +219,7 @@ OBJS := $(S_OBJS) $(C_OBJS) $(BUILDINFO_OBJ)
 
 .PHONY: all help doctor bootstrap bootstrap-limine check-limine iso iso-musl \
     kernel user musltest initramfs font ata-disk vmware-disk docs format clean clean-disk \
-    distclean run run-disk debug debug-disk list-user-programs FORCE
+    distclean run run-disk run-virtio debug debug-disk list-user-programs FORCE
 
 all: iso
 
@@ -232,6 +233,7 @@ help:
 	  '  make ata-disk           Create build/disk.img using mkfs.minix when available.' \
 	  '  make vmware-disk        Create build/disk.img and convert to build/disk.vmdk.' \
 	  '  make run-disk           Build, create disk image, and boot with the disk.' \
+	  '  make run-virtio         Boot with virtio-blk-pci disk (requires disk image).' \
 	  '  make debug              Boot QEMU paused for GDB (-s -S).' \
 	  '  make user               Build native JNU userspace programs.' \
 	  '  make musltest           Build optional musl-linked test program.' \
@@ -375,6 +377,9 @@ run: $(KERNEL_ISO)
 
 run-disk: $(KERNEL_ISO) $(ATA_DISK)
 	$(RUN_SCRIPT) $(RUN_DISK_ARG)
+
+run-virtio: $(KERNEL_ISO) $(ATA_DISK)
+	$(RUN_SCRIPT) $(RUN_DISK_ARG) --disk-type virtio
 
 debug: $(KERNEL_ISO)
 	$(RUN_SCRIPT) --debug

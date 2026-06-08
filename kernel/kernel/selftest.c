@@ -31,6 +31,7 @@
 #include <jnu/usercopy.h>
 #include <jnu/vfs.h>
 #include <jnu/vmm.h>
+#include <jnu/virtio_blk.h>
 
 static const struct selftest tests[] = {
     {"spinlock", spinlock_selftest},
@@ -52,6 +53,7 @@ static const struct selftest tests[] = {
     {"syscall", syscall_selftest},
     {"pci", pci_selftest},
     {"ata", ata_selftest},
+    {"virtio_blk", virtio_blk_selftest},
     {"bufcache", bufcache_selftest},
     {"minix_bitmap", minix_bitmap_selftest},
     {"minix_write", minix_write_selftest},

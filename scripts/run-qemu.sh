@@ -9,6 +9,7 @@ MEMORY="850M"
 CPU="qemu64,+smep,+smap"
 DEBUG=0
 DISK=""
+DISK_TYPE="ide"
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -28,6 +29,10 @@ while [[ $# -gt 0 ]]; do
       DEBUG=1
       shift
       ;;
+    --disk-type)
+      DISK_TYPE="$2"
+      shift 2
+      ;;
     --disk)
       if [[ $# -gt 1 && "$2" != --* ]]; then
         DISK="$2"
@@ -38,7 +43,7 @@ while [[ $# -gt 0 ]]; do
       fi
       ;;
     *)
-      echo "usage: run-qemu.sh [--iso path] [--memory size] [--cpu model] [--disk [path]] [--debug]" >&2
+      echo "usage: run-qemu.sh [--iso path] [--memory size] [--cpu model] [--disk [path]] [--disk-type ide|virtio] [--debug]" >&2
       exit 2
       shift
       ;;
@@ -62,7 +67,11 @@ if [ "$DEBUG" -eq 1 ]; then
 fi
 
 if [ -n "$DISK" ] && [ -f "$DISK" ]; then
-    ARGS+=("-device" "piix3-ide,id=ide" "-drive" "id=hd0,file=$DISK,format=raw,if=none" "-device" "ide-hd,drive=hd0,bus=ide.0")
+    if [ "$DISK_TYPE" = "virtio" ]; then
+        ARGS+=("-drive" "id=vd0,file=$DISK,format=raw,if=none" "-device" "virtio-blk-pci,drive=vd0")
+    else
+        ARGS+=("-device" "piix3-ide,id=ide" "-drive" "id=hd0,file=$DISK,format=raw,if=none" "-device" "ide-hd,drive=hd0,bus=ide.0")
+    fi
 elif [ -n "$DISK" ]; then
     echo "Error: disk image not found at $DISK." >&2
     exit 1

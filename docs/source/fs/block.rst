@@ -31,8 +31,8 @@ recorded in ``sector_size``. In v0.0.2.2, all registered devices have a
 
 .. note::
 
-   The ``write`` operation is a placeholder in v0.0.2.2. All registered
-   drivers return ``-ENOSYS`` for write requests.
+   The ATA driver supports read and write via PIO. The virtio-blk driver
+   supports read, write, and flush via a polled virtqueue.
 
 API
 ---
@@ -64,6 +64,19 @@ or a negative errno.
 ATA Driver
 ----------
 
-The ATA driver (``kernel/drivers/``) registers the primary ATA device as
-``hda`` during ``ata_init()``. It uses PIO mode to transfer data one sector
-at a time; no DMA is used in v0.0.2.2.
+The ATA driver (``kernel/drivers/ata.c``) registers legacy IDE devices as
+``hda``, ``hdb``, and so on during ``ata_init()``. It uses PIO mode to
+transfer data one sector at a time.
+
+VirtIO Block Driver
+-------------------
+
+The virtio-blk driver (``kernel/drivers/virtio_blk.c``) probes PCI for
+``0x1AF4:0x1042`` (modern) or ``0x1AF4:0x1001`` (transitional) and
+registers the disk as ``vda``. It uses one polled virtqueue, DMA bounce
+buffers in ``ZONE_DMA``, and acknowledges ``VIRTIO_F_VERSION_1`` on
+transitional devices. Writes are followed by a ``VIRTIO_BLK_T_FLUSH``
+request.
+
+At boot, ``kernel_main`` mounts root from ``vda`` when present, otherwise
+falls back to ``hda``.

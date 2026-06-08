@@ -46,6 +46,31 @@ void pci_for_each(pci_callback_t cb, void *ctx);
 const struct pci_device *pci_find_class(uint8_t class_code, uint8_t subclass,
 					uint8_t prog_if);
 
+/*
+ * Find the first device matching vendor and device ID.
+ * Returns a pointer to the internal device table entry, or NULL.
+ */
+const struct pci_device *pci_find_vendor(uint16_t vendor_id,
+				       uint16_t device_id);
+
+struct pci_bar_info {
+	bool is_mmio;
+	uint64_t base;
+	uint64_t size;
+};
+
+/*
+ * Decode a PCI BAR (0–5). Writes the decoded base address and region
+ * size into *out. Returns 0 on success or -EINVAL if the BAR is unused.
+ */
+int pci_read_bar(const struct pci_device *dev, unsigned bar_idx,
+		 struct pci_bar_info *out);
+
+/*
+ * Enable I/O space, memory space, and bus mastering on a PCI device.
+ */
+void pci_enable_device(const struct pci_device *dev);
+
 /* Configuration space accessors. */
 uint8_t pci_read_config_byte(uint8_t bus, uint8_t dev, uint8_t func,
 			     uint8_t offset);

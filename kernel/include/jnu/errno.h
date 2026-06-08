@@ -37,3 +37,4 @@
 #define ESPIPE 29	/* Illegal seek */
 #define ENOTTY 25	/* Not a typewriter (inappropriate ioctl) */
 #define ENOTSUP 95	/* Not supported */
+#define EROFS 30 /*FS error, had to write this myself.*/

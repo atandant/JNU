@@ -62,6 +62,7 @@
 #include <jnu/usermode.h>
 #include <jnu/vfs.h>
 #include <jnu/vmm.h>
+#include <jnu/virtio_blk.h>
 
 #include <limine.h>
 
@@ -368,9 +369,11 @@ static void start_init(void)
  */
 static void dump_blocks(void)
 {
-	struct block_device *bdev = block_lookup("hda");
+	struct block_device *bdev = block_lookup("vda");
+	if (!bdev)
+		bdev = block_lookup("hda");
 	if (!bdev) {
-		pr_warn("dump: no 'hda' block device\n");
+		pr_warn("dump: no 'vda' or 'hda' block device\n");
 		return;
 	}
 
@@ -507,6 +510,7 @@ void kernel_main(void)
 
 	/* Phase 3 devices. */
 	pci_init();
+	virtio_blk_init();
 	ata_init();
 	kbd_init();
 
@@ -522,10 +526,16 @@ void kernel_main(void)
 
 	vfs_init();
 
-	int err = vfs_mount("hda", "minix", "/");
-	if (err) {
-		panic("kernel: failed to mount rootfs (err=%d)", err);
+	const char *root_bdev = block_lookup("vda") ? "vda" : "hda";
+	if (!block_lookup(root_bdev)) {
+		panic("kernel: no root block device (vda/hda)");
 	}
+	int err = vfs_mount(root_bdev, "minix", "/");
+	if (err) {
+		panic("kernel: failed to mount rootfs on %s (err=%d)", root_bdev,
+		      err);
+	}
+	pr_info("rootfs: mounted from %s\n", root_bdev);
 
 	struct vfs_inode *root_ino;
 	if (vfs_open("/", &root_ino) == 0) {

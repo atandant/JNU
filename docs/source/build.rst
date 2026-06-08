@@ -77,8 +77,13 @@ Targets
    Create ``build/disk.img``. Set ``SIZE=N`` to choose MiB size.
 
 ``make run`` / ``make run-disk``
-   Boot in QEMU. ``make run`` attaches ``build/disk.img`` if it already
-   exists; ``make run-disk`` creates/requires it.
+   Boot in QEMU with a legacy IDE disk (``hda``). ``make run`` attaches
+   ``build/disk.img`` if it already exists; ``make run-disk`` creates/requires
+   it.
+
+``make run-virtio``
+   Boot in QEMU with a ``virtio-blk-pci`` disk (``vda``). Requires
+   ``build/disk.img``.
 
 ``make debug`` / ``make debug-disk``
    Boot QEMU paused with ``-s -S`` for GDB.
@@ -153,3 +158,18 @@ If mount still fails, set the Limine cmdline in ``boot/limine.cfg`` to
 ``loglevel=4 dump=blocks``. Sector 2 should show ``7f 13`` at offset
 ``0x10`` (MINIX v1 magic ``0x137F`` at disk byte 1040). All zeros mean
 the wrong or empty disk is still attached.
+
+Running with virtio-blk in QEMU
+-------------------------------
+
+For faster block I/O under QEMU, use the virtio-blk driver instead of
+legacy IDE:
+
+.. code-block:: sh
+
+   make ata-disk
+   make run-virtio
+
+Or pass ``--disk-type virtio`` to ``scripts/run-qemu.sh``. When both
+``vda`` (virtio) and ``hda`` (ATA) are present, root mounts from ``vda``
+first.

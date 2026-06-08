@@ -175,6 +175,97 @@ const struct pci_device *pci_find_class(uint8_t class_code, uint8_t subclass,
 	return NULL;
 }
 
+const struct pci_device *pci_find_vendor(uint16_t vendor_id,
+					 uint16_t device_id)
+{
+	for (size_t i = 0; i < device_count; i++) {
+		if (devices[i].vendor_id == vendor_id &&
+		    devices[i].device_id == device_id)
+			return &devices[i];
+	}
+	return NULL;
+}
+
+int pci_read_bar(const struct pci_device *dev, unsigned bar_idx,
+		 struct pci_bar_info *out)
+{
+	uint8_t bus = dev->bus;
+	uint8_t pci_dev = dev->dev;
+	uint8_t func = dev->func;
+	uint8_t off = (uint8_t)(0x10u + bar_idx * 4u);
+	uint32_t orig_lo;
+	uint32_t orig_hi = 0;
+	uint32_t probe_lo;
+	uint32_t probe_hi = 0;
+	uint64_t mask;
+
+	if (!dev || !out || bar_idx > 5)
+		return -EINVAL;
+
+	orig_lo = pci_read_config_dword(bus, pci_dev, func, off);
+	if (orig_lo == 0)
+		return -EINVAL;
+
+	if (orig_lo & 1u) {
+		/* I/O BAR */
+		out->base = (uint64_t)(orig_lo & 0xFFFFFFFCu);
+		pci_write_config_dword(bus, pci_dev, func, off, 0xFFFFFFFCu);
+		probe_lo = pci_read_config_dword(bus, pci_dev, func, off);
+		pci_write_config_dword(bus, pci_dev, func, off, orig_lo);
+		mask = (uint64_t)(probe_lo & 0xFFFFFFFCu);
+		out->is_mmio = false;
+	} else if ((orig_lo & 0x6u) == 0x4u) {
+		/* 64-bit memory BAR uses BAR n and BAR n+1. */
+		if (bar_idx > 4)
+			return -EINVAL;
+		orig_hi = pci_read_config_dword(bus, pci_dev, func,
+						(uint8_t)(off + 4u));
+		out->base = ((uint64_t)(orig_lo & 0xFFFFFFF0u)) |
+			    ((uint64_t)orig_hi << 32);
+		pci_write_config_dword(bus, pci_dev, func, off, 0xFFFFFFF0u);
+		pci_write_config_dword(bus, pci_dev, func, (uint8_t)(off + 4u),
+				       0xFFFFFFFFu);
+		probe_lo = pci_read_config_dword(bus, pci_dev, func, off);
+		probe_hi = pci_read_config_dword(bus, pci_dev, func,
+						 (uint8_t)(off + 4u));
+		pci_write_config_dword(bus, pci_dev, func, off, orig_lo);
+		pci_write_config_dword(bus, pci_dev, func, (uint8_t)(off + 4u),
+				       orig_hi);
+		mask = ((uint64_t)(probe_hi & 0xFFFFFFFFu) << 32) |
+		       (uint64_t)(probe_lo & 0xFFFFFFF0u);
+		out->is_mmio = true;
+	} else {
+		/* 32-bit memory BAR */
+		out->base = (uint64_t)(orig_lo & 0xFFFFFFF0u);
+		pci_write_config_dword(bus, pci_dev, func, off, 0xFFFFFFF0u);
+		probe_lo = pci_read_config_dword(bus, pci_dev, func, off);
+		pci_write_config_dword(bus, pci_dev, func, off, orig_lo);
+		mask = (uint64_t)(probe_lo & 0xFFFFFFF0u);
+		out->is_mmio = true;
+	}
+
+	if (mask == 0)
+		return -EINVAL;
+
+	out->size = (uint64_t)(~mask + 1u);
+	if (out->size == 0)
+		return -EINVAL;
+
+	return 0;
+}
+
+void pci_enable_device(const struct pci_device *dev)
+{
+	uint16_t cmd;
+
+	if (!dev)
+		return;
+
+	cmd = pci_read_config_word(dev->bus, dev->dev, dev->func, 0x04);
+	cmd |= 0x0007u; /* I/O + memory + bus master */
+	pci_write_config_word(dev->bus, dev->dev, dev->func, 0x04, cmd);
+}
+
 int pci_selftest(void)
 {
 	/*

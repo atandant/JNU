@@ -26,7 +26,8 @@ struct block_ops {
 
 	/*
 	 * Write `count` sectors starting at LBA `lba` from `buf`.
-	 * v0.0.1: always returns -ENOSYS.
+	 * ATA and virtio-blk implement this; other drivers may return
+	 * -ENOSYS.
 	 */
 	int (*write)(struct block_device *bdev, uint64_t lba, size_t count,
 		     const void *buf);
