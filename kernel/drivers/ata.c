@@ -16,13 +16,13 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/ata.h>
-#include <jnu/block.h>
-#include <jnu/errno.h>
-#include <jnu/io.h>
-#include <jnu/klog.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/ata.h>
+#include <jnu/drivers/io.h>
+#include <jnu/fs/block.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/string.h>
+#include <uapi/jnu/errno.h>
 
 /* ATA register offsets from the base I/O port. */
 #define ATA_REG_DATA 0x00
@@ -174,8 +174,7 @@ static bool ata_identify(struct ata_channel *ch, uint8_t sel, uint16_t *id_buf)
 
 static uint64_t ata_identify_sectors(const uint16_t *id)
 {
-	uint64_t lba28 =
-	    (uint64_t)id[60] | ((uint64_t)id[61] << 16);
+	uint64_t lba28 = (uint64_t)id[60] | ((uint64_t)id[61] << 16);
 
 	if (lba28 != 0 && lba28 != 0xFFFFFFFFull)
 		return lba28;

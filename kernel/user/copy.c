@@ -9,15 +9,15 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/cpu.h>
-#include <jnu/errno.h>
-#include <jnu/paging.h>
-#include <jnu/pmm.h>
-#include <jnu/process.h>
-#include <jnu/sched.h>
-#include <jnu/string.h>
-#include <jnu/usercopy.h>
-#include <jnu/vmm.h>
+#include <jnu/arch/cpu.h>
+#include <jnu/kernel/process.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/paging.h>
+#include <jnu/mm/pmm.h>
+#include <jnu/mm/vmm.h>
+#include <jnu/user/usercopy.h>
+#include <uapi/jnu/errno.h>
 
 static void smap_stac(void)
 {
@@ -239,8 +239,7 @@ int usercopy_selftest(void)
 	{
 		uint64_t zero_check = 1;
 
-		err = copy_from_user(&zero_check,
-				     (void *)USERCOPY_TEST_VA,
+		err = copy_from_user(&zero_check, (void *)USERCOPY_TEST_VA,
 				     sizeof(zero_check));
 		if (err || zero_check != 0) {
 			err = err ? err : -EINVAL;

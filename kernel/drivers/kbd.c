@@ -19,16 +19,16 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/apic.h>
-#include <jnu/chardev.h>
-#include <jnu/idt.h>
-#include <jnu/io.h>
-#include <jnu/kbd.h>
-#include <jnu/keycode.h>
-#include <jnu/klog.h>
-#include <jnu/scandata.h>
-#include <jnu/spinlock.h>
-#include <jnu/types.h>
+#include <jnu/arch/idt.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/apic.h>
+#include <jnu/drivers/chardev.h>
+#include <jnu/drivers/io.h>
+#include <jnu/drivers/kbd.h>
+#include <jnu/drivers/keycode.h>
+#include <jnu/drivers/scandata.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/spinlock.h>
 
 /* i8042 I/O ports. */
 #define KBD_DATA_PORT 0x60

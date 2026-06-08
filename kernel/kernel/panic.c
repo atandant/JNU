@@ -14,16 +14,16 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/compiler.h>
-#include <jnu/arch_syscall.h>
-#include <jnu/idt.h>
-#include <jnu/klog.h>
-#include <jnu/paging.h>
-#include <jnu/panic.h>
-#include <jnu/sched.h>
-#include <jnu/string.h>
-#include <jnu/symbols.h>
-#include <jnu/types.h>
+#include <jnu/arch/arch_syscall.h>
+#include <jnu/arch/idt.h>
+#include <jnu/base/compiler.h>
+#include <jnu/base/types.h>
+#include <jnu/kernel/panic.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/kernel/symbols.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/paging.h>
 
 static void emit_raw(const char *s, size_t n) { klog_panic_write(s, n); }
 
@@ -159,10 +159,11 @@ static void emit_regs(const struct cpu_state *st, uint64_t cr2)
 	struct task *task = sched_current();
 
 	if (task) {
-		emit_fmt("CPU 0  ring %u  pid=%d tid=%d task=%s syscall=%ld\n\n",
-			 (unsigned)(st->cs & 3), task->pid, task->tid,
-			 task->name ? task->name : "(unnamed)",
-			 (long)arch_syscall_current_nr());
+		emit_fmt(
+		    "CPU 0  ring %u  pid=%d tid=%d task=%s syscall=%ld\n\n",
+		    (unsigned)(st->cs & 3), task->pid, task->tid,
+		    task->name ? task->name : "(unnamed)",
+		    (long)arch_syscall_current_nr());
 	} else {
 		emit_fmt("CPU 0  ring %u  task=<none> syscall=%ld\n\n",
 			 (unsigned)(st->cs & 3),

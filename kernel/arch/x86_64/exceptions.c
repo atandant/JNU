@@ -23,15 +23,15 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/idt.h>
-#include <jnu/klog.h>
-#include <jnu/paging.h>
-#include <jnu/panic.h>
-#include <jnu/process.h>
-#include <jnu/sched.h>
-#include <jnu/types.h>
-#include <jnu/vma.h>
-#include <jnu/vmm.h>
+#include <jnu/arch/idt.h>
+#include <jnu/base/types.h>
+#include <jnu/kernel/panic.h>
+#include <jnu/kernel/process.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/lib/klog.h>
+#include <jnu/mm/paging.h>
+#include <jnu/mm/vma.h>
+#include <jnu/mm/vmm.h>
 
 /* Error-code bit positions for #PF (Intel SDM Vol. 3A §4.7). */
 #define PF_EC_P (1u << 0)    /* page present */
@@ -182,13 +182,14 @@ void exceptions_handle(struct cpu_state *st)
 				    t->process ? t->process->space : NULL;
 
 				if (space) {
-					struct vma *v = vma_find(
-					    &space->vmas, cr2);
+					struct vma *v =
+					    vma_find(&space->vmas, cr2);
 
 					if (v && (v->flags & VMA_WRITE)) {
 						int cow_err =
 						    vmm_handle_cow_fault(
-							space, cr2 & ~PAGE_MASK);
+							space,
+							cr2 & ~PAGE_MASK);
 						if (cow_err == 0) {
 							return;
 						}
@@ -207,8 +208,8 @@ void exceptions_handle(struct cpu_state *st)
 				    t->process ? t->process->space : NULL;
 
 				if (space) {
-					struct vma *v = vma_find(
-					    &space->vmas, cr2);
+					struct vma *v =
+					    vma_find(&space->vmas, cr2);
 
 					if (v) {
 						vaddr_t va = cr2 & ~PAGE_MASK;

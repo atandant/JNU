@@ -9,19 +9,19 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/elf64.h>
-#include <jnu/errno.h>
-#include <jnu/exec.h>
-#include <jnu/klog.h>
-#include <jnu/kmalloc.h>
-#include <jnu/mman.h>
-#include <jnu/paging.h>
-#include <jnu/pmm.h>
-#include <jnu/string.h>
-#include <jnu/usercopy.h>
-#include <jnu/vma.h>
-#include <jnu/vmm.h>
-#include <jnu/prng.h>
+#include <jnu/kernel/elf64.h>
+#include <jnu/kernel/exec.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/prng.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/kmalloc.h>
+#include <jnu/mm/paging.h>
+#include <jnu/mm/pmm.h>
+#include <jnu/mm/vma.h>
+#include <jnu/mm/vmm.h>
+#include <jnu/user/usercopy.h>
+#include <uapi/jnu/errno.h>
+#include <uapi/jnu/mman.h>
 
 #define EI_NIDENT 16
 #define EI_CLASS 4

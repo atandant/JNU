@@ -16,12 +16,12 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/errno.h>
-#include <jnu/io.h>
-#include <jnu/klog.h>
-#include <jnu/pci.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/io.h>
+#include <jnu/drivers/pci.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/string.h>
+#include <uapi/jnu/errno.h>
 
 #define PCI_CONFIG_ADDR 0x0CF8
 #define PCI_CONFIG_DATA 0x0CFC
@@ -175,8 +175,7 @@ const struct pci_device *pci_find_class(uint8_t class_code, uint8_t subclass,
 	return NULL;
 }
 
-const struct pci_device *pci_find_vendor(uint16_t vendor_id,
-					 uint16_t device_id)
+const struct pci_device *pci_find_vendor(uint16_t vendor_id, uint16_t device_id)
 {
 	for (size_t i = 0; i < device_count; i++) {
 		if (devices[i].vendor_id == vendor_id &&

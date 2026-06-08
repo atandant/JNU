@@ -13,9 +13,9 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/io.h>
-#include <jnu/klog.h>
-#include <jnu/types.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/io.h>
+#include <jnu/lib/klog.h>
 
 #define PIC1_CMD 0x20
 #define PIC1_DATA 0x21

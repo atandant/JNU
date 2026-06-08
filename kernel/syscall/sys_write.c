@@ -16,16 +16,16 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/errno.h>
-#include <jnu/fd.h>
-#include <jnu/klog.h>
-#include <jnu/process.h>
-#include <jnu/sched.h>
-#include <jnu/string.h>
-#include <jnu/syscall.h>
-#include <jnu/usercopy.h>
-#include <jnu/vfs.h>
-#include <jnu/mutex.h>
+#include <jnu/fs/vfs.h>
+#include <jnu/kernel/process.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/mutex.h>
+#include <jnu/lib/string.h>
+#include <jnu/user/fd.h>
+#include <jnu/user/syscall.h>
+#include <jnu/user/usercopy.h>
+#include <uapi/jnu/errno.h>
 
 #define WRITE_CHUNK 128
 #define JNU_O_ACCMODE 03

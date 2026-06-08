@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/sched.h>
-#include <jnu/syscall.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/user/syscall.h>
 
 int64_t sys_getpid(void)
 {

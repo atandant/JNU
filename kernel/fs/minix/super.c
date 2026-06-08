@@ -11,11 +11,11 @@
 
 #include "internal.h"
 
-#include <jnu/errno.h>
-#include <jnu/klog.h>
-#include <jnu/kmalloc.h>
-#include <jnu/minix.h>
-#include <jnu/string.h>
+#include <jnu/fs/minix.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/kmalloc.h>
+#include <uapi/jnu/errno.h>
 
 static int minix_validate_super(const struct minix_super *sb,
 				const struct block_device *bdev)
@@ -40,11 +40,11 @@ static int minix_validate_super(const struct minix_super *sb,
 		return -EINVAL;
 
 	inode_blocks =
-		((uint32_t)sb->s_ninodes * sizeof(struct minix_raw_inode) +
-		 MINIX_BLOCK_SIZE - 1u) /
-		MINIX_BLOCK_SIZE;
-	metadata_blocks = 2u + sb->s_imap_blocks + sb->s_zmap_blocks +
-			  inode_blocks;
+	    ((uint32_t)sb->s_ninodes * sizeof(struct minix_raw_inode) +
+	     MINIX_BLOCK_SIZE - 1u) /
+	    MINIX_BLOCK_SIZE;
+	metadata_blocks =
+	    2u + sb->s_imap_blocks + sb->s_zmap_blocks + inode_blocks;
 	if (metadata_blocks > sb->s_firstdatazone)
 		return -EINVAL;
 
@@ -78,8 +78,9 @@ static int minix_mount(struct vfs_mount *mnt, struct block_device *bdev)
 	err = minix_validate_super(sb, bdev);
 	if (err) {
 		if (sb->s_magic == 0)
-			pr_err("minix: no filesystem at block 1 (magic 0x0000)"
-			       "disk may be blank or not a raw MINIX v1 image\n");
+			pr_err(
+			    "minix: no filesystem at block 1 (magic 0x0000)"
+			    "disk may be blank or not a raw MINIX v1 image\n");
 		else
 			pr_err("minix: invalid superblock (magic 0x%04x)\n",
 			       sb->s_magic);

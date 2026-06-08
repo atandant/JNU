@@ -11,12 +11,12 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/cpu.h>
-#include <jnu/errno.h>
-#include <jnu/rtc.h>
-#include <jnu/syscall.h>
-#include <jnu/types.h>
-#include <jnu/usercopy.h>
+#include <jnu/arch/cpu.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/rtc.h>
+#include <jnu/user/syscall.h>
+#include <jnu/user/usercopy.h>
+#include <uapi/jnu/errno.h>
 
 static uint64_t prng_state;
 static bool prng_seeded;

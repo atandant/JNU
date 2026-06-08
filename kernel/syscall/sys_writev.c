@@ -10,10 +10,10 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/errno.h>
-#include <jnu/syscall.h>
-#include <jnu/types.h>
-#include <jnu/usercopy.h>
+#include <jnu/base/types.h>
+#include <jnu/user/syscall.h>
+#include <jnu/user/usercopy.h>
+#include <uapi/jnu/errno.h>
 
 /*
  * Linux-compatible iovec.  musl passes this layout directly from
@@ -24,7 +24,7 @@ struct iovec {
 	size_t iov_len;
 };
 
-#include <jnu/kmalloc.h>
+#include <jnu/mm/kmalloc.h>
 
 #define UIO_MAXIOV 1024
 
@@ -50,9 +50,11 @@ int64_t sys_writev(int fd, const void *uiov, int iovcnt)
 		return err;
 	}
 
-	/* Pre-validate total length to prevent ssize_t overflow (POSIX requirement) */
+	/* Pre-validate total length to prevent ssize_t overflow (POSIX
+	 * requirement) */
 	for (int i = 0; i < iovcnt; i++) {
-		if (__builtin_add_overflow(total_len, iov[i].iov_len, &total_len) ||
+		if (__builtin_add_overflow(total_len, iov[i].iov_len,
+					   &total_len) ||
 		    total_len > (size_t)0x7FFFFFFFFFFFFFFFull) {
 			kfree(iov);
 			return -EINVAL;

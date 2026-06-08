@@ -14,11 +14,11 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/compiler.h>
-#include <jnu/gdt.h>
-#include <jnu/klog.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
+#include <jnu/arch/gdt.h>
+#include <jnu/base/compiler.h>
+#include <jnu/base/types.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/string.h>
 
 /* ------------------------------------------------------------------------- */
 /* Descriptor encodings                                                      */

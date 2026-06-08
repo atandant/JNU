@@ -9,10 +9,7 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/syscall.h>
-#include <jnu/types.h>
+#include <jnu/base/types.h>
+#include <jnu/user/syscall.h>
 
-int64_t sys_exit_group(int status)
-{
-	return sys_exit(status);
-}
+int64_t sys_exit_group(int status) { return sys_exit(status); }

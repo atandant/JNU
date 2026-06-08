@@ -9,9 +9,9 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/errno.h>
-#include <jnu/syscall.h>
-#include <jnu/types.h>
+#include <jnu/base/types.h>
+#include <jnu/user/syscall.h>
+#include <uapi/jnu/errno.h>
 
 int64_t sys_ioctl(int fd, uint64_t request, uint64_t arg)
 {

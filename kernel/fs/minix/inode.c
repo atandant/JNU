@@ -12,11 +12,11 @@
 
 #include "internal.h"
 
-#include <jnu/errno.h>
-#include <jnu/klog.h>
-#include <jnu/kmalloc.h>
-#include <jnu/string.h>
-#include <jnu/mutex.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/mutex.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/kmalloc.h>
+#include <uapi/jnu/errno.h>
 
 /*
  * Read one raw MINIX inode from the inode table.
@@ -45,8 +45,8 @@ int minix_get_raw_inode(struct vfs_mount *mnt, uint32_t ino,
 	block = priv->inodes_start_block +
 		(ino - 1) / (MINIX_BLOCK_SIZE / sizeof(struct minix_raw_inode));
 	offset =
-		((ino - 1) % (MINIX_BLOCK_SIZE / sizeof(struct minix_raw_inode))) *
-		sizeof(struct minix_raw_inode);
+	    ((ino - 1) % (MINIX_BLOCK_SIZE / sizeof(struct minix_raw_inode))) *
+	    sizeof(struct minix_raw_inode);
 
 	buf = bufcache_get(mnt->bdev, block);
 	if (!buf)
@@ -94,7 +94,8 @@ uint32_t minix_bmap(struct vfs_mount *mnt, struct minix_inode_info *mi,
 
 	if (block < 7) {
 		if (ino->i_zone[block] == 0 && create) {
-			ino->i_zone[block] = (uint16_t)minix_alloc_data_zone(mnt);
+			ino->i_zone[block] =
+			    (uint16_t)minix_alloc_data_zone(mnt);
 			mi->dirty = true;
 		}
 		b = ino->i_zone[block];
@@ -111,8 +112,9 @@ uint32_t minix_bmap(struct vfs_mount *mnt, struct minix_inode_info *mi,
 			return 0;
 		if (ino->i_zone[7] < priv->sb.s_firstdatazone ||
 		    ino->i_zone[7] >= priv->sb.s_nzones) {
-			pr_err("minix: out of bounds single indirect pointer %u\n",
-			       ino->i_zone[7]);
+			pr_err(
+			    "minix: out of bounds single indirect pointer %u\n",
+			    ino->i_zone[7]);
 			return 0;
 		}
 		buf = bufcache_get(mnt->bdev, ino->i_zone[7]);
@@ -120,7 +122,7 @@ uint32_t minix_bmap(struct vfs_mount *mnt, struct minix_inode_info *mi,
 			return 0;
 		if (((uint16_t *)buf->data)[block] == 0 && create) {
 			((uint16_t *)buf->data)[block] =
-				(uint16_t)minix_alloc_data_zone(mnt);
+			    (uint16_t)minix_alloc_data_zone(mnt);
 			bufcache_mark_dirty(buf);
 		}
 		b = ((uint16_t *)buf->data)[block];
@@ -138,8 +140,9 @@ uint32_t minix_bmap(struct vfs_mount *mnt, struct minix_inode_info *mi,
 			return 0;
 		if (ino->i_zone[8] < priv->sb.s_firstdatazone ||
 		    ino->i_zone[8] >= priv->sb.s_nzones) {
-			pr_err("minix: out of bounds double indirect pointer %u\n",
-			       ino->i_zone[8]);
+			pr_err(
+			    "minix: out of bounds double indirect pointer %u\n",
+			    ino->i_zone[8]);
 			return 0;
 		}
 		buf = bufcache_get(mnt->bdev, ino->i_zone[8]);
@@ -147,7 +150,7 @@ uint32_t minix_bmap(struct vfs_mount *mnt, struct minix_inode_info *mi,
 			return 0;
 		if (((uint16_t *)buf->data)[block / per_block] == 0 && create) {
 			((uint16_t *)buf->data)[block / per_block] =
-				(uint16_t)minix_alloc_data_zone(mnt);
+			    (uint16_t)minix_alloc_data_zone(mnt);
 			bufcache_mark_dirty(buf);
 		}
 		ind1 = ((uint16_t *)buf->data)[block / per_block];
@@ -203,8 +206,8 @@ int minix_write_inode(struct vfs_mount *mnt, uint32_t ino,
 	block = priv->inodes_start_block +
 		(ino - 1) / (MINIX_BLOCK_SIZE / sizeof(struct minix_raw_inode));
 	offset =
-		((ino - 1) % (MINIX_BLOCK_SIZE / sizeof(struct minix_raw_inode))) *
-		sizeof(struct minix_raw_inode);
+	    ((ino - 1) % (MINIX_BLOCK_SIZE / sizeof(struct minix_raw_inode))) *
+	    sizeof(struct minix_raw_inode);
 
 	buf = bufcache_get(mnt->bdev, block);
 	if (!buf)

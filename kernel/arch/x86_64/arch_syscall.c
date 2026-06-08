@@ -11,11 +11,11 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/arch_syscall.h>
-#include <jnu/cpu.h>
-#include <jnu/gdt.h>
-#include <jnu/klog.h>
-#include <jnu/types.h>
+#include <jnu/arch/arch_syscall.h>
+#include <jnu/arch/cpu.h>
+#include <jnu/arch/gdt.h>
+#include <jnu/base/types.h>
+#include <jnu/lib/klog.h>
 
 #define MSR_STAR 0xC0000081
 #define MSR_LSTAR 0xC0000082

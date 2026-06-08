@@ -1,52 +1,55 @@
+# ---- build outputs ----------------------------------------------------------
+
 build/
-boot/limine/
+dist/
 *.o
 *.elf
 *.iso
 *.img
 *.bin
-*.swp
+*.log
+*.tmp
+*.temp
+
+# ---- vendored / bootstrap ---------------------------------------------------
+
+boot/limine/
+user/musl/
+
+# ---- generated (rebuilt by make) --------------------------------------------
+
+kernel/drivers/font_data.h
+
+# ---- local / IDE ------------------------------------------------------------
+
 .vscode/
 .idea/
+.venv/
+.cache/
 __pycache__/
 *.pyc
-kernel/drivers/font_data.h
-.venv/
+*.swp
+*.swo
+
+# ---- OS ---------------------------------------------------------------------
+
+.DS_Store
+Thumbs.db
+
+# ---- misc local scratch -----------------------------------------------------
+
 kernel_heatmap.py
 kernel_objdump.txt
-user/musl
 
-# Auto-generated entries
-# Dependencies
+# ---- node (if present) ------------------------------------------------------
+
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Build outputs
-dist/
-build/
-*.log
+# ---- secrets ----------------------------------------------------------------
 
-# Environment files
 .env
 .env.*
 !.env.example
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Temporary files
-*.tmp
-*.temp
-.cache/
-
-# Sensitive files (auto-detected)
-build

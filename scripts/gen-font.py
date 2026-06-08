@@ -290,7 +290,7 @@ def emit_header(out_path: Path):
         " * SPDX-License-Identifier: GPL-2.0-only\n"
         " */\n\n"
         "#pragma once\n\n"
-        "#include <jnu/types.h>\n\n"
+        "#include <jnu/base/types.h>\n\n"
         "static const uint8_t font_8x16[256][16] = {\n"
     )
     for i, rows in enumerate(FONT_DATA):

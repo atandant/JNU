@@ -9,8 +9,8 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/rbtree.h>
-#include <jnu/types.h>
+#include <jnu/base/types.h>
+#include <jnu/lib/rbtree.h>
 
 void rb_init(struct rb_root *root) { root->root = NULL; }
 
@@ -290,8 +290,8 @@ void rb_erase(struct rb_root *root, struct rb_node *z)
 /* Selftest                                                                   */
 /* ------------------------------------------------------------------------- */
 
-#include <jnu/errno.h>
-#include <jnu/klog.h>
+#include <jnu/lib/klog.h>
+#include <uapi/jnu/errno.h>
 
 struct rb_test_node {
 	struct rb_node rb;

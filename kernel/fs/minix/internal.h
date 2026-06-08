@@ -11,11 +11,11 @@
 
 #pragma once
 
-#include <jnu/block.h>
-#include <jnu/compiler.h>
-#include <jnu/types.h>
-#include <jnu/vfs.h>
-#include <jnu/mutex.h>
+#include <jnu/fs/block.h>
+#include <jnu/base/compiler.h>
+#include <jnu/base/types.h>
+#include <jnu/fs/vfs.h>
+#include <jnu/lib/mutex.h>
 
 #define MINIX_BLOCK_SIZE 1024
 #define MINIX_V1_MAGIC 0x137F

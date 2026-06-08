@@ -9,8 +9,8 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/syscall.h>
-#include <jnu/types.h>
+#include <jnu/base/types.h>
+#include <jnu/user/syscall.h>
 
 int64_t sys_rt_sigaction(int signum, const void *act, void *oldact,
 			 size_t sigsetsize)

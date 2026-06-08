@@ -9,13 +9,13 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/block.h>
-#include <jnu/errno.h>
-#include <jnu/klog.h>
-#include <jnu/minix.h>
-#include <jnu/string.h>
-#include <jnu/vfs.h>
-#include <jnu/mutex.h>
+#include <jnu/fs/block.h>
+#include <jnu/fs/minix.h>
+#include <jnu/fs/vfs.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/mutex.h>
+#include <jnu/lib/string.h>
+#include <uapi/jnu/errno.h>
 
 static struct vfs_mount root_mount;
 static bool root_mounted = false;
@@ -139,7 +139,8 @@ static int vfs_parent(const char *path, struct vfs_inode **dir, char *name,
 			return -ENOTDIR;
 		}
 
-		if (strcmp(comp, "..") == 0 && curr->ino == root_mount.root->ino)
+		if (strcmp(comp, "..") == 0 &&
+		    curr->ino == root_mount.root->ino)
 			continue;
 
 		{
@@ -283,7 +284,8 @@ int vfs_unlink(const char *path)
 	if (err)
 		return err;
 	mutex_lock(&dir->lock);
-	err = dir->mnt->ops->unlink ? dir->mnt->ops->unlink(dir, name) : -ENOSYS;
+	err =
+	    dir->mnt->ops->unlink ? dir->mnt->ops->unlink(dir, name) : -ENOSYS;
 	mutex_unlock(&dir->lock);
 	vfs_close(dir);
 	return err;
@@ -299,7 +301,8 @@ int vfs_mkdir(const char *path, uint16_t mode)
 	if (err)
 		return err;
 	mutex_lock(&dir->lock);
-	err = dir->mnt->ops->mkdir ? dir->mnt->ops->mkdir(dir, name, mode) : -ENOSYS;
+	err = dir->mnt->ops->mkdir ? dir->mnt->ops->mkdir(dir, name, mode)
+				   : -ENOSYS;
 	mutex_unlock(&dir->lock);
 	vfs_close(dir);
 	return err;

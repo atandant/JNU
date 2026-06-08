@@ -19,13 +19,13 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/acpi.h>
-#include <jnu/compiler.h>
-#include <jnu/io.h>
-#include <jnu/klog.h>
-#include <jnu/paging.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
+#include <jnu/base/compiler.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/acpi.h>
+#include <jnu/drivers/io.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/paging.h>
 
 /* ------------------------------------------------------------------ */
 /* Cached FADT-derived state                                          */
@@ -205,13 +205,15 @@ void acpi_pm_init(void)
 	}
 	s5_found = scrape_s5(dsdt_pa, &slp_typa, &slp_typb);
 
-	pr_info("acpi: FADT: PM1a_CNT=0x%x PM1b_CNT=0x%x SMI=0x%x PM_TMR=0x%x\n",
-		pm1a_cnt, pm1b_cnt, (unsigned)smi_cmd, (unsigned)pm_tmr_port);
+	pr_info(
+	    "acpi: FADT: PM1a_CNT=0x%x PM1b_CNT=0x%x SMI=0x%x PM_TMR=0x%x\n",
+	    pm1a_cnt, pm1b_cnt, (unsigned)smi_cmd, (unsigned)pm_tmr_port);
 	if (s5_found) {
 		pr_info("acpi: S5 sleep types: SLP_TYPa=%u SLP_TYPb=%u\n",
 			(unsigned)slp_typa, (unsigned)slp_typb);
 	} else {
-		pr_warn("acpi: _S5_ not found; poweroff will use VM fallbacks\n");
+		pr_warn(
+		    "acpi: _S5_ not found; poweroff will use VM fallbacks\n");
 	}
 }
 
@@ -290,7 +292,8 @@ void acpi_poweroff(void)
 	}
 
 	/* Enter ACPI mode if firmware is still in legacy mode. */
-	if (smi_cmd && acpi_enable_val && !(inw(pm1a_cnt) & ACPI_PM1_CNT_SCI_EN)) {
+	if (smi_cmd && acpi_enable_val &&
+	    !(inw(pm1a_cnt) & ACPI_PM1_CNT_SCI_EN)) {
 		outb((uint16_t)smi_cmd, acpi_enable_val);
 		for (int i = 0; i < 300; i++) {
 			if (inw(pm1a_cnt) & ACPI_PM1_CNT_SCI_EN) {
@@ -303,9 +306,8 @@ void acpi_poweroff(void)
 	outw(pm1a_cnt,
 	     (uint16_t)(((unsigned)slp_typa << 10) | ACPI_PM1_CNT_SLP_EN));
 	if (pm1b_cnt) {
-		outw(pm1b_cnt,
-		     (uint16_t)(((unsigned)slp_typb << 10) |
-				ACPI_PM1_CNT_SLP_EN));
+		outw(pm1b_cnt, (uint16_t)(((unsigned)slp_typb << 10) |
+					  ACPI_PM1_CNT_SLP_EN));
 	}
 
 	/* If we are still running, ACPI poweroff was rejected. Try the

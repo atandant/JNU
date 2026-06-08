@@ -13,15 +13,15 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/compiler.h>
-#include <jnu/errno.h>
-#include <jnu/klog.h>
-#include <jnu/paging.h>
-#include <jnu/panic.h>
-#include <jnu/pmm.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
-#include <jnu/vmm.h>
+#include <jnu/base/compiler.h>
+#include <jnu/base/types.h>
+#include <jnu/kernel/panic.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/paging.h>
+#include <jnu/mm/pmm.h>
+#include <jnu/mm/vmm.h>
+#include <uapi/jnu/errno.h>
 
 static uint64_t hhdm_offset;
 static uint64_t *kernel_pml4;

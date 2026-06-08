@@ -14,11 +14,11 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/cpu.h>
-#include <jnu/hpet.h>
-#include <jnu/klog.h>
-#include <jnu/prng.h>
-#include <jnu/types.h>
+#include <jnu/arch/cpu.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/hpet.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/prng.h>
 
 /* CPUID.01H:ECX bit 30 — RDRAND instruction supported. */
 #define CPUID_01_ECX_RDRAND (1u << 30)

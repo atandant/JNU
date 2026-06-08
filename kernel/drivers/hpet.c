@@ -17,13 +17,13 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/acpi.h>
-#include <jnu/compiler.h>
-#include <jnu/errno.h>
-#include <jnu/hpet.h>
-#include <jnu/klog.h>
-#include <jnu/paging.h>
-#include <jnu/types.h>
+#include <jnu/base/compiler.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/acpi.h>
+#include <jnu/drivers/hpet.h>
+#include <jnu/lib/klog.h>
+#include <jnu/mm/paging.h>
+#include <uapi/jnu/errno.h>
 
 /*
  * HPET-specific extension of the generic SDT header.

@@ -25,44 +25,44 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/acpi.h>
-#include <jnu/apic.h>
-#include <jnu/arch_syscall.h>
-#include <jnu/ata.h>
-#include <jnu/block.h>
-#include <jnu/cmdline.h>
-#include <jnu/compiler.h>
-#include <jnu/cpu.h>
-#include <jnu/elf64.h>
-#include <jnu/errno.h>
-#include <jnu/exec.h>
-#include <jnu/fbcon.h>
-#include <jnu/execprot.h>
-#include <jnu/gdt.h>
-#include <jnu/hpet.h>
-#include <jnu/idt.h>
-#include <jnu/initramfs.h>
-#include <jnu/kbd.h>
-#include <jnu/klog.h>
-#include <jnu/lapic_timer.h>
-#include <jnu/paging.h>
-#include <jnu/panic.h>
-#include <jnu/pci.h>
-#include <jnu/pit.h>
-#include <jnu/pmm.h>
-#include <jnu/prng.h>
-#include <jnu/process.h>
-#include <jnu/rtc.h>
-#include <jnu/sched.h>
-#include <jnu/selftest.h>
-#include <jnu/serial.h>
-#include <jnu/slab.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
-#include <jnu/usermode.h>
-#include <jnu/vfs.h>
-#include <jnu/vmm.h>
-#include <jnu/virtio_blk.h>
+#include <jnu/arch/arch_syscall.h>
+#include <jnu/arch/cpu.h>
+#include <jnu/arch/gdt.h>
+#include <jnu/arch/idt.h>
+#include <jnu/arch/usermode.h>
+#include <jnu/base/compiler.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/acpi.h>
+#include <jnu/drivers/apic.h>
+#include <jnu/drivers/ata.h>
+#include <jnu/drivers/fbcon.h>
+#include <jnu/drivers/hpet.h>
+#include <jnu/drivers/kbd.h>
+#include <jnu/drivers/lapic_timer.h>
+#include <jnu/drivers/pci.h>
+#include <jnu/drivers/pit.h>
+#include <jnu/drivers/rtc.h>
+#include <jnu/drivers/serial.h>
+#include <jnu/drivers/virtio_blk.h>
+#include <jnu/fs/block.h>
+#include <jnu/fs/initramfs.h>
+#include <jnu/fs/vfs.h>
+#include <jnu/kernel/cmdline.h>
+#include <jnu/kernel/elf64.h>
+#include <jnu/kernel/exec.h>
+#include <jnu/kernel/execprot.h>
+#include <jnu/kernel/panic.h>
+#include <jnu/kernel/process.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/kernel/selftest.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/prng.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/paging.h>
+#include <jnu/mm/pmm.h>
+#include <jnu/mm/slab.h>
+#include <jnu/mm/vmm.h>
+#include <uapi/jnu/errno.h>
 
 #include <limine.h>
 
@@ -332,8 +332,8 @@ static void start_init(void)
 	vmm_switch_to(space);
 	err = load_boot_exec(space, init_path, &init_info, &stack, &source);
 	if (err) {
-		panic("userspace: failed to load init '%s' (err=%d)",
-		      init_path, err);
+		panic("userspace: failed to load init '%s' (err=%d)", init_path,
+		      err);
 	}
 	task->process->user_entry = init_info.entry;
 	task->process->user_stack = stack;
@@ -532,8 +532,8 @@ void kernel_main(void)
 	}
 	int err = vfs_mount(root_bdev, "minix", "/");
 	if (err) {
-		panic("kernel: failed to mount rootfs on %s (err=%d)", root_bdev,
-		      err);
+		panic("kernel: failed to mount rootfs on %s (err=%d)",
+		      root_bdev, err);
 	}
 	pr_info("rootfs: mounted from %s\n", root_bdev);
 
@@ -564,7 +564,6 @@ void kernel_main(void)
 	}
 
 	start_init();
-
 	pr_info("kernel: boot complete; idle\n");
 
 	struct char_device *kbd = kbd_get_chardev();

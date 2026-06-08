@@ -22,16 +22,16 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/errno.h>
-#include <jnu/fd.h>
-#include <jnu/klog.h>
-#include <jnu/kmalloc.h>
-#include <jnu/process.h>
-#include <jnu/sched.h>
-#include <jnu/spinlock.h>
-#include <jnu/syscall.h>
-#include <jnu/types.h>
-#include <jnu/vmm.h>
+#include <jnu/base/types.h>
+#include <jnu/kernel/process.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/spinlock.h>
+#include <jnu/mm/kmalloc.h>
+#include <jnu/mm/vmm.h>
+#include <jnu/user/fd.h>
+#include <jnu/user/syscall.h>
+#include <uapi/jnu/errno.h>
 
 extern struct spinlock process_tree_lock;
 
@@ -119,21 +119,20 @@ int process_fork(const struct syscall_frame *frame, int *pid_out)
 	*pid_out = child->pid;
 	return 0;
 
-fail_unsplice:
-	{
-		uint64_t flags = spin_lock_irqsave(&process_tree_lock);
-		struct process **link = &parent->first_child;
+fail_unsplice: {
+	uint64_t flags = spin_lock_irqsave(&process_tree_lock);
+	struct process **link = &parent->first_child;
 
-		while (*link) {
-			if (*link == child) {
-				*link = child->next_sibling;
-				child->next_sibling = NULL;
-				break;
-			}
-			link = &(*link)->next_sibling;
+	while (*link) {
+		if (*link == child) {
+			*link = child->next_sibling;
+			child->next_sibling = NULL;
+			break;
 		}
-		spin_unlock_irqrestore(&process_tree_lock, flags);
+		link = &(*link)->next_sibling;
 	}
+	spin_unlock_irqrestore(&process_tree_lock, flags);
+}
 	for (int fd = 0; fd < JNU_MAX_FDS; fd++) {
 		file_put(fd_close(&child->fds, fd));
 	}

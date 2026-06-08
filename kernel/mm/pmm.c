@@ -19,15 +19,15 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/compiler.h>
-#include <jnu/errno.h>
-#include <jnu/klog.h>
-#include <jnu/paging.h>
-#include <jnu/panic.h>
-#include <jnu/pmm.h>
-#include <jnu/spinlock.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
+#include <jnu/base/compiler.h>
+#include <jnu/base/types.h>
+#include <jnu/kernel/panic.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/spinlock.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/paging.h>
+#include <jnu/mm/pmm.h>
+#include <uapi/jnu/errno.h>
 
 #include <limine.h>
 
@@ -482,7 +482,10 @@ void pmm_put_user_page(paddr_t pa)
 
 uint64_t pmm_lock_acquire(void) { return spin_lock_irqsave(&pmm_lock); }
 
-void pmm_lock_release(uint64_t flags) { spin_unlock_irqrestore(&pmm_lock, flags); }
+void pmm_lock_release(uint64_t flags)
+{
+	spin_unlock_irqrestore(&pmm_lock, flags);
+}
 
 uint16_t pmm_user_refcount_locked(paddr_t pa)
 {
@@ -628,8 +631,7 @@ void pmm_init(const struct limine_memmap_response *mm, uint64_t hhdm_offset)
 	if (!mm_zero_page) {
 		panic("pmm: cannot allocate zero page");
 	}
-	pr_info("pmm: zero page at phys 0x%lx\n",
-		(unsigned long)mm_zero_page);
+	pr_info("pmm: zero page at phys 0x%lx\n", (unsigned long)mm_zero_page);
 
 	pmm_dump();
 }
@@ -723,8 +725,9 @@ int pmm_zerofree_selftest(void)
 	p = phys_to_virt(pa);
 	for (size_t i = 0; i < PAGE_SIZE; i++) {
 		if (p[i] != 0) {
-			pr_err("pmm: zero-on-free violated at +%lu (got 0x%02x)\n",
-			       (unsigned long)i, p[i]);
+			pr_err(
+			    "pmm: zero-on-free violated at +%lu (got 0x%02x)\n",
+			    (unsigned long)i, p[i]);
 			pmm_free_pages(pa, 0);
 			return -EIO;
 		}

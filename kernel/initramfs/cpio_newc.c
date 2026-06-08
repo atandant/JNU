@@ -9,9 +9,9 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/cpio_newc.h>
-#include <jnu/errno.h>
-#include <jnu/string.h>
+#include <jnu/fs/cpio_newc.h>
+#include <jnu/lib/string.h>
+#include <uapi/jnu/errno.h>
 
 static size_t align4(size_t v) { return (v + 3u) & ~(size_t)3u; }
 

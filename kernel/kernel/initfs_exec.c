@@ -9,13 +9,13 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/elf64.h>
-#include <jnu/exec.h>
-#include <jnu/initramfs.h>
-#include <jnu/types.h>
-#include <jnu/vmm.h>
+#include <jnu/base/types.h>
+#include <jnu/fs/initramfs.h>
+#include <jnu/kernel/elf64.h>
+#include <jnu/kernel/exec.h>
+#include <jnu/mm/vmm.h>
 
-#include <jnu/execprot.h>
+#include <jnu/kernel/execprot.h>
 
 /*
  * initramfs_exec_read - exec_image read_at callback backed by initramfs.

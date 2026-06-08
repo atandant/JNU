@@ -29,8 +29,8 @@ cat <<'HDR'
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/symbols.h>
-#include <jnu/types.h>
+#include <jnu/kernel/symbols.h>
+#include <jnu/base/types.h>
 
 const struct ksymbol jnu_symbols[] = {
 HDR

@@ -11,12 +11,12 @@
 
 #include "internal.h"
 
-#include <jnu/errno.h>
-#include <jnu/klog.h>
-#include <jnu/kmalloc.h>
-#include <jnu/minix.h>
-#include <jnu/rtc.h>
-#include <jnu/string.h>
+#include <jnu/drivers/rtc.h>
+#include <jnu/fs/minix.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/kmalloc.h>
+#include <uapi/jnu/errno.h>
 
 static void minix_clear_block_mapping(struct vfs_inode *ino, uint32_t lblk);
 static void minix_prune_empty_indirects(struct vfs_inode *ino);

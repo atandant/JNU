@@ -13,10 +13,10 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/klog.h>
-#include <jnu/paging.h>
-#include <jnu/prng.h>
-#include <jnu/types.h>
+#include <jnu/base/types.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/prng.h>
+#include <jnu/mm/paging.h>
 
 /*
  * Global PRNG state.  Not reentrant — fine for single-CPU.

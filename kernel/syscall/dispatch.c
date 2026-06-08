@@ -9,10 +9,10 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/errno.h>
-#include <jnu/arch_syscall.h>
-#include <jnu/syscall.h>
-#include <jnu/syscall_nr.h>
+#include <jnu/arch/arch_syscall.h>
+#include <jnu/user/syscall.h>
+#include <uapi/jnu/errno.h>
+#include <uapi/jnu/syscall_nr.h>
 
 typedef int64_t (*syscall_handler_t)(const struct syscall_args *args);
 
@@ -28,8 +28,7 @@ static int64_t wrap_read(const struct syscall_args *a)
 
 static int64_t wrap_write(const struct syscall_args *a)
 {
-	return sys_write((int)a->arg0, (const void *)a->arg1,
-			 (size_t)a->arg2);
+	return sys_write((int)a->arg0, (const void *)a->arg1, (size_t)a->arg2);
 }
 
 static int64_t wrap_open(const struct syscall_args *a)
@@ -99,10 +98,7 @@ static int64_t wrap_getpid(const struct syscall_args *a)
 	return sys_getpid();
 }
 
-static int64_t wrap_fork(const struct syscall_args *a)
-{
-	return sys_fork(a);
-}
+static int64_t wrap_fork(const struct syscall_args *a) { return sys_fork(a); }
 
 static int64_t wrap_execve(const struct syscall_args *a)
 {
@@ -143,13 +139,13 @@ static int64_t wrap_munmap(const struct syscall_args *a)
 static int64_t wrap_rt_sigaction(const struct syscall_args *a)
 {
 	return sys_rt_sigaction((int)a->arg0, (const void *)a->arg1,
-			       (void *)a->arg2, (size_t)a->arg3);
+				(void *)a->arg2, (size_t)a->arg3);
 }
 
 static int64_t wrap_rt_sigprocmask(const struct syscall_args *a)
 {
 	return sys_rt_sigprocmask((int)a->arg0, (const void *)a->arg1,
-				 (void *)a->arg2, (size_t)a->arg3);
+				  (void *)a->arg2, (size_t)a->arg3);
 }
 
 static int64_t wrap_ioctl(const struct syscall_args *a)
@@ -198,38 +194,38 @@ static int64_t wrap_getrandom(const struct syscall_args *a)
  * NULL entries return -ENOSYS.
  */
 static const syscall_handler_t syscall_table[JNU_SYS_MAX + 1] = {
-	[JNU_SYS_read]           = wrap_read,
-	[JNU_SYS_write]          = wrap_write,
-	[JNU_SYS_open]           = wrap_open,
-	[JNU_SYS_close]          = wrap_close,
-	[JNU_SYS_fstat]          = wrap_fstat,
-	[JNU_SYS_lseek]          = wrap_lseek,
-	[JNU_SYS_mmap]           = wrap_mmap,
-	[JNU_SYS_mprotect]       = wrap_mprotect,
-	[JNU_SYS_munmap]         = wrap_munmap,
-	[JNU_SYS_rt_sigaction]   = wrap_rt_sigaction,
-	[JNU_SYS_rt_sigprocmask] = wrap_rt_sigprocmask,
-	[JNU_SYS_ioctl]          = wrap_ioctl,
-	[JNU_SYS_writev]         = wrap_writev,
-	[JNU_SYS_sched_yield]    = wrap_sched_yield,
-	[JNU_SYS_nanosleep]      = wrap_nanosleep,
-	[JNU_SYS_getpid]         = wrap_getpid,
-	[JNU_SYS_fork]           = wrap_fork,
-	[JNU_SYS_execve]         = wrap_execve,
-	[JNU_SYS_exit]           = wrap_exit,
-	[JNU_SYS_wait4]          = wrap_wait4,
-	[JNU_SYS_fsync]          = wrap_fsync,
-	[JNU_SYS_ftruncate]      = wrap_ftruncate,
-	[JNU_SYS_rename]         = wrap_rename,
-	[JNU_SYS_mkdir]          = wrap_mkdir,
-	[JNU_SYS_rmdir]          = wrap_rmdir,
-	[JNU_SYS_creat]          = wrap_creat,
-	[JNU_SYS_unlink]         = wrap_unlink,
-	[JNU_SYS_arch_prctl]     = wrap_arch_prctl,
-	[JNU_SYS_set_tid_address] = wrap_set_tid_address,
-	[JNU_SYS_clock_gettime]  = wrap_clock_gettime,
-	[JNU_SYS_exit_group]     = wrap_exit_group,
-	[JNU_SYS_getrandom]      = wrap_getrandom,
+    [JNU_SYS_read] = wrap_read,
+    [JNU_SYS_write] = wrap_write,
+    [JNU_SYS_open] = wrap_open,
+    [JNU_SYS_close] = wrap_close,
+    [JNU_SYS_fstat] = wrap_fstat,
+    [JNU_SYS_lseek] = wrap_lseek,
+    [JNU_SYS_mmap] = wrap_mmap,
+    [JNU_SYS_mprotect] = wrap_mprotect,
+    [JNU_SYS_munmap] = wrap_munmap,
+    [JNU_SYS_rt_sigaction] = wrap_rt_sigaction,
+    [JNU_SYS_rt_sigprocmask] = wrap_rt_sigprocmask,
+    [JNU_SYS_ioctl] = wrap_ioctl,
+    [JNU_SYS_writev] = wrap_writev,
+    [JNU_SYS_sched_yield] = wrap_sched_yield,
+    [JNU_SYS_nanosleep] = wrap_nanosleep,
+    [JNU_SYS_getpid] = wrap_getpid,
+    [JNU_SYS_fork] = wrap_fork,
+    [JNU_SYS_execve] = wrap_execve,
+    [JNU_SYS_exit] = wrap_exit,
+    [JNU_SYS_wait4] = wrap_wait4,
+    [JNU_SYS_fsync] = wrap_fsync,
+    [JNU_SYS_ftruncate] = wrap_ftruncate,
+    [JNU_SYS_rename] = wrap_rename,
+    [JNU_SYS_mkdir] = wrap_mkdir,
+    [JNU_SYS_rmdir] = wrap_rmdir,
+    [JNU_SYS_creat] = wrap_creat,
+    [JNU_SYS_unlink] = wrap_unlink,
+    [JNU_SYS_arch_prctl] = wrap_arch_prctl,
+    [JNU_SYS_set_tid_address] = wrap_set_tid_address,
+    [JNU_SYS_clock_gettime] = wrap_clock_gettime,
+    [JNU_SYS_exit_group] = wrap_exit_group,
+    [JNU_SYS_getrandom] = wrap_getrandom,
 };
 
 int64_t syscall_dispatch(const struct syscall_args *args)

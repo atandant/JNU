@@ -13,7 +13,7 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/string.h>
+#include <jnu/lib/string.h>
 
 void *memcpy(void *dst, const void *src, size_t n)
 {

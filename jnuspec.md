@@ -43,7 +43,7 @@ These were debated and resolved. They are not open for casual revision.
   through direct function calls.
 - **Strict subsystem boundaries.** No subsystem reaches into another's
   internal structs. APIs are exported through one header per subsystem
-  (`include/jnu/<subsys>.h`). Internal helpers stay `static` and absent
+  (`include/jnu/<area>/<subsys>.h`). Internal helpers stay `static` and absent
   from any header.
 - **No driver model in v0.0.1.** Two abstractions only:
   `struct block_device` and `struct char_device`. Other drivers call
@@ -339,13 +339,27 @@ See §4. Comments are an engineering deliverable, not decoration.
 
 ### 3.9 Headers
 
-- One header per subsystem: `include/jnu/<subsys>.h`.
-- Include guards use `#pragma once`. (clang and gcc both support it
-  reliably; we don't need the historical `#ifndef X_H` dance.)
+Headers live under the top-level `include/` directory in three zones:
+
+1. **`include/uapi/jnu/`** — Kernel ↔ userspace ABI (syscall numbers,
+   errno values, `struct jnu_stat`, mmap flags, arch_prctl codes).
+   Installed to `/usr/include/uapi/jnu/` on the MINIX rootfs when
+   `make ata-disk` runs. Kernel code may include these; userspace
+   libjnu consumes generated wrappers from `scripts/gen-uapi.sh`.
+2. **`include/jnu/<area>/`** — Kernel-internal public APIs, one header
+   per subsystem, grouped by area (`base/`, `mm/`, `fs/`, `drivers/`,
+   `arch/`, `kernel/`, `lib/`, `user/`). Example:
+   `include/jnu/mm/vmm.h`.
+
+Rules:
+
+- Include guards use `#pragma once`.
 - Headers expose only the public API. Internal helpers stay in `.c`
   files as `static`.
 - No transitive includes: every `.c` and `.h` file `#include`s exactly
   what it directly uses. No relying on a header to drag in another.
+- `include/stdint.h` is a freestanding shim forwarding to
+  `include/jnu/base/types.h`.
 
 ### 3.10 Forbidden constructs
 
@@ -542,39 +556,23 @@ JNU/
 │   │   ├── sched.c              # scheduler stub
 │   │   ├── cmdline.c            # kernel cmdline parser
 │   │   └── symbols.c            # generated symbol table (in build dir)
-│   └── include/jnu/
-│       ├── compiler.h           # __packed, __noreturn, likely/unlikely, etc.
-│       ├── types.h              # paddr_t, vaddr_t, size_t, bool, etc.
-│       ├── errno.h              # -E* error codes
-│       ├── pmm.h
-│       ├── vmm.h
-│       ├── slab.h
-│       ├── kmalloc.h
-│       ├── vma.h
-│       ├── apic.h
-│       ├── ioapic.h
-│       ├── idt.h
-│       ├── gdt.h
-│       ├── cpu.h
-│       ├── paging.h
-│       ├── pci.h
-│       ├── ata.h
-│       ├── serial.h
-│       ├── pit.h
-│       ├── rtc.h
-│       ├── kbd.h
-│       ├── fbcon.h
-│       ├── block.h
-│       ├── chardev.h
-│       ├── vfs.h
-│       ├── minix.h
-│       ├── klog.h
-│       ├── panic.h
-│       ├── spinlock.h
-│       ├── rbtree.h
-│       ├── string.h
-│       ├── cmdline.h
-│       └── selftest.h
+├── include/
+│   ├── stdint.h                 # freestanding shim → jnu/base/types.h
+│   ├── uapi/jnu/                # kernel ↔ userspace ABI (on-disk install)
+│   │   ├── syscall_nr.h
+│   │   ├── errno.h
+│   │   ├── mman.h
+│   │   ├── stat.h
+│   │   └── arch_prctl.h
+│   ├── jnu/                     # kernel-internal APIs by area
+│   │   ├── base/                # types.h, compiler.h
+│   │   ├── mm/                  # pmm, vmm, vma, slab, kmalloc, paging
+│   │   ├── fs/                  # vfs, minix, block, initramfs, cpio_newc
+│   │   ├── drivers/             # ata, pci, serial, kbd, acpi, ...
+│   │   ├── arch/                # cpu, gdt, idt, context, usermode
+│   │   ├── kernel/              # sched, process, panic, exec, elf64
+│   │   ├── lib/                 # string, printk helpers, rbtree, locks
+│   │   └── user/                # fd, syscall, usercopy
 └── tests/
     └── host/                    # host-only unit tests for lib/
         ├── Makefile
@@ -924,7 +922,7 @@ memory management, full panic with backtrace, selftests.
     `write(lba, count, buf)` (no-op in v0.0.1), `ioctl` (placeholder).
   - `block_register(struct block_device *)`,
     `block_lookup(const char *name)`.
-- `kernel/include/jnu/chardev.h` and minimal use in `kbd.c`,
+- `include/jnu/drivers/chardev.h` and minimal use in `kbd.c`,
   `serial.c`. Char device API: `read(buf, len)`, `poll()`.
 - Per-driver selftests where they make sense:
   - `pci_selftest`: assert at least one device was enumerated (the

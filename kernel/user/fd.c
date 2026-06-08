@@ -21,11 +21,11 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/errno.h>
-#include <jnu/fd.h>
-#include <jnu/mutex.h>
-#include <jnu/kmalloc.h>
-#include <jnu/string.h>
+#include <jnu/lib/mutex.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/kmalloc.h>
+#include <jnu/user/fd.h>
+#include <uapi/jnu/errno.h>
 
 static void file_destroy(struct file *file)
 {
@@ -129,7 +129,8 @@ void file_put(struct file *file)
 	if (!file) {
 		return;
 	}
-	/* Uses __atomic_sub_fetch to decrement refcount and return the new value safely */
+	/* Uses __atomic_sub_fetch to decrement refcount and return the new
+	 * value safely */
 	if (__atomic_sub_fetch(&file->refcount, 1, __ATOMIC_SEQ_CST) > 0) {
 		return;
 	}

@@ -8,10 +8,10 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/acpi.h>
-#include <jnu/paging.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/acpi.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/paging.h>
 
 static uint64_t acpi_hhdm;
 static const struct acpi_rsdp *cached_rsdp;

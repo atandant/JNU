@@ -5,15 +5,15 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/errno.h>
-#include <jnu/fd.h>
-#include <jnu/kmalloc.h>
-#include <jnu/panic.h>
-#include <jnu/process.h>
-#include <jnu/sched.h>
-#include <jnu/spinlock.h>
-#include <jnu/types.h>
-#include <jnu/vmm.h>
+#include <jnu/base/types.h>
+#include <jnu/kernel/panic.h>
+#include <jnu/kernel/process.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/lib/spinlock.h>
+#include <jnu/mm/kmalloc.h>
+#include <jnu/mm/vmm.h>
+#include <jnu/user/fd.h>
+#include <uapi/jnu/errno.h>
 
 static int next_pid = 1;
 /*

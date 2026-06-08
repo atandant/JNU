@@ -33,15 +33,15 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/apic.h>
-#include <jnu/cpu.h>
-#include <jnu/errno.h>
-#include <jnu/idt.h>
-#include <jnu/klog.h>
-#include <jnu/lapic_timer.h>
-#include <jnu/panic.h>
-#include <jnu/sched.h>
-#include <jnu/types.h>
+#include <jnu/arch/cpu.h>
+#include <jnu/arch/idt.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/apic.h>
+#include <jnu/drivers/lapic_timer.h>
+#include <jnu/kernel/panic.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/lib/klog.h>
+#include <uapi/jnu/errno.h>
 
 /* LAPIC register offsets (bytes from MMIO base). */
 #define LAPIC_REG_LVT_TIMER 0x320

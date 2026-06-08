@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/syscall.h>
-#include <jnu/usercopy.h>
+#include <jnu/user/syscall.h>
+#include <jnu/user/usercopy.h>
 
 int syscall_copy_path(char *dst, const char *upath)
 {

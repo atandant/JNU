@@ -13,14 +13,14 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/cpu.h>
-#include <jnu/errno.h>
-#include <jnu/rtc.h>
-#include <jnu/syscall.h>
-#include <jnu/types.h>
-#include <jnu/usercopy.h>
+#include <jnu/arch/cpu.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/rtc.h>
+#include <jnu/user/syscall.h>
+#include <jnu/user/usercopy.h>
+#include <uapi/jnu/errno.h>
 
-#define CLOCK_REALTIME  0
+#define CLOCK_REALTIME 0
 #define CLOCK_MONOTONIC 1
 
 struct timespec {
@@ -35,9 +35,8 @@ struct timespec {
  */
 static int64_t tm_to_epoch(const struct tm *t)
 {
-	static const uint16_t mdays[] = {
-		0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334
-	};
+	static const uint16_t mdays[] = {0,   31,  59,	90,  120, 151,
+					 181, 212, 243, 273, 304, 334};
 	int64_t y = t->year;
 	int64_t m = t->month;
 	int64_t d = t->day;
@@ -55,8 +54,7 @@ static int64_t tm_to_epoch(const struct tm *t)
 	}
 	days += d - 1;
 
-	return days * 86400ll + t->hour * 3600ll + t->minute * 60ll +
-	       t->second;
+	return days * 86400ll + t->hour * 3600ll + t->minute * 60ll + t->second;
 }
 
 int64_t sys_clock_gettime(int clockid, void *utp)

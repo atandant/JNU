@@ -10,19 +10,19 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/compiler.h>
-#include <jnu/errno.h>
-#include <jnu/klog.h>
-#include <jnu/kmalloc.h>
-#include <jnu/mman.h>
-#include <jnu/paging.h>
-#include <jnu/pmm.h>
-#include <jnu/prng.h>
-#include <jnu/rbtree.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
-#include <jnu/vma.h>
-#include <jnu/vmm.h>
+#include <jnu/base/compiler.h>
+#include <jnu/base/types.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/prng.h>
+#include <jnu/lib/rbtree.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/kmalloc.h>
+#include <jnu/mm/paging.h>
+#include <jnu/mm/pmm.h>
+#include <jnu/mm/vma.h>
+#include <jnu/mm/vmm.h>
+#include <uapi/jnu/errno.h>
+#include <uapi/jnu/mman.h>
 
 static struct addr_space kernel_space;
 
@@ -199,9 +199,9 @@ int vmm_handle_cow_fault(struct addr_space *space, vaddr_t va)
 		uint64_t lock_flags = pmm_lock_acquire();
 
 		if (pmm_user_refcount_locked(old_pa) == 1) {
-			err = paging_protect(
-			    space, va, 1,
-			    (old_pte & PTE_USER) | PTE_WRITE | PTE_NX);
+			err = paging_protect(space, va, 1,
+					     (old_pte & PTE_USER) | PTE_WRITE |
+						 PTE_NX);
 			pmm_lock_release(lock_flags);
 			if (err) {
 				return err;

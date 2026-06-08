@@ -13,14 +13,14 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/acpi.h>
-#include <jnu/apic.h>
-#include <jnu/compiler.h>
-#include <jnu/cpu.h>
-#include <jnu/klog.h>
-#include <jnu/paging.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
+#include <jnu/arch/cpu.h>
+#include <jnu/base/compiler.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/acpi.h>
+#include <jnu/drivers/apic.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/paging.h>
 
 /* ------------------------------------------------------------------------- */
 /* HHDM helpers                                                               */

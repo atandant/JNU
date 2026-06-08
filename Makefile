@@ -44,13 +44,15 @@ ATA_DISK       := $(BUILD)/disk.img
 
 LIMINE_DIR     := boot/limine
 FONT_HDR       := $(GENERATED_INC)/jnu/generated/font_data.h
+UAPI_HDR       := user/libjnu/include/jnu_syscall.h
+UAPI_SRC       := include/uapi/jnu/syscall_nr.h include/uapi/jnu/stat.h
 
 USER_PROGRAM_SRCS := $(shell find user -mindepth 2 -maxdepth 2 -name main.c \
     ! -path 'user/libjnu/*' ! -path 'user/musl/*' ! -path 'user/musltest/*' 2>/dev/null | sort)
 USER_LIBJNU_C_SRCS := $(shell find user/libjnu -maxdepth 1 -name '*.c' 2>/dev/null | sort)
 USER_LIBJNU_ASM_SRCS := user/libjnu/crt0.S user/libjnu/syscall.S
-USER_BUILD_DEPS := scripts/build-user.sh $(USER_PROGRAM_SRCS) $(USER_LIBJNU_C_SRCS) \
-    $(USER_LIBJNU_ASM_SRCS) user/libjnu/include/jnu_syscall.h
+USER_BUILD_DEPS := scripts/build-user.sh scripts/gen-uapi.sh $(USER_PROGRAM_SRCS) \
+    $(USER_LIBJNU_C_SRCS) $(USER_LIBJNU_ASM_SRCS) $(UAPI_HDR) $(UAPI_SRC)
 
 # ---- flags ------------------------------------------------------------------
 
@@ -75,7 +77,7 @@ KERNEL_CFLAGS := \
     -O2 -g3 \
     -nostdinc \
     -I$(GENERATED_INC) \
-    -Ikernel/include \
+    -Iinclude \
     -I$(LIMINE_DIR)
 
 NASMFLAGS := -f elf64 -F dwarf -g
@@ -218,7 +220,8 @@ OBJS := $(S_OBJS) $(C_OBJS) $(BUILDINFO_OBJ)
 # ---- top-level --------------------------------------------------------------
 
 .PHONY: all help doctor bootstrap bootstrap-limine check-limine iso iso-musl \
-    kernel user musltest initramfs font ata-disk vmware-disk docs format clean clean-disk \
+    kernel user musltest initramfs font ata-disk vmware-disk docs format uapi \
+    check-uapi clean clean-disk \
     distclean run run-disk run-virtio debug debug-disk list-user-programs FORCE
 
 all: iso
@@ -239,6 +242,8 @@ help:
 	  '  make musltest           Build optional musl-linked test program.' \
 	  '  make iso-musl           Build ISO including musltest.' \
 	  '  make docs               Build Sphinx HTML docs.' \
+	  '  make uapi               Regenerate user/libjnu/include/jnu_syscall.h.' \
+	  '  make check-uapi         Verify jnu_syscall.h matches UAPI source.' \
 	  '  make clean              Remove reproducible build outputs, keep disk.img.' \
 	  '  make distclean          Remove build outputs, disk image, and Limine.'
 
@@ -298,9 +303,19 @@ docs:
 	$(MAKE) -C docs html SPHINXBUILD=$(SPHINXBUILD)
 
 format:
-	clang-format -i $(C_SRCS) $(wildcard kernel/include/jnu/*.h) $(wildcard user/libjnu/*.c user/*/*.c)
+	clang-format -i $(C_SRCS) \
+	    $(shell find include -name '*.h' 2>/dev/null) \
+	    $(wildcard user/libjnu/*.c user/*/*.c)
+
+uapi: $(UAPI_HDR)
+
+check-uapi: $(UAPI_HDR)
+	@bash scripts/check-uapi-sync.sh
 
 # ---- build rules ------------------------------------------------------------
+
+$(UAPI_HDR): scripts/gen-uapi.sh $(UAPI_SRC)
+	@bash scripts/gen-uapi.sh $@
 
 $(FONT_HDR): scripts/gen-font.py
 	@mkdir -p $(dir $@)
@@ -359,7 +374,8 @@ $(KERNEL_ISO_MUSL): $(KERNEL_ELF) $(INITRAMFS_MUSL) boot/limine.cfg | check-limi
 	@bash scripts/make-image.sh "$(KERNEL_ELF)" "boot/limine.cfg" \
 	    "$(LIMINE_DIR)" "$(ISO_ROOT_MUSL)" "$@" "$(INITRAMFS_MUSL)"
 
-$(ATA_DISK): $(USER_INIT) scripts/make-ata-disk.sh scripts/inject-file.py
+$(ATA_DISK): $(USER_INIT) scripts/make-ata-disk.sh scripts/inject-file.py \
+    scripts/install-headers.sh
 	@bash scripts/make-ata-disk.sh "$@" "$(SIZE)"
 
 # ---- run / debug ------------------------------------------------------------

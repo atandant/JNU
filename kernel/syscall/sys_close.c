@@ -5,11 +5,11 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/errno.h>
-#include <jnu/fd.h>
-#include <jnu/process.h>
-#include <jnu/sched.h>
-#include <jnu/syscall.h>
+#include <jnu/kernel/process.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/user/fd.h>
+#include <jnu/user/syscall.h>
+#include <uapi/jnu/errno.h>
 
 int64_t sys_close(int fd)
 {

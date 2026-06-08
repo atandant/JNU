@@ -12,12 +12,12 @@
  * practice to me not gonna lie.
  */
 
-#include <jnu/errno.h>
-#include <jnu/fd.h>
-#include <jnu/process.h>
-#include <jnu/sched.h>
-#include <jnu/syscall.h>
-#include <jnu/vfs.h>
+#include <jnu/fs/vfs.h>
+#include <jnu/kernel/process.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/user/fd.h>
+#include <jnu/user/syscall.h>
+#include <uapi/jnu/errno.h>
 
 int64_t sys_creat(const char *upath, int mode)
 {

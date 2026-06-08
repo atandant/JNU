@@ -9,29 +9,29 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/ata.h>
-#include <jnu/cpu.h>
-#include <jnu/elf64.h>
-#include <jnu/fd.h>
-#include <jnu/initramfs.h>
-#include <jnu/klog.h>
-#include <jnu/lapic_timer.h>
-#include <jnu/minix.h>
-#include <jnu/pci.h>
-#include <jnu/pmm.h>
-#include <jnu/process.h>
-#include <jnu/rbtree.h>
-#include <jnu/sched.h>
-#include <jnu/selftest.h>
-#include <jnu/slab.h>
-#include <jnu/spinlock.h>
-#include <jnu/mutex.h>
-#include <jnu/syscall.h>
-#include <jnu/types.h>
-#include <jnu/usercopy.h>
-#include <jnu/vfs.h>
-#include <jnu/vmm.h>
-#include <jnu/virtio_blk.h>
+#include <jnu/arch/cpu.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/ata.h>
+#include <jnu/drivers/lapic_timer.h>
+#include <jnu/drivers/pci.h>
+#include <jnu/drivers/virtio_blk.h>
+#include <jnu/fs/initramfs.h>
+#include <jnu/fs/minix.h>
+#include <jnu/fs/vfs.h>
+#include <jnu/kernel/elf64.h>
+#include <jnu/kernel/process.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/kernel/selftest.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/mutex.h>
+#include <jnu/lib/rbtree.h>
+#include <jnu/lib/spinlock.h>
+#include <jnu/mm/pmm.h>
+#include <jnu/mm/slab.h>
+#include <jnu/mm/vmm.h>
+#include <jnu/user/fd.h>
+#include <jnu/user/syscall.h>
+#include <jnu/user/usercopy.h>
 
 static const struct selftest tests[] = {
     {"spinlock", spinlock_selftest},

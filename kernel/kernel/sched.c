@@ -8,21 +8,21 @@
  * I'd prefer if we did it in another meaningful time.
  */
 
-#include <jnu/arch_syscall.h>
-#include <jnu/cpu.h>
-#include <jnu/errno.h>
-#include <jnu/gdt.h>
-#include <jnu/klog.h>
-#include <jnu/kmalloc.h>
-#include <jnu/paging.h>
-#include <jnu/pmm.h>
-#include <jnu/process.h>
-#include <jnu/sched.h>
-#include <jnu/spinlock.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
-#include <jnu/usermode.h>
-#include <jnu/vmm.h>
+#include <jnu/arch/arch_syscall.h>
+#include <jnu/arch/cpu.h>
+#include <jnu/arch/gdt.h>
+#include <jnu/arch/usermode.h>
+#include <jnu/base/types.h>
+#include <jnu/kernel/process.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/spinlock.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/kmalloc.h>
+#include <jnu/mm/paging.h>
+#include <jnu/mm/pmm.h>
+#include <jnu/mm/vmm.h>
+#include <uapi/jnu/errno.h>
 
 #define KSTACK_ORDER 2
 #define KSTACK_SIZE PMM_ORDER_SIZE(KSTACK_ORDER)

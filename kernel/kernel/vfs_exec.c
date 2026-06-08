@@ -8,12 +8,12 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/elf64.h>
-#include <jnu/exec.h>
-#include <jnu/types.h>
-#include <jnu/vfs.h>
+#include <jnu/base/types.h>
+#include <jnu/fs/vfs.h>
+#include <jnu/kernel/elf64.h>
+#include <jnu/kernel/exec.h>
 
-#include <jnu/execprot.h>
+#include <jnu/kernel/execprot.h>
 
 /*
  * vfs_exec_read - exec_image read_at callback backed by VFS.

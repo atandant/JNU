@@ -12,11 +12,11 @@
 
 #include "internal.h"
 
-#include <jnu/errno.h>
-#include <jnu/klog.h>
-#include <jnu/minix.h>
-#include <jnu/panic.h>
-#include <jnu/string.h>
+#include <jnu/fs/minix.h>
+#include <jnu/kernel/panic.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/string.h>
+#include <uapi/jnu/errno.h>
 
 #define MINIX_BITS_PER_BLOCK (MINIX_BLOCK_SIZE * 8)
 #define BITMAP_SELFTEST_BLOCKS 8
@@ -36,8 +36,9 @@ static void minix_clear_bit(uint8_t *map, uint32_t bit)
 	map[bit / 8] = (uint8_t)(map[bit / 8] & (uint8_t)~(1u << (bit % 8)));
 }
 
-static uint32_t minix_alloc_from_map(struct vfs_mount *mnt, uint32_t start_block,
-				     uint32_t blocks, uint32_t limit)
+static uint32_t minix_alloc_from_map(struct vfs_mount *mnt,
+				     uint32_t start_block, uint32_t blocks,
+				     uint32_t limit)
 {
 	for (uint32_t blk = 0; blk < blocks; blk++) {
 		struct minix_buffer *buf;
@@ -118,9 +119,9 @@ uint32_t minix_alloc_zone(struct vfs_mount *mnt)
 	uint32_t zidx;
 
 	mutex_lock(&priv->bitmap_lock);
-	zidx = minix_alloc_from_map(mnt, 2 + priv->sb.s_imap_blocks,
-				    priv->sb.s_zmap_blocks,
-				    priv->sb.s_nzones - priv->sb.s_firstdatazone);
+	zidx = minix_alloc_from_map(
+	    mnt, 2 + priv->sb.s_imap_blocks, priv->sb.s_zmap_blocks,
+	    priv->sb.s_nzones - priv->sb.s_firstdatazone);
 	if (zidx == 0) {
 		mutex_unlock(&priv->bitmap_lock);
 		return 0;
@@ -144,7 +145,8 @@ void minix_free_zone(struct vfs_mount *mnt, uint32_t zone)
 	mutex_unlock(&priv->bitmap_lock);
 }
 
-static uint8_t bitmap_selftest_storage[BITMAP_SELFTEST_BLOCKS][MINIX_BLOCK_SIZE];
+static uint8_t bitmap_selftest_storage[BITMAP_SELFTEST_BLOCKS]
+				      [MINIX_BLOCK_SIZE];
 
 static int bitmap_selftest_read(struct block_device *bdev, uint64_t lba,
 				size_t count, void *buf)

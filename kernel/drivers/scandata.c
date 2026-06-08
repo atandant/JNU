@@ -13,9 +13,9 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/keycode.h>
-#include <jnu/scandata.h>
-#include <jnu/types.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/keycode.h>
+#include <jnu/drivers/scandata.h>
 
 /* ------------------------------------------------------------------ */
 /* Scancode set 1 → keycode (regular, no 0xE0 prefix)                 */

@@ -55,6 +55,10 @@ if command -v mkfs.minix &>/dev/null; then
                 python3 scripts/inject-file.py "$OUT" "$name" "@$prog"
             done
         fi
+        if [ -x scripts/install-headers.sh ]; then
+            echo "ata-disk: installing /usr/include headers..."
+            bash scripts/install-headers.sh "$OUT"
+        fi
     fi
 else
     echo "ata-disk: mkfs.minix not found — image has signature only (no FS)"

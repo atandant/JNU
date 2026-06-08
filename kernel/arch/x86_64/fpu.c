@@ -18,12 +18,12 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/cpu.h>
-#include <jnu/klog.h>
-#include <jnu/panic.h>
-#include <jnu/sched.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
+#include <jnu/arch/cpu.h>
+#include <jnu/base/types.h>
+#include <jnu/kernel/panic.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/string.h>
 
 /* Use-xsave flag cached at boot so save/restore are branchless-ish. */
 static bool use_xsave;

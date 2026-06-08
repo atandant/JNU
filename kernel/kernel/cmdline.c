@@ -10,9 +10,9 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/cmdline.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
+#include <jnu/base/types.h>
+#include <jnu/kernel/cmdline.h>
+#include <jnu/lib/string.h>
 
 #define CMDLINE_BUF_SIZE 1024
 

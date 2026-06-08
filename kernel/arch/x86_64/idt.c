@@ -17,13 +17,13 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/apic.h>
-#include <jnu/compiler.h>
-#include <jnu/gdt.h>
-#include <jnu/idt.h>
-#include <jnu/klog.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
+#include <jnu/arch/gdt.h>
+#include <jnu/arch/idt.h>
+#include <jnu/base/compiler.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/apic.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/string.h>
 
 extern uint64_t isr_table[256];
 

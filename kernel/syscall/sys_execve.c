@@ -5,9 +5,9 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/errno.h>
-#include <jnu/exec.h>
-#include <jnu/syscall.h>
+#include <jnu/kernel/exec.h>
+#include <jnu/user/syscall.h>
+#include <uapi/jnu/errno.h>
 
 int64_t sys_execve(const struct syscall_args *args)
 {
@@ -21,9 +21,9 @@ int64_t sys_execve(const struct syscall_args *args)
 		return -EINVAL;
 	}
 
-	err = process_execve((const char *)args->arg0,
-			     (char *const *)args->arg1,
-			     (char *const *)args->arg2, &entry, &stack);
+	err =
+	    process_execve((const char *)args->arg0, (char *const *)args->arg1,
+			   (char *const *)args->arg2, &entry, &stack);
 	if (err) {
 		return err;
 	}

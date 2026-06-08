@@ -9,11 +9,11 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/block.h>
-#include <jnu/errno.h>
-#include <jnu/klog.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
+#include <jnu/base/types.h>
+#include <jnu/fs/block.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/string.h>
+#include <uapi/jnu/errno.h>
 
 #define MAX_BLOCK_DEVICES 8
 

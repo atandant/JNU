@@ -12,12 +12,12 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/cpu.h>
-#include <jnu/io.h>
-#include <jnu/klog.h>
-#include <jnu/panic.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
+#include <jnu/arch/cpu.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/io.h>
+#include <jnu/kernel/panic.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/string.h>
 
 static struct cpu boot_cpu;
 
@@ -160,7 +160,7 @@ void cpu_init(void)
 #define PIT_CH2 0x42
 #define PORT_NMI_SC 0x61
 
-#include <jnu/hpet.h>
+#include <jnu/drivers/hpet.h>
 
 static void calibrate_tsc_hpet(void)
 {

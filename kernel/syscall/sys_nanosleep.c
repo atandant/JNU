@@ -9,12 +9,12 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/cpu.h>
-#include <jnu/errno.h>
-#include <jnu/sched.h>
-#include <jnu/syscall.h>
-#include <jnu/types.h>
-#include <jnu/usercopy.h>
+#include <jnu/arch/cpu.h>
+#include <jnu/base/types.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/user/syscall.h>
+#include <jnu/user/usercopy.h>
+#include <uapi/jnu/errno.h>
 
 struct timespec {
 	int64_t tv_sec;
@@ -40,8 +40,8 @@ int64_t sys_nanosleep(const void *ureq, void *urem)
 	}
 
 	/* Convert to microseconds for TSC comparison. */
-	us_target = (uint64_t)req.tv_sec * 1000000ull +
-		    (uint64_t)req.tv_nsec / 1000ull;
+	us_target =
+	    (uint64_t)req.tv_sec * 1000000ull + (uint64_t)req.tv_nsec / 1000ull;
 
 	if (us_target == 0) {
 		return 0;

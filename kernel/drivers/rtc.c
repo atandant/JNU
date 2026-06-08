@@ -16,10 +16,10 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/io.h>
-#include <jnu/klog.h>
-#include <jnu/rtc.h>
-#include <jnu/types.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/io.h>
+#include <jnu/drivers/rtc.h>
+#include <jnu/lib/klog.h>
 
 #define CMOS_ADDR 0x70
 #define CMOS_DATA 0x71

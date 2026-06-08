@@ -30,8 +30,9 @@ int main(void)
 		printf("musltest: creat failed\n");
 		return 1;
 	}
-	failed |= check(write(fd, msg, sizeof(msg) - 1) == (ssize_t)sizeof(msg) - 1,
-			"write");
+	failed |=
+	    check(write(fd, msg, sizeof(msg) - 1) == (ssize_t)sizeof(msg) - 1,
+		  "write");
 	failed |= check(fsync(fd) == 0, "fsync");
 	failed |= check(ftruncate(fd, 5) == 0, "ftruncate");
 	failed |= check(close(fd) == 0, "close created file");

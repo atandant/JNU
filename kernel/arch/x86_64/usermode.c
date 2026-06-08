@@ -5,14 +5,14 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/arch_syscall.h>
-#include <jnu/cpu.h>
-#include <jnu/errno.h>
-#include <jnu/gdt.h>
-#include <jnu/sched.h>
-#include <jnu/syscall.h>
-#include <jnu/types.h>
-#include <jnu/usermode.h>
+#include <jnu/arch/arch_syscall.h>
+#include <jnu/arch/cpu.h>
+#include <jnu/arch/gdt.h>
+#include <jnu/arch/usermode.h>
+#include <jnu/base/types.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/user/syscall.h>
+#include <uapi/jnu/errno.h>
 
 int usermode_enter(uint64_t entry, uint64_t stack)
 {
@@ -23,14 +23,13 @@ int usermode_enter(uint64_t entry, uint64_t stack)
 		return -EINVAL;
 	}
 
-	__asm__ __volatile__(
-	    "mov %0, %%ds\n\t"
-	    "mov %0, %%es\n\t"
-	    "mov %0, %%fs\n\t"
-	    "mov %0, %%gs\n\t"
-	    :
-	    : "r"(user_ds)
-	    : "memory");
+	__asm__ __volatile__("mov %0, %%ds\n\t"
+			     "mov %0, %%es\n\t"
+			     "mov %0, %%fs\n\t"
+			     "mov %0, %%gs\n\t"
+			     :
+			     : "r"(user_ds)
+			     : "memory");
 
 	arch_syscall_install_user_gs();
 	if (t) {
@@ -84,40 +83,39 @@ int usermode_enter_fork_frame(const struct syscall_frame *frame)
 	 * the cloned userspace stack and callee-saved registers coherent
 	 * for code that continues after fork().
 	 */
-	__asm__ __volatile__(
-	    "cli\n\t"
-	    "mov %[uds], %%ax\n\t"
-	    "mov %%ax, %%ds\n\t"
-	    "mov %%ax, %%es\n\t"
-	    "mov %%ax, %%fs\n\t"
-	    "mov %%ax, %%gs\n\t"
-	    "movq %[frame], %%rax\n\t"
-	    "pushq %[uds]\n\t"
-	    "pushq 72(%%rax)\n\t"
-	    "pushq 56(%%rax)\n\t"
-	    "orq $0x202, (%%rsp)\n\t"
-	    "pushq %[ucs]\n\t"
-	    "pushq 64(%%rax)\n\t"
-	    "movq 120(%%rax), %%r15\n\t"
-	    "movq 112(%%rax), %%r14\n\t"
-	    "movq 104(%%rax), %%r13\n\t"
-	    "movq 80(%%rax), %%r12\n\t"
-	    "movq 96(%%rax), %%rbp\n\t"
-	    "movq 88(%%rax), %%rbx\n\t"
-	    "movq 8(%%rax), %%rdi\n\t"
-	    "movq 16(%%rax), %%rsi\n\t"
-	    "movq 24(%%rax), %%rdx\n\t"
-	    "movq 32(%%rax), %%r10\n\t"
-	    "movq 40(%%rax), %%r8\n\t"
-	    "movq 48(%%rax), %%r9\n\t"
-	    "movq 56(%%rax), %%r11\n\t"
-	    "movq 64(%%rax), %%rcx\n\t"
-	    "xor %%rax, %%rax\n\t"
-	    "iretq\n\t"
-	    :
-	    : [uds] "i"(GDT_USER_DS | 3), [ucs] "i"(GDT_USER_CS | 3),
-	      [frame] "r"(frame)
-	    : "memory");
+	__asm__ __volatile__("cli\n\t"
+			     "mov %[uds], %%ax\n\t"
+			     "mov %%ax, %%ds\n\t"
+			     "mov %%ax, %%es\n\t"
+			     "mov %%ax, %%fs\n\t"
+			     "mov %%ax, %%gs\n\t"
+			     "movq %[frame], %%rax\n\t"
+			     "pushq %[uds]\n\t"
+			     "pushq 72(%%rax)\n\t"
+			     "pushq 56(%%rax)\n\t"
+			     "orq $0x202, (%%rsp)\n\t"
+			     "pushq %[ucs]\n\t"
+			     "pushq 64(%%rax)\n\t"
+			     "movq 120(%%rax), %%r15\n\t"
+			     "movq 112(%%rax), %%r14\n\t"
+			     "movq 104(%%rax), %%r13\n\t"
+			     "movq 80(%%rax), %%r12\n\t"
+			     "movq 96(%%rax), %%rbp\n\t"
+			     "movq 88(%%rax), %%rbx\n\t"
+			     "movq 8(%%rax), %%rdi\n\t"
+			     "movq 16(%%rax), %%rsi\n\t"
+			     "movq 24(%%rax), %%rdx\n\t"
+			     "movq 32(%%rax), %%r10\n\t"
+			     "movq 40(%%rax), %%r8\n\t"
+			     "movq 48(%%rax), %%r9\n\t"
+			     "movq 56(%%rax), %%r11\n\t"
+			     "movq 64(%%rax), %%rcx\n\t"
+			     "xor %%rax, %%rax\n\t"
+			     "iretq\n\t"
+			     :
+			     : [uds] "i"(GDT_USER_DS | 3),
+			       [ucs] "i"(GDT_USER_CS | 3), [frame] "r"(frame)
+			     : "memory");
 
 	__builtin_unreachable();
 }

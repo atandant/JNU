@@ -11,11 +11,11 @@
 
 #include "internal.h"
 
-#include <jnu/errno.h>
-#include <jnu/klog.h>
-#include <jnu/minix.h>
-#include <jnu/rtc.h>
-#include <jnu/string.h>
+#include <jnu/drivers/rtc.h>
+#include <jnu/fs/minix.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/string.h>
+#include <uapi/jnu/errno.h>
 
 #define MINIX_MODE_REG 0100000
 #define MINIX_MODE_DIR 0040000
@@ -39,7 +39,8 @@ static int minix_clone_inode(struct vfs_inode *src, struct vfs_inode **out)
  * Returns:
  *   0 on success, negative errno on failure.
  */
-int minix_lookup(struct vfs_inode *dir, const char *name, struct vfs_inode **out)
+int minix_lookup(struct vfs_inode *dir, const char *name,
+		 struct vfs_inode **out)
 {
 	struct minix_inode_info *mi;
 	struct minix_priv *priv;
@@ -59,8 +60,8 @@ int minix_lookup(struct vfs_inode *dir, const char *name, struct vfs_inode **out
 		return minix_clone_inode(dir, out);
 
 	while (offset < size) {
-		uint32_t b = minix_bmap(dir->mnt, mi,
-					offset / MINIX_BLOCK_SIZE, false);
+		uint32_t b =
+		    minix_bmap(dir->mnt, mi, offset / MINIX_BLOCK_SIZE, false);
 		uint32_t chunk;
 
 		if (b == 0) {
@@ -76,9 +77,10 @@ int minix_lookup(struct vfs_inode *dir, const char *name, struct vfs_inode **out
 		if (chunk > MINIX_BLOCK_SIZE)
 			chunk = MINIX_BLOCK_SIZE;
 
-		for (uint32_t i = 0; i < chunk; i += sizeof(struct minix_dir_entry)) {
+		for (uint32_t i = 0; i < chunk;
+		     i += sizeof(struct minix_dir_entry)) {
 			struct minix_dir_entry *de =
-				(struct minix_dir_entry *)(buf->data + i);
+			    (struct minix_dir_entry *)(buf->data + i);
 			struct minix_raw_inode raw;
 			struct vfs_inode *inode;
 			char dename[MINIX_NAME_LEN + 1];
@@ -145,8 +147,8 @@ int minix_readdir(struct vfs_inode *dir, size_t index, struct vfs_dirent *out)
 	offset = 0;
 
 	while (offset < size) {
-		uint32_t b = minix_bmap(dir->mnt, mi,
-					offset / MINIX_BLOCK_SIZE, false);
+		uint32_t b =
+		    minix_bmap(dir->mnt, mi, offset / MINIX_BLOCK_SIZE, false);
 		struct minix_buffer *buf;
 		uint32_t chunk;
 
@@ -163,9 +165,10 @@ int minix_readdir(struct vfs_inode *dir, size_t index, struct vfs_dirent *out)
 		if (chunk > MINIX_BLOCK_SIZE)
 			chunk = MINIX_BLOCK_SIZE;
 
-		for (uint32_t i = 0; i < chunk; i += sizeof(struct minix_dir_entry)) {
+		for (uint32_t i = 0; i < chunk;
+		     i += sizeof(struct minix_dir_entry)) {
 			struct minix_dir_entry *de =
-				(struct minix_dir_entry *)(buf->data + i);
+			    (struct minix_dir_entry *)(buf->data + i);
 
 			if (de->inode == 0)
 				continue;
@@ -201,8 +204,8 @@ static int minix_find_dirent(struct vfs_inode *dir, const char *name,
 	uint32_t offset = 0;
 
 	while (offset < mi->raw.i_size) {
-		uint32_t b = minix_bmap(dir->mnt, mi,
-					offset / MINIX_BLOCK_SIZE, false);
+		uint32_t b =
+		    minix_bmap(dir->mnt, mi, offset / MINIX_BLOCK_SIZE, false);
 		struct minix_buffer *buf;
 		uint32_t chunk;
 
@@ -217,9 +220,10 @@ static int minix_find_dirent(struct vfs_inode *dir, const char *name,
 		if (chunk > MINIX_BLOCK_SIZE)
 			chunk = MINIX_BLOCK_SIZE;
 
-		for (uint32_t i = 0; i < chunk; i += sizeof(struct minix_dir_entry)) {
+		for (uint32_t i = 0; i < chunk;
+		     i += sizeof(struct minix_dir_entry)) {
 			struct minix_dir_entry *de =
-				(struct minix_dir_entry *)(buf->data + i);
+			    (struct minix_dir_entry *)(buf->data + i);
 			char dename[MINIX_NAME_LEN + 1];
 
 			if (de->inode == 0)
@@ -294,8 +298,8 @@ static int minix_add_dirent(struct vfs_inode *dir, const char *name,
 	memcpy(de.name, name, strlen(name));
 
 	while (offset < mi->raw.i_size) {
-		uint32_t b = minix_bmap(dir->mnt, mi,
-					offset / MINIX_BLOCK_SIZE, false);
+		uint32_t b =
+		    minix_bmap(dir->mnt, mi, offset / MINIX_BLOCK_SIZE, false);
 		struct minix_buffer *buf;
 		uint32_t chunk;
 
@@ -309,9 +313,10 @@ static int minix_add_dirent(struct vfs_inode *dir, const char *name,
 		chunk = mi->raw.i_size - offset;
 		if (chunk > MINIX_BLOCK_SIZE)
 			chunk = MINIX_BLOCK_SIZE;
-		for (uint32_t i = 0; i < chunk; i += sizeof(struct minix_dir_entry)) {
+		for (uint32_t i = 0; i < chunk;
+		     i += sizeof(struct minix_dir_entry)) {
 			struct minix_dir_entry *slot =
-				(struct minix_dir_entry *)(buf->data + i);
+			    (struct minix_dir_entry *)(buf->data + i);
 
 			if (slot->inode == 0) {
 				bufcache_put(buf);
@@ -615,7 +620,8 @@ int minix_rename(struct vfs_inode *old_dir, const char *old_name,
 	err = minix_get_raw_inode(old_dir->mnt, de.inode, &old_raw);
 	if (err)
 		return err;
-	err = minix_inode_from_raw(old_dir->mnt, de.inode, &old_raw, &old_inode);
+	err =
+	    minix_inode_from_raw(old_dir->mnt, de.inode, &old_raw, &old_inode);
 	if (err)
 		return err;
 
@@ -633,11 +639,13 @@ int minix_rename(struct vfs_inode *old_dir, const char *old_name,
 					  &replaced_raw);
 		if (err)
 			goto out_old_inode;
-		if (old_inode->is_dir && (replaced_raw.i_mode & MINIX_MODE_DIR) == 0) {
+		if (old_inode->is_dir &&
+		    (replaced_raw.i_mode & MINIX_MODE_DIR) == 0) {
 			err = -ENOTDIR;
 			goto out_old_inode;
 		}
-		if (!old_inode->is_dir && (replaced_raw.i_mode & MINIX_MODE_DIR) != 0) {
+		if (!old_inode->is_dir &&
+		    (replaced_raw.i_mode & MINIX_MODE_DIR) != 0) {
 			err = -EISDIR;
 			goto out_old_inode;
 		}
@@ -664,14 +672,16 @@ int minix_rename(struct vfs_inode *old_dir, const char *old_name,
 	err = minix_add_dirent(new_dir, new_name, de.inode);
 	if (err) {
 		if (had_replaced)
-			(void)minix_restore_dirent(new_dir, new_name, &replaced);
+			(void)minix_restore_dirent(new_dir, new_name,
+						   &replaced);
 		goto out_old_inode;
 	}
 	err = minix_zero_dirent(old_dir, old_name, &de);
 	if (err) {
 		(void)minix_zero_dirent(new_dir, new_name, NULL);
 		if (had_replaced)
-			(void)minix_restore_dirent(new_dir, new_name, &replaced);
+			(void)minix_restore_dirent(new_dir, new_name,
+						   &replaced);
 		goto out_old_inode;
 	}
 
@@ -689,7 +699,8 @@ int minix_rename(struct vfs_inode *old_dir, const char *old_name,
 		new_parent->dirty = true;
 	}
 	if (had_replaced) {
-		err = minix_free_tree_inode(new_dir, replaced.inode, &replaced_raw);
+		err = minix_free_tree_inode(new_dir, replaced.inode,
+					    &replaced_raw);
 		if (err)
 			goto out_old_inode;
 	}

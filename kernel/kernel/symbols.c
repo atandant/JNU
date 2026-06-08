@@ -17,8 +17,8 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/symbols.h>
-#include <jnu/types.h>
+#include <jnu/base/types.h>
+#include <jnu/kernel/symbols.h>
 
 const struct ksymbol jnu_symbols[] = {{0, ""}};
 

@@ -11,16 +11,16 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/block.h>
-#include <jnu/errno.h>
-#include <jnu/io.h>
-#include <jnu/klog.h>
-#include <jnu/paging.h>
-#include <jnu/pci.h>
-#include <jnu/pmm.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
-#include <jnu/virtio_blk.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/io.h>
+#include <jnu/drivers/pci.h>
+#include <jnu/drivers/virtio_blk.h>
+#include <jnu/fs/block.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/paging.h>
+#include <jnu/mm/pmm.h>
+#include <uapi/jnu/errno.h>
 
 #define VIRTIO_VENDOR_ID 0x1AF4u
 #define VIRTIO_DEV_BLK_MODERN 0x1042u
@@ -174,12 +174,10 @@ static int virtio_find_cap(const struct pci_device *pci, uint8_t cfg_type,
 		if (pci_cfg8(pci, ptr) == VIRTIO_PCI_CAP_VENDOR &&
 		    pci_cfg8(pci, (uint8_t)(ptr + 3)) == cfg_type) {
 			cap->bar = pci_cfg8(pci, (uint8_t)(ptr + 4));
-			cap->offset =
-			    pci_read_config_dword(pci->bus, pci->dev, pci->func,
-						  (uint8_t)(ptr + 8));
-			cap->length =
-			    pci_read_config_dword(pci->bus, pci->dev, pci->func,
-						  (uint8_t)(ptr + 12));
+			cap->offset = pci_read_config_dword(
+			    pci->bus, pci->dev, pci->func, (uint8_t)(ptr + 8));
+			cap->length = pci_read_config_dword(
+			    pci->bus, pci->dev, pci->func, (uint8_t)(ptr + 12));
 			return 0;
 		}
 		ptr = pci_cfg8(pci, (uint8_t)(ptr + 1));
@@ -248,14 +246,12 @@ static int virtio_map_notify(const struct pci_device *pci,
 
 			memset(&candidate, 0, sizeof(candidate));
 			cap.bar = pci_cfg8(pci, (uint8_t)(ptr + 4));
-			cap.offset =
-			    pci_read_config_dword(pci->bus, pci->dev, pci->func,
-						  (uint8_t)(ptr + 8));
-			cap.length =
-			    pci_read_config_dword(pci->bus, pci->dev, pci->func,
-						  (uint8_t)(ptr + 12));
-			mult = pci_read_config_dword(pci->bus, pci->dev,
-						     pci->func, (uint8_t)(ptr + 16));
+			cap.offset = pci_read_config_dword(
+			    pci->bus, pci->dev, pci->func, (uint8_t)(ptr + 8));
+			cap.length = pci_read_config_dword(
+			    pci->bus, pci->dev, pci->func, (uint8_t)(ptr + 12));
+			mult = pci_read_config_dword(
+			    pci->bus, pci->dev, pci->func, (uint8_t)(ptr + 16));
 			if (mult == 0)
 				goto next_cap;
 
@@ -291,7 +287,7 @@ static int virtio_map_notify(const struct pci_device *pci,
 				}
 			}
 		}
-next_cap:
+	next_cap:
 		ptr = pci_cfg8(pci, (uint8_t)(ptr + 1));
 	}
 
@@ -322,8 +318,8 @@ static size_t virtq_bytes(uint16_t qsize)
 	size_t avail_sz =
 	    sizeof(struct virtq_avail_hdr) + sizeof(uint16_t) * qsize;
 	size_t used_off = (desc_sz + avail_sz + 3u) & ~3u;
-	size_t used_sz =
-	    sizeof(struct virtq_used_hdr) + sizeof(struct virtq_used_elem) * qsize;
+	size_t used_sz = sizeof(struct virtq_used_hdr) +
+			 sizeof(struct virtq_used_elem) * qsize;
 
 	return used_off + used_sz;
 }
@@ -363,7 +359,8 @@ static int virtq_init(struct virtio_blk_dev *d, uint16_t qsize)
 	vq->mem_pa = pa;
 	vq->size = qsize;
 	vq->desc = (struct virtq_desc *)va;
-	vq->avail = (volatile struct virtq_avail_hdr *)((uint8_t *)va + desc_sz);
+	vq->avail =
+	    (volatile struct virtq_avail_hdr *)((uint8_t *)va + desc_sz);
 	used_off = (desc_sz + avail_sz + 3u) & ~3u;
 	vq->used_hdr =
 	    (volatile struct virtq_used_hdr *)((uint8_t *)va + used_off);
@@ -433,8 +430,9 @@ static int virtio_blk_submit(struct virtio_blk_dev *d, uint32_t type,
 	if (type != VIRTIO_BLK_T_FLUSH) {
 		desc[1].addr = (uint64_t)virt_to_phys(bounce);
 		desc[1].len = (uint32_t)bytes;
-		desc[1].flags = (uint16_t)(VIRTQ_DESC_F_NEXT |
-					   (data_write ? 0u : VIRTQ_DESC_F_WRITE));
+		desc[1].flags =
+		    (uint16_t)(VIRTQ_DESC_F_NEXT |
+			       (data_write ? 0u : VIRTQ_DESC_F_WRITE));
 		desc[1].next = 2;
 		ndesc = 2;
 	} else {
@@ -601,9 +599,9 @@ static int virtio_negotiate_features(volatile struct virtio_pci_common_cfg *c,
 	for (uint32_t sel = 2; sel < 4; sel++)
 		virtio_set_driver_feature(c, sel, 0);
 
-	c->device_status = (uint8_t)(VIRTIO_STATUS_ACKNOWLEDGE |
-				     VIRTIO_STATUS_DRIVER |
-				     VIRTIO_STATUS_FEATURES_OK);
+	c->device_status =
+	    (uint8_t)(VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER |
+		      VIRTIO_STATUS_FEATURES_OK);
 	__asm__ __volatile__("" ::: "memory");
 	if (!(c->device_status & VIRTIO_STATUS_FEATURES_OK))
 		return -EINVAL;
@@ -637,9 +635,9 @@ static int virtio_blk_setup(const struct pci_device *pci)
 				  (volatile void **)&m->common);
 	if (err)
 		return err;
-	err = virtio_map_mmio_cap(pci, &dev_cap,
-				  sizeof(struct virtio_blk_config),
-				  (volatile void **)&m->device_cfg);
+	err =
+	    virtio_map_mmio_cap(pci, &dev_cap, sizeof(struct virtio_blk_config),
+				(volatile void **)&m->device_cfg);
 	if (err)
 		return err;
 	err = virtio_map_notify(pci, &m->notify);
@@ -649,8 +647,8 @@ static int virtio_blk_setup(const struct pci_device *pci)
 	c = m->common;
 	c->device_status = 0;
 	c->device_status = VIRTIO_STATUS_ACKNOWLEDGE;
-	c->device_status = (uint8_t)(VIRTIO_STATUS_ACKNOWLEDGE |
-				     VIRTIO_STATUS_DRIVER);
+	c->device_status =
+	    (uint8_t)(VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER);
 
 	err = virtio_negotiate_features(c, &d->read_only);
 	if (err)
@@ -670,10 +668,9 @@ static int virtio_blk_setup(const struct pci_device *pci)
 	if (d->capacity == 0)
 		goto fail;
 
-	c->device_status = (uint8_t)(VIRTIO_STATUS_ACKNOWLEDGE |
-				     VIRTIO_STATUS_DRIVER |
-				     VIRTIO_STATUS_FEATURES_OK |
-				     VIRTIO_STATUS_DRIVER_OK);
+	c->device_status =
+	    (uint8_t)(VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER |
+		      VIRTIO_STATUS_FEATURES_OK | VIRTIO_STATUS_DRIVER_OK);
 
 	d->bdev.name = "vda";
 	d->bdev.sector_size = VIRTIO_BLK_SECTOR_SIZE;
@@ -718,7 +715,8 @@ int virtio_blk_selftest(void)
 	uint64_t test_lba;
 	uint8_t orig[VIRTIO_BLK_SECTOR_SIZE];
 	uint8_t verify[VIRTIO_BLK_SECTOR_SIZE];
-	static const uint8_t pattern[VIRTIO_BLK_SECTOR_SIZE] = {"JNU virtio test"};
+	static const uint8_t pattern[VIRTIO_BLK_SECTOR_SIZE] = {
+	    "JNU virtio test"};
 
 	if (!virtio_present) {
 		pr_info("virtio_blk_selftest: skipped (no device)\n");

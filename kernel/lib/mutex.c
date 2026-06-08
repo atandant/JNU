@@ -20,12 +20,12 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/errno.h>
-#include <jnu/klog.h>
-#include <jnu/mutex.h>
-#include <jnu/panic.h>
-#include <jnu/sched.h>
-#include <jnu/types.h>
+#include <jnu/base/types.h>
+#include <jnu/kernel/panic.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/mutex.h>
+#include <uapi/jnu/errno.h>
 
 /*
  * Per-waiter node.  Lives on the blocked task's kernel stack for the
@@ -56,8 +56,8 @@ void mutex_lock(struct mutex *m)
 	flags = spin_lock_irqsave(&m->guard);
 
 	if (m->owner == self) {
-		panic("mutex_lock: recursive acquire by tid=%d '%s'",
-		      self->tid, self->name ? self->name : "?");
+		panic("mutex_lock: recursive acquire by tid=%d '%s'", self->tid,
+		      self->name ? self->name : "?");
 	}
 
 	if (!m->owner) {
@@ -123,8 +123,7 @@ void mutex_unlock(struct mutex *m)
 
 	if (m->owner != self) {
 		panic("mutex_unlock: not owner (owner tid=%d, caller tid=%d)",
-		      m->owner ? m->owner->tid : -1,
-		      self ? self->tid : -1);
+		      m->owner ? m->owner->tid : -1, self ? self->tid : -1);
 	}
 
 	next = m->waiters_head;

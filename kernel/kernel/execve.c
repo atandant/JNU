@@ -9,18 +9,18 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/elf64.h>
-#include <jnu/errno.h>
-#include <jnu/exec.h>
-#include <jnu/initramfs.h>
-#include <jnu/kmalloc.h>
-#include <jnu/process.h>
-#include <jnu/sched.h>
-#include <jnu/string.h>
-#include <jnu/syscall.h>
-#include <jnu/usercopy.h>
-#include <jnu/vfs.h>
-#include <jnu/vmm.h>
+#include <jnu/fs/initramfs.h>
+#include <jnu/fs/vfs.h>
+#include <jnu/kernel/elf64.h>
+#include <jnu/kernel/exec.h>
+#include <jnu/kernel/process.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/kmalloc.h>
+#include <jnu/mm/vmm.h>
+#include <jnu/user/syscall.h>
+#include <jnu/user/usercopy.h>
+#include <uapi/jnu/errno.h>
 
 #define EXEC_MAX_TOTAL (64 * 1024)
 #define EXEC_MAX_STRINGS 256
@@ -66,10 +66,7 @@ static int open_exec_image(const char *path, struct exec_image *image,
 	return 0;
 }
 
-static void release_vector(char **vec)
-{
-	kfree(vec);
-}
+static void release_vector(char **vec) { kfree(vec); }
 
 static int charge_total(size_t *total, size_t add)
 {
@@ -81,8 +78,8 @@ static int charge_total(size_t *total, size_t add)
 }
 
 static int capture_vector(char *const *uvec, bool require_nonempty,
-			  char **storage, size_t *storage_used,
-			  size_t *total, char ***out_vec, size_t *out_count)
+			  char **storage, size_t *storage_used, size_t *total,
+			  char ***out_vec, size_t *out_count)
 {
 	char **vec;
 

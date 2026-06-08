@@ -21,16 +21,16 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/compiler.h>
-#include <jnu/errno.h>
-#include <jnu/klog.h>
-#include <jnu/kmalloc.h>
-#include <jnu/paging.h>
-#include <jnu/pmm.h>
-#include <jnu/rbtree.h>
-#include <jnu/string.h>
-#include <jnu/vma.h>
-#include <jnu/vmm.h>
+#include <jnu/base/compiler.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/rbtree.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/kmalloc.h>
+#include <jnu/mm/paging.h>
+#include <jnu/mm/pmm.h>
+#include <jnu/mm/vma.h>
+#include <jnu/mm/vmm.h>
+#include <uapi/jnu/errno.h>
 
 /*
  * Bits we propagate from the source PTE into the destination PTE.

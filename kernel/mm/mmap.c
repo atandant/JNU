@@ -9,16 +9,16 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/errno.h>
-#include <jnu/kmalloc.h>
-#include <jnu/mman.h>
-#include <jnu/paging.h>
-#include <jnu/pmm.h>
-#include <jnu/process.h>
-#include <jnu/sched.h>
-#include <jnu/types.h>
-#include <jnu/vma.h>
-#include <jnu/vmm.h>
+#include <jnu/base/types.h>
+#include <jnu/kernel/process.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/mm/kmalloc.h>
+#include <jnu/mm/paging.h>
+#include <jnu/mm/pmm.h>
+#include <jnu/mm/vma.h>
+#include <jnu/mm/vmm.h>
+#include <uapi/jnu/errno.h>
+#include <uapi/jnu/mman.h>
 
 /* ------------------------------------------------------------------------- */
 /* Helpers                                                                    */

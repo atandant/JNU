@@ -11,9 +11,9 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/panic.h>
-#include <jnu/spinlock.h>
-#include <jnu/types.h>
+#include <jnu/base/types.h>
+#include <jnu/kernel/panic.h>
+#include <jnu/lib/spinlock.h>
 
 void spin_lock_init(struct spinlock *lock) { lock->locked = 0; }
 

@@ -14,12 +14,12 @@
 
 #include "internal.h"
 
-#include <jnu/errno.h>
-#include <jnu/klog.h>
-#include <jnu/minix.h>
-#include <jnu/mutex.h>
-#include <jnu/sched.h>
-#include <jnu/string.h>
+#include <jnu/fs/minix.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/mutex.h>
+#include <jnu/lib/string.h>
+#include <uapi/jnu/errno.h>
 
 #define BUFCACHE_SLOTS 64
 #define BUFCACHE_DIRTY_LIMIT 48

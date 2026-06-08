@@ -11,18 +11,15 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/cpu.h>
-#include <jnu/errno.h>
-#include <jnu/process.h>
-#include <jnu/sched.h>
-#include <jnu/syscall.h>
-#include <jnu/types.h>
-#include <jnu/usercopy.h>
-
-#define ARCH_SET_GS 0x1001
-#define ARCH_SET_FS 0x1002
-#define ARCH_GET_FS 0x1003
-#define ARCH_GET_GS 0x1004
+#include <jnu/arch/cpu.h>
+#include <jnu/base/types.h>
+#include <jnu/kernel/process.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/user/syscall.h>
+#include <jnu/user/usercopy.h>
+#include <uapi/jnu/arch_prctl.h>
+#include <uapi/jnu/errno.h>
+#include <uapi/jnu/mman.h>
 
 int64_t sys_arch_prctl(int code, uint64_t addr)
 {

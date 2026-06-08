@@ -16,16 +16,16 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/compiler.h>
-#include <jnu/errno.h>
-#include <jnu/klog.h>
-#include <jnu/kmalloc.h>
-#include <jnu/paging.h>
-#include <jnu/panic.h>
-#include <jnu/pmm.h>
-#include <jnu/slab.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
+#include <jnu/base/compiler.h>
+#include <jnu/base/types.h>
+#include <jnu/kernel/panic.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/kmalloc.h>
+#include <jnu/mm/paging.h>
+#include <jnu/mm/pmm.h>
+#include <jnu/mm/slab.h>
+#include <uapi/jnu/errno.h>
 
 /* ------------------------------------------------------------------------- */
 /* Slab page header                                                           */

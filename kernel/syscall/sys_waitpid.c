@@ -5,10 +5,10 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/errno.h>
-#include <jnu/process.h>
-#include <jnu/syscall.h>
-#include <jnu/usercopy.h>
+#include <jnu/kernel/process.h>
+#include <jnu/user/syscall.h>
+#include <jnu/user/usercopy.h>
+#include <uapi/jnu/errno.h>
 
 int64_t sys_waitpid(int pid, int *ustatus)
 {

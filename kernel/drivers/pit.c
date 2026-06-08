@@ -16,12 +16,12 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/apic.h>
-#include <jnu/idt.h>
-#include <jnu/io.h>
-#include <jnu/klog.h>
-#include <jnu/pit.h>
-#include <jnu/types.h>
+#include <jnu/arch/idt.h>
+#include <jnu/base/types.h>
+#include <jnu/drivers/apic.h>
+#include <jnu/drivers/io.h>
+#include <jnu/drivers/pit.h>
+#include <jnu/lib/klog.h>
 
 /* 8254 PIT oscillator frequency: 1.193182 MHz. */
 #define PIT_BASE_HZ 1193182u

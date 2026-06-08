@@ -17,12 +17,12 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/compiler.h>
-#include <jnu/cpu.h>
-#include <jnu/klog.h>
-#include <jnu/spinlock.h>
-#include <jnu/string.h>
-#include <jnu/types.h>
+#include <jnu/arch/cpu.h>
+#include <jnu/base/compiler.h>
+#include <jnu/base/types.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/spinlock.h>
+#include <jnu/lib/string.h>
 
 /* Compile-time floor: messages with level > KLOG_BUILD_LEVEL are dropped. */
 #ifndef KLOG_BUILD_LEVEL

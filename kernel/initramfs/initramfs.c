@@ -9,11 +9,11 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/cpio_newc.h>
-#include <jnu/errno.h>
-#include <jnu/initramfs.h>
-#include <jnu/klog.h>
-#include <jnu/string.h>
+#include <jnu/fs/cpio_newc.h>
+#include <jnu/fs/initramfs.h>
+#include <jnu/lib/klog.h>
+#include <jnu/lib/string.h>
+#include <uapi/jnu/errno.h>
 
 static const void *initrd_base;
 static size_t initrd_len;

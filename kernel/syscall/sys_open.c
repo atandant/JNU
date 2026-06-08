@@ -5,16 +5,16 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <jnu/errno.h>
-#include <jnu/fd.h>
-#include <jnu/initramfs.h>
-#include <jnu/kbd.h>
-#include <jnu/kmalloc.h>
-#include <jnu/process.h>
-#include <jnu/sched.h>
-#include <jnu/string.h>
-#include <jnu/syscall.h>
-#include <jnu/vfs.h>
+#include <jnu/drivers/kbd.h>
+#include <jnu/fs/initramfs.h>
+#include <jnu/fs/vfs.h>
+#include <jnu/kernel/process.h>
+#include <jnu/kernel/sched.h>
+#include <jnu/lib/string.h>
+#include <jnu/mm/kmalloc.h>
+#include <jnu/user/fd.h>
+#include <jnu/user/syscall.h>
+#include <uapi/jnu/errno.h>
 
 #define JNU_O_ACCMODE 03
 #define JNU_O_RDONLY 00
