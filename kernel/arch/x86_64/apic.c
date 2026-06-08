@@ -390,8 +390,8 @@ void apic_init(uint64_t rsdp_phys, uint64_t hhdm_offset)
 		return;
 	}
 
-	/* Map the full MADT before walking its variable-length entries. */
-	paging_ensure_hhdm(virt_to_phys((void *)madt_h), madt_h->length);
+	/* acpi_find_table() has already mapped and checksummed the full
+	 * table, so its variable-length entries are safe to walk. */
 	parse_madt((const struct acpi_madt *)madt_h);
 
 	pr_info("apic: MADT: %u LAPIC%s, %u IOAPIC%s, %u override%s\n",

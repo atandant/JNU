@@ -15,8 +15,42 @@
 
 static uint64_t acpi_hhdm;
 static const struct acpi_rsdp *cached_rsdp;
+static bool acpi_initialised;
 
 static void *hhdm(uint64_t pa) { return (void *)(uintptr_t)(pa + acpi_hhdm); }
+
+/*
+ * Map a discovered SDT fully into the HHDM and validate it.
+ *
+ * Maps the header, then the full table length, and verifies both the
+ * signature (if `sig` is non-NULL) and the table checksum.  Returns a
+ * usable HHDM pointer to the whole table, or NULL if the table does not
+ * match or is corrupt.
+ */
+static const struct acpi_sdt_header *map_and_validate(uint64_t pa,
+						      const char *sig)
+{
+	if (!pa) {
+		return NULL;
+	}
+
+	paging_ensure_hhdm(pa, sizeof(struct acpi_sdt_header));
+	const struct acpi_sdt_header *t = hhdm(pa);
+
+	if (sig && memcmp(t->signature, sig, 4) != 0) {
+		return NULL;
+	}
+	if (t->length < sizeof(*t)) {
+		return NULL;
+	}
+
+	paging_ensure_hhdm(pa, t->length);
+	if (!acpi_checksum_ok(t, t->length)) {
+		return NULL;
+	}
+
+	return t;
+}
 
 bool acpi_checksum_ok(const void *p, size_t len)
 {
@@ -30,6 +64,16 @@ bool acpi_checksum_ok(const void *p, size_t len)
 
 void acpi_init(uint64_t rsdp_phys, uint64_t hhdm_offset)
 {
+	/*
+	 * Idempotent: the first successful call wins.  apic_init() and
+	 * hpet_init() each call this defensively so they remain
+	 * self-contained, but only the first call does any real work.
+	 */
+	if (acpi_initialised) {
+		return;
+	}
+	acpi_initialised = true;
+
 	acpi_hhdm = hhdm_offset;
 	cached_rsdp = NULL;
 
@@ -55,36 +99,37 @@ const struct acpi_sdt_header *acpi_find_table(const char *sig)
 	}
 
 	if (cached_rsdp->revision >= 2 && cached_rsdp->xsdt_address) {
-		paging_ensure_hhdm(cached_rsdp->xsdt_address,
-				   sizeof(struct acpi_sdt_header));
 		const struct acpi_sdt_header *xsdt =
-		    hhdm(cached_rsdp->xsdt_address);
-		paging_ensure_hhdm(cached_rsdp->xsdt_address, xsdt->length);
+		    map_and_validate(cached_rsdp->xsdt_address, "XSDT");
+		if (!xsdt) {
+			return NULL;
+		}
 		size_t n = (xsdt->length - sizeof(*xsdt)) / 8;
-		const uint64_t *ptrs =
-		    (const uint64_t *)((const uint8_t *)xsdt + sizeof(*xsdt));
+		const uint8_t *ptrs = (const uint8_t *)xsdt + sizeof(*xsdt);
 		for (size_t i = 0; i < n; i++) {
-			paging_ensure_hhdm(ptrs[i],
-					   sizeof(struct acpi_sdt_header));
-			const struct acpi_sdt_header *t = hhdm(ptrs[i]);
-			if (memcmp(t->signature, sig, 4) == 0) {
+			/* XSDT entries are only 4-byte aligned; copy out. */
+			uint64_t pa;
+			memcpy(&pa, ptrs + i * 8, sizeof(pa));
+			const struct acpi_sdt_header *t =
+			    map_and_validate(pa, sig);
+			if (t) {
 				return t;
 			}
 		}
 	} else if (cached_rsdp->rsdt_address) {
-		paging_ensure_hhdm(cached_rsdp->rsdt_address,
-				   sizeof(struct acpi_sdt_header));
 		const struct acpi_sdt_header *rsdt =
-		    hhdm(cached_rsdp->rsdt_address);
-		paging_ensure_hhdm(cached_rsdp->rsdt_address, rsdt->length);
+		    map_and_validate(cached_rsdp->rsdt_address, "RSDT");
+		if (!rsdt) {
+			return NULL;
+		}
 		size_t n = (rsdt->length - sizeof(*rsdt)) / 4;
-		const uint32_t *ptrs =
-		    (const uint32_t *)((const uint8_t *)rsdt + sizeof(*rsdt));
+		const uint8_t *ptrs = (const uint8_t *)rsdt + sizeof(*rsdt);
 		for (size_t i = 0; i < n; i++) {
-			paging_ensure_hhdm(ptrs[i],
-					   sizeof(struct acpi_sdt_header));
-			const struct acpi_sdt_header *t = hhdm(ptrs[i]);
-			if (memcmp(t->signature, sig, 4) == 0) {
+			uint32_t pa;
+			memcpy(&pa, ptrs + i * 4, sizeof(pa));
+			const struct acpi_sdt_header *t =
+			    map_and_validate(pa, sig);
+			if (t) {
 				return t;
 			}
 		}

@@ -105,6 +105,7 @@ KERNEL_DRIVER_SRCS := \
     kernel/drivers/pci.c \
     kernel/drivers/ata.c \
     kernel/drivers/acpi.c \
+    kernel/drivers/acpi_pm.c \
     kernel/drivers/hpet.c
 
 KERNEL_ARCH_X86_64_C_SRCS := \

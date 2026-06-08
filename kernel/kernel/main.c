@@ -25,6 +25,7 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
+#include <jnu/acpi.h>
 #include <jnu/apic.h>
 #include <jnu/arch_syscall.h>
 #include <jnu/ata.h>
@@ -464,6 +465,10 @@ void kernel_main(void)
 	/* HPET: high-precision reference counter for TSC calibration
 	 * and monotonic timing. Optional — falls back to PIT. */
 	hpet_init(rsdp_phys, hhdm);
+
+	/* ACPI power management: parse the FADT for reboot/poweroff and
+	 * the PM timer. Optional — reboot falls back to legacy methods. */
+	acpi_pm_init();
 
 	/* PIT timer: 100 Hz via IOAPIC. Must come before TSC calibration
 	 * if we ever switch cpu_calibrate_tsc to use PIT channel 0 IRQs

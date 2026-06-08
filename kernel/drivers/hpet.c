@@ -33,11 +33,7 @@
 struct __packed acpi_hpet {
 	struct acpi_sdt_header hdr;
 	uint32_t event_timer_block_id;
-	uint8_t address_space_id;
-	uint8_t register_bit_width;
-	uint8_t register_bit_offset;
-	uint8_t reserved1;
-	uint64_t address;
+	struct acpi_gas base_addr;
 	uint8_t hpet_number;
 	uint16_t minimum_tick;
 	uint8_t page_protection;
@@ -100,8 +96,8 @@ int hpet_init(uint64_t rsdp_phys, uint64_t hhdm_offset)
 		return -ENODEV;
 	}
 
-	paging_ensure_hhdm(virt_to_phys((void *)hdr), hdr->length);
-
+	/* acpi_find_table() has already mapped and checksummed the full
+	 * table; we only need to confirm it is large enough for us. */
 	if (hdr->length < sizeof(struct acpi_hpet)) {
 		pr_warn("hpet: ACPI HPET table truncated (length %u < %zu)\n",
 			hdr->length, sizeof(struct acpi_hpet));
@@ -110,14 +106,14 @@ int hpet_init(uint64_t rsdp_phys, uint64_t hhdm_offset)
 
 	const struct acpi_hpet *tbl = (const struct acpi_hpet *)hdr;
 
-	/* Only memory-mapped I/O (address_space_id == 0) is supported. */
-	if (tbl->address_space_id != 0) {
+	/* Only memory-mapped I/O is supported. */
+	if (tbl->base_addr.address_space_id != ACPI_ADDR_SPACE_MEM) {
 		pr_warn("hpet: non-MMIO address space (%u), skipping\n",
-			(unsigned)tbl->address_space_id);
+			(unsigned)tbl->base_addr.address_space_id);
 		return -ENODEV;
 	}
 
-	uint64_t base_phys = tbl->address;
+	uint64_t base_phys = tbl->base_addr.address;
 	if (!base_phys) {
 		pr_warn("hpet: MMIO base address is zero\n");
 		return -ENODEV;
