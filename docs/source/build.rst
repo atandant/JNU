@@ -49,7 +49,9 @@ MINIX v1 disk image; install ``util-linux`` on Debian/Ubuntu for that
 tool.
 
 Sphinx is only needed for ``make docs``. Musl is only needed for
-``make musltest`` or ``make iso-musl``.
+``make musltest`` or ``make iso-musl``. See :doc:`musl` for how to
+clone, configure, and install musl into ``user/musl/install/``
+(``git clone`` → ``configure`` → ``make install`` → ``make musltest``).
 
 Targets
 -------
@@ -67,11 +69,13 @@ Targets
    Build native userspace programs discovered as ``user/*/main.c``.
 
 ``make musltest``
-   Build the optional musl-linked test program. This expects musl to be
-   installed under ``user/musl/install``.
+   Build the optional musl-linked test program. Requires musl installed
+   under ``user/musl/install`` — see :doc:`musl`.
 
 ``make iso-musl``
-   Build ``build/kernel-musl.iso`` including ``musltest``.
+   Build ``build/kernel-musl.iso`` including ``musltest``. Boot with
+   ``scripts/run-qemu.sh --iso build/kernel-musl.iso``; attach
+   ``build/disk.img`` for full ``musltest`` file I/O (see :doc:`musl`).
 
 ``make ata-disk``
    Create ``build/disk.img``. Set ``SIZE=N`` to choose MiB size.

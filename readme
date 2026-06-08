@@ -118,6 +118,8 @@
 
         The default build uses native JNU userspace and does not require
         musl. Musl is optional and only used by make musltest / make iso-musl.
+        To build musl: clone into user/musl, configure with prefix=install
+        and --disable-shared, then make install — see docs/source/musl.rst.
 
     Makefile Targets:
         make help        : Shows the supported build interface.

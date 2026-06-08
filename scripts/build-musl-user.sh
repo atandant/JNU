@@ -25,7 +25,7 @@ out="$build/user/bin"
 
 if [ ! -f "$musl/lib/libc.a" ]; then
 	echo "build-musl-user.sh: $musl/lib/libc.a not found." >&2
-	echo "Build musl first: cd user/musl && ./configure ... && make && make install" >&2
+	echo "Build musl first — see docs/source/musl.rst" >&2
 	exit 1
 fi
 

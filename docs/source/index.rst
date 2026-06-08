@@ -6,6 +6,7 @@ JNU Kernel Internals Manual
    :caption: Setup and Build
 
    build
+   musl
 
 .. toctree::
    :maxdepth: 1
