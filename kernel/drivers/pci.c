@@ -188,10 +188,10 @@ const struct pci_device *pci_find_vendor(uint16_t vendor_id, uint16_t device_id)
 int pci_read_bar(const struct pci_device *dev, unsigned bar_idx,
 		 struct pci_bar_info *out)
 {
-	uint8_t bus = dev->bus;
-	uint8_t pci_dev = dev->dev;
-	uint8_t func = dev->func;
-	uint8_t off = (uint8_t)(0x10u + bar_idx * 4u);
+	uint8_t bus;
+	uint8_t pci_dev;
+	uint8_t func;
+	uint8_t off;
 	uint32_t orig_lo;
 	uint32_t orig_hi = 0;
 	uint32_t probe_lo;
@@ -200,6 +200,11 @@ int pci_read_bar(const struct pci_device *dev, unsigned bar_idx,
 
 	if (!dev || !out || bar_idx > 5)
 		return -EINVAL;
+
+	bus = dev->bus;
+	pci_dev = dev->dev;
+	func = dev->func;
+	off = (uint8_t)(0x10u + bar_idx * 4u);
 
 	orig_lo = pci_read_config_dword(bus, pci_dev, func, off);
 	if (orig_lo == 0)

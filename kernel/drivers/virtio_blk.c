@@ -5,6 +5,14 @@
  * sets up one polled virtqueue, and registers "vda" with the block
  * layer. Reads and writes use DMA bounce buffers in ZONE_DMA.
  *
+ * The single virtqueue is serialized with a per-device spinlock so the
+ * shared descriptor ring and request metadata cannot be corrupted by
+ * concurrent block-layer callers. If the device fails to complete a
+ * request within the poll budget the device is latched "dead": the
+ * request is still outstanding (the device may DMA into the bounce
+ * buffer at any later time), so that buffer is intentionally leaked
+ * rather than freed, and all subsequent I/O is rejected.
+ *
  * Reference: VirtIO 1.1/1.2 spec (block device, PCI transport).
  *
  * Copyright (c) 2026 The JNU Authors.
@@ -17,6 +25,7 @@
 #include <jnu/drivers/virtio_blk.h>
 #include <jnu/fs/block.h>
 #include <jnu/lib/klog.h>
+#include <jnu/lib/spinlock.h>
 #include <jnu/lib/string.h>
 #include <jnu/mm/paging.h>
 #include <jnu/mm/pmm.h>
@@ -55,6 +64,8 @@
 #define VIRTIO_BLK_SECTOR_SIZE 512u
 #define VIRTQ_SIZE 32u
 #define VIRTIO_PCI_CAP_MAX 256u
+
+#define VIRTIO_POLL_BUDGET 1000000u
 
 #define PAGE_DATA_BYTES PAGE_SIZE
 
@@ -153,7 +164,9 @@ struct virtio_blk_dev {
 	uint64_t capacity;
 	bool read_only;
 	struct block_device bdev;
+	struct spinlock lock;
 	bool ready;
+	bool dead;
 };
 
 static struct virtio_blk_dev blk_dev;
@@ -185,12 +198,19 @@ static int virtio_find_cap(const struct pci_device *pci, uint8_t cfg_type,
 	return -ENODEV;
 }
 
+/*
+ * Map `map_len` bytes of a capability's MMIO region into the HHDM.
+ * Fails (rather than silently mapping fewer bytes) if the BAR cannot
+ * satisfy the requested length, so callers never dereference past the
+ * mapped window.
+ */
 static int virtio_map_mmio_cap(const struct pci_device *pci,
 			       const struct virtio_pci_cap *cap, size_t map_len,
 			       volatile void **out)
 {
 	struct pci_bar_info bar;
 	uint64_t phys;
+	uint64_t avail;
 	size_t len;
 	int err;
 
@@ -198,18 +218,22 @@ static int virtio_map_mmio_cap(const struct pci_device *pci,
 	if (err || !bar.is_mmio)
 		return -ENODEV;
 
-	phys = bar.base + cap->offset;
 	if (cap->offset >= bar.size)
+		return -ENODEV;
+
+	avail = bar.size - cap->offset;
+	if ((uint64_t)map_len > avail)
 		return -ENODEV;
 
 	len = cap->length ? cap->length : 1;
 	if (map_len > len)
 		len = map_len;
-	if (cap->offset + len > bar.size)
-		len = (size_t)(bar.size - cap->offset);
+	if ((uint64_t)len > avail)
+		len = (size_t)avail;
 	if (len == 0)
 		return -ENODEV;
 
+	phys = bar.base + cap->offset;
 	if (paging_ensure_hhdm((paddr_t)phys, len))
 		return -ENOMEM;
 
@@ -277,7 +301,8 @@ static int virtio_map_notify(const struct pci_device *pci,
 
 			{
 				volatile void *mmio = NULL;
-				if (virtio_map_mmio_cap(pci, &cap, PAGE_SIZE,
+				if (virtio_map_mmio_cap(pci, &cap,
+							sizeof(uint16_t),
 							&mmio) == 0) {
 					candidate.is_port = false;
 					candidate.mmio =
@@ -328,26 +353,37 @@ static int virtq_init(struct virtio_blk_dev *d, uint16_t qsize)
 {
 	struct virtio_queue *vq = &d->vq;
 	volatile struct virtio_pci_common_cfg *c = d->mmio.common;
-	size_t total = virtq_bytes(qsize);
+	size_t total;
 	paddr_t pa;
 	void *va;
-	size_t desc_sz = sizeof(struct virtq_desc) * qsize;
-	size_t avail_sz =
-	    sizeof(struct virtq_avail_hdr) + sizeof(uint16_t) * qsize;
+	size_t desc_sz;
+	size_t avail_sz;
 	size_t used_off;
 	uint16_t dev_qsize;
 
 	if (qsize == 0 || (qsize & (qsize - 1)) != 0)
 		return -EINVAL;
-	if (total > PAGE_SIZE)
-		return -EINVAL;
 
+	/*
+	 * Clamp the requested ring size to what the device supports
+	 * *before* deriving any of the ring offsets and sizes, otherwise
+	 * the driver and device would disagree on where avail/used live.
+	 */
 	c->queue_select = 0;
 	dev_qsize = c->queue_size;
 	if (dev_qsize == 0)
 		return -EINVAL;
 	if (qsize > dev_qsize)
 		qsize = dev_qsize;
+	if (qsize == 0 || (qsize & (qsize - 1)) != 0)
+		return -EINVAL;
+
+	desc_sz = sizeof(struct virtq_desc) * qsize;
+	avail_sz = sizeof(struct virtq_avail_hdr) + sizeof(uint16_t) * qsize;
+	used_off = (desc_sz + avail_sz + 3u) & ~3u;
+	total = virtq_bytes(qsize);
+	if (total > PAGE_SIZE)
+		return -EINVAL;
 
 	pa = pmm_alloc_dma(0);
 	if (!pa)
@@ -361,7 +397,6 @@ static int virtq_init(struct virtio_blk_dev *d, uint16_t qsize)
 	vq->desc = (struct virtq_desc *)va;
 	vq->avail =
 	    (volatile struct virtq_avail_hdr *)((uint8_t *)va + desc_sz);
-	used_off = (desc_sz + avail_sz + 3u) & ~3u;
 	vq->used_hdr =
 	    (volatile struct virtq_used_hdr *)((uint8_t *)va + used_off);
 	vq->used = (struct virtq_used_elem *)((uint8_t *)vq->used_hdr +
@@ -393,20 +428,30 @@ static void virtio_notify(struct virtio_blk_dev *d, uint16_t qsel)
 			       (uintptr_t)off * n->multiplier) = qsel;
 }
 
+/* Latch the device dead: outstanding DMA must be assumed in flight. */
+static void virtio_mark_dead(struct virtio_blk_dev *d)
+{
+	d->dead = true;
+	d->ready = false;
+	if (d->mmio.common)
+		d->mmio.common->device_status = VIRTIO_STATUS_FAILED;
+}
+
 static int virtio_blk_submit(struct virtio_blk_dev *d, uint32_t type,
 			     uint64_t sector, void *bounce, size_t bytes,
 			     bool data_write)
 {
 	struct virtio_queue *vq = &d->vq;
-	struct virtq_desc *desc = vq->desc;
+	struct virtq_desc *desc;
 	struct virtio_req_meta *meta = d->req_meta;
-	uint16_t head = vq->avail->idx;
-	uint16_t slot = (uint16_t)(head % vq->size);
-	uint16_t old_used = vq->last_used_idx;
-	uint16_t *avail_ring =
-	    (uint16_t *)((uint8_t *)vq->avail + sizeof(struct virtq_avail_hdr));
+	uint16_t head;
+	uint16_t slot;
+	uint16_t old_used;
+	uint16_t *avail_ring;
 	uint32_t poll = 0;
-	uint16_t ndesc = 0;
+	uint16_t ndesc;
+	uint64_t flags;
+	int ret;
 
 	if (type == VIRTIO_BLK_T_FLUSH) {
 		if (bytes != 0)
@@ -415,6 +460,20 @@ static int virtio_blk_submit(struct virtio_blk_dev *d, uint32_t type,
 		   bytes > PAGE_DATA_BYTES) {
 		return -EINVAL;
 	}
+
+	flags = spin_lock_irqsave(&d->lock);
+
+	if (d->dead) {
+		ret = -ENODEV;
+		goto out;
+	}
+
+	desc = vq->desc;
+	head = vq->avail->idx;
+	slot = (uint16_t)(head % vq->size);
+	old_used = vq->last_used_idx;
+	avail_ring =
+	    (uint16_t *)((uint8_t *)vq->avail + sizeof(struct virtq_avail_hdr));
 
 	memset(meta, 0, sizeof(*meta));
 	meta->status = 0xFF;
@@ -435,8 +494,6 @@ static int virtio_blk_submit(struct virtio_blk_dev *d, uint32_t type,
 			       (data_write ? 0u : VIRTQ_DESC_F_WRITE));
 		desc[1].next = 2;
 		ndesc = 2;
-	} else {
-		ndesc = 1;
 	}
 
 	desc[ndesc].addr =
@@ -452,20 +509,35 @@ static int virtio_blk_submit(struct virtio_blk_dev *d, uint32_t type,
 	virtio_notify(d, 0);
 
 	while (vq->used_hdr->idx == old_used) {
-		if (++poll > 1000000u)
-			return -EIO;
+		if (++poll > VIRTIO_POLL_BUDGET) {
+			/*
+			 * The request is still outstanding; the device may
+			 * complete it (and DMA into the bounce buffer) at any
+			 * point later. Latch the device dead so callers leak
+			 * rather than free buffers the device still owns.
+			 */
+			virtio_mark_dead(d);
+			ret = -EIO;
+			goto out;
+		}
 		__asm__ __volatile__("pause");
 	}
 
-	if (vq->used[old_used % vq->size].id != 0)
-		return -EIO;
+	if (vq->used[old_used % vq->size].id != 0) {
+		/* Protocol desync: queue state is no longer trustworthy. */
+		virtio_mark_dead(d);
+		ret = -EIO;
+		goto out;
+	}
 
 	vq->last_used_idx = (uint16_t)(old_used + 1);
 	__asm__ __volatile__("" ::: "memory");
 
-	if (meta->status != VIRTIO_BLK_S_OK)
-		return -EIO;
-	return 0;
+	ret = (meta->status != VIRTIO_BLK_S_OK) ? -EIO : 0;
+
+out:
+	spin_unlock_irqrestore(&d->lock, flags);
+	return ret;
 }
 
 static int virtio_blk_request(struct virtio_blk_dev *d, uint64_t sector,
@@ -489,7 +561,7 @@ static int virtio_bdev_read(struct block_device *bdev, uint64_t lba,
 	uint8_t *p = buf;
 	int err;
 
-	if (!d || !d->ready)
+	if (!d || !d->ready || d->dead)
 		return -ENODEV;
 	if (count == 0)
 		return 0;
@@ -512,7 +584,13 @@ static int virtio_bdev_read(struct block_device *bdev, uint64_t lba,
 	err = 0;
 
 out:
-	pmm_free_pages(bounce_pa, 0);
+	/*
+	 * If the device went dead the request is still outstanding and the
+	 * device may DMA into this page later — leak it rather than return
+	 * it to the allocator.
+	 */
+	if (!d->dead)
+		pmm_free_pages(bounce_pa, 0);
 	return err;
 }
 
@@ -525,7 +603,7 @@ static int virtio_bdev_write(struct block_device *bdev, uint64_t lba,
 	const uint8_t *p = buf;
 	int err;
 
-	if (!d || !d->ready)
+	if (!d || !d->ready || d->dead)
 		return -ENODEV;
 	if (d->read_only)
 		return -EROFS;
@@ -550,7 +628,9 @@ static int virtio_bdev_write(struct block_device *bdev, uint64_t lba,
 	err = 0;
 
 out:
-	pmm_free_pages(bounce_pa, 0);
+	/* See virtio_bdev_read(): leak the bounce page if the device died. */
+	if (!d->dead)
+		pmm_free_pages(bounce_pa, 0);
 	if (!err)
 		err = virtio_blk_flush(d);
 	return err;
@@ -620,6 +700,7 @@ static int virtio_blk_setup(const struct pci_device *pci)
 	int err;
 
 	memset(d, 0, sizeof(*d));
+	spin_lock_init(&d->lock);
 
 	err = virtio_find_cap(pci, VIRTIO_PCI_CAP_COMMON_CFG, &common_cap);
 	if (err)
@@ -655,8 +736,10 @@ static int virtio_blk_setup(const struct pci_device *pci)
 		goto fail;
 
 	d->req_meta_pa = pmm_alloc_dma(0);
-	if (!d->req_meta_pa)
+	if (!d->req_meta_pa) {
+		err = -ENOMEM;
 		goto fail;
+	}
 	d->req_meta = (struct virtio_req_meta *)phys_to_virt(d->req_meta_pa);
 
 	err = virtq_init(d, VIRTQ_SIZE);
@@ -665,8 +748,10 @@ static int virtio_blk_setup(const struct pci_device *pci)
 
 	bcfg = (volatile struct virtio_blk_config *)m->device_cfg;
 	d->capacity = bcfg->capacity;
-	if (d->capacity == 0)
+	if (d->capacity == 0) {
+		err = -EINVAL;
 		goto fail;
+	}
 
 	c->device_status =
 	    (uint8_t)(VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER |
@@ -712,11 +797,13 @@ void virtio_blk_init(void)
 int virtio_blk_selftest(void)
 {
 	struct block_device *bdev;
+	struct virtio_blk_dev *d = &blk_dev;
 	uint64_t test_lba;
 	uint8_t orig[VIRTIO_BLK_SECTOR_SIZE];
-	uint8_t verify[VIRTIO_BLK_SECTOR_SIZE];
+	uint8_t check[VIRTIO_BLK_SECTOR_SIZE];
 	static const uint8_t pattern[VIRTIO_BLK_SECTOR_SIZE] = {
 	    "JNU virtio test"};
+	int ret;
 
 	if (!virtio_present) {
 		pr_info("virtio_blk_selftest: skipped (no device)\n");
@@ -726,37 +813,76 @@ int virtio_blk_selftest(void)
 	bdev = block_lookup("vda");
 	if (!bdev)
 		return -ENODEV;
-
-	test_lba = bdev->sector_count - 1;
-	if (test_lba == 0)
+	if (bdev->sector_count == 0)
 		return -EINVAL;
 
-	memset(orig, 0, sizeof(orig));
+	test_lba = bdev->sector_count - 1;
+
+	/*
+	 * Read path is always exercised non-destructively: read the same
+	 * sector twice and require identical results. This proves DMA and
+	 * the virtqueue work without modifying any disk contents.
+	 */
 	if (block_read(bdev, test_lba, 1, orig) != 0) {
 		pr_err("virtio_blk_selftest: read sector %llu failed\n",
 		       (unsigned long long)test_lba);
 		return -EIO;
 	}
+	if (block_read(bdev, test_lba, 1, check) != 0) {
+		pr_err("virtio_blk_selftest: re-read sector %llu failed\n",
+		       (unsigned long long)test_lba);
+		return -EIO;
+	}
+	if (memcmp(orig, check, VIRTIO_BLK_SECTOR_SIZE) != 0) {
+		pr_err("virtio_blk_selftest: read path unstable\n");
+		return -EIO;
+	}
+
+	/*
+	 * Write path: only on a writable device. The last sector's contents
+	 * are saved first, a pattern is written and verified, and then the
+	 * original is unconditionally restored and the restore re-verified —
+	 * so even a mid-test failure cannot leave the sector corrupted.
+	 */
+	if (d->read_only) {
+		pr_info("virtio_blk_selftest: read OK (sector %llu); "
+			"write skipped [ro]\n",
+			(unsigned long long)test_lba);
+		return 0;
+	}
 
 	if (block_write(bdev, test_lba, 1, pattern) != 0) {
 		pr_err("virtio_blk_selftest: write sector %llu failed\n",
 		       (unsigned long long)test_lba);
+		/* Best effort: put back the original contents. */
+		(void)block_write(bdev, test_lba, 1, orig);
 		return -EIO;
 	}
 
-	memset(verify, 0, sizeof(verify));
-	if (block_read(bdev, test_lba, 1, verify) != 0) {
+	ret = 0;
+	if (block_read(bdev, test_lba, 1, check) != 0) {
 		pr_err("virtio_blk_selftest: read-back sector %llu failed\n",
+		       (unsigned long long)test_lba);
+		ret = -EIO;
+	} else if (memcmp(check, pattern, VIRTIO_BLK_SECTOR_SIZE) != 0) {
+		pr_err("virtio_blk_selftest: read-back mismatch\n");
+		ret = -EIO;
+	}
+
+	/* Always restore the original, then verify it really landed. */
+	if (block_write(bdev, test_lba, 1, orig) != 0) {
+		pr_err("virtio_blk_selftest: FAILED to restore sector %llu\n",
 		       (unsigned long long)test_lba);
 		return -EIO;
 	}
-
-	if (memcmp(verify, pattern, sizeof(pattern)) != 0) {
-		pr_err("virtio_blk_selftest: read-back mismatch\n");
+	if (block_read(bdev, test_lba, 1, check) != 0 ||
+	    memcmp(check, orig, VIRTIO_BLK_SECTOR_SIZE) != 0) {
+		pr_err("virtio_blk_selftest: restore verification failed\n");
 		return -EIO;
 	}
 
-	(void)block_write(bdev, test_lba, 1, orig);
+	if (ret)
+		return ret;
 
 	pr_info("virtio_blk_selftest: read/write sector %llu OK\n",
 		(unsigned long long)test_lba);
