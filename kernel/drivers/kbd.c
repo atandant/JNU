@@ -6,11 +6,12 @@
  * handler on vector 33 (IOAPIC ISA IRQ 1).
  *
  * Raw scancodes are translated to keycodes via the hardware-agnostic
- * scandata layer, then to ASCII for the char_device ring buffer.
- * The 0xE0 extended-key prefix is tracked so navigation keys, arrow
- * keys, and right-hand modifiers are decoded correctly.
+ * scandata layer.  Every make/break is queued as a struct key_event;
+ * ASCII for userspace is produced on read() via scandata_keycode_to_ascii().
+ * The 0xE0 extended-key prefix and 0xE1 Pause sequence are tracked so
+ * navigation keys, Win keys, and Pause decode correctly.
  *
- * The driver exposes a struct char_device for line-buffered reads
+ * The driver exposes a struct char_device for byte-stream reads
  * (one ASCII byte per key-down of printable keys).
  *
  * Reference: OSDev "8042 PS/2 Controller", IBM AT Technical Reference.
@@ -53,42 +54,57 @@
 
 #define KBD_SELF_TEST_OK 0x55
 
+/* Pause key set-1 sequence: E1 1D 45 E1 9D C5 */
+#define E1_SEQ_LEN 6
+static const uint8_t e1_pause_seq[E1_SEQ_LEN] = { 0xE1, 0x1D, 0x45,
+						  0xE1, 0x9D, 0xC5 };
+
 /* ------------------------------------------------------------------ */
-/* Ring buffer for decoded ASCII characters                            */
+/* key_event ring buffer                                               */
 /* ------------------------------------------------------------------ */
 
-#define KBD_RING_SIZE 64
+#define KBD_RING_SIZE 128
 
-static char kbd_ring[KBD_RING_SIZE];
+static struct key_event kbd_ring[KBD_RING_SIZE];
 static size_t kbd_ring_head;
 static size_t kbd_ring_tail;
 static struct spinlock kbd_lock = SPINLOCK_INITIALIZER;
+static unsigned int kbd_ring_drops;
 
-static void ring_put(char c)
+static void event_put(uint16_t keycode, uint8_t modifiers, bool release)
 {
 	uint64_t flags = spin_lock_irqsave(&kbd_lock);
 	size_t next = (kbd_ring_head + 1) % KBD_RING_SIZE;
 
 	if (next != kbd_ring_tail) {
-		kbd_ring[kbd_ring_head] = c;
+		kbd_ring[kbd_ring_head].keycode = keycode;
+		kbd_ring[kbd_ring_head].modifiers = modifiers;
+		kbd_ring[kbd_ring_head].type =
+		    release ? KEY_EV_RELEASE : KEY_EV_PRESS;
+		kbd_ring[kbd_ring_head].ascii = 0;
 		kbd_ring_head = next;
+	} else {
+		kbd_ring_drops++;
+		if ((kbd_ring_drops & 0x3Fu) == 1u) {
+			pr_warn("kbd: event ring overflow (drops=%u)\n",
+				kbd_ring_drops);
+		}
 	}
 	spin_unlock_irqrestore(&kbd_lock, flags);
 }
 
 /* ------------------------------------------------------------------ */
-/* Modifier state and 0xE0 prefix tracking                             */
+/* Modifier state and prefix tracking                                  */
 /* ------------------------------------------------------------------ */
 
 static bool shift_held;
 static bool ctrl_held;
 static bool alt_held;
 static bool caps_on;
+static bool numlock_on;
 static bool e0_pending;
+static uint8_t e1_state;
 
-/*
- * Build the current modifier bitmask for key_event / ASCII translation.
- */
 static uint8_t current_modifiers(void)
 {
 	uint8_t mods = 0;
@@ -105,7 +121,67 @@ static uint8_t current_modifiers(void)
 	if (caps_on) {
 		mods |= KMOD_CAPSLOCK;
 	}
+	if (numlock_on) {
+		mods |= KMOD_NUMLOCK;
+	}
 	return mods;
+}
+
+static void kbd_update_modifiers(uint16_t keycode, bool release)
+{
+	switch (keycode) {
+	case KEY_LSHIFT:
+	case KEY_RSHIFT:
+		shift_held = !release;
+		break;
+	case KEY_LCTRL:
+	case KEY_RCTRL:
+		ctrl_held = !release;
+		break;
+	case KEY_LALT:
+	case KEY_RALT:
+		alt_held = !release;
+		break;
+	case KEY_CAPSLOCK:
+		if (!release) {
+			caps_on = !caps_on;
+		}
+		break;
+	case KEY_NUMLOCK:
+		if (!release) {
+			numlock_on = !numlock_on;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+static void kbd_deliver_keycode(uint16_t keycode, bool release)
+{
+	uint8_t mods;
+
+	if (keycode == KEY_NONE) {
+		return;
+	}
+
+	mods = current_modifiers();
+	event_put(keycode, mods, release);
+	kbd_update_modifiers(keycode, release);
+}
+
+/*
+ * Feed one raw scancode byte (after prefix handling).  `is_e0` is true
+ * when this byte immediately followed a 0xE0 prefix.
+ */
+static void kbd_feed_scancode(uint8_t sc, bool is_e0)
+{
+	uint16_t keycode;
+	bool release;
+
+	release = (sc & 0x80u) != 0;
+	keycode = scandata_sc1_to_keycode(sc, is_e0);
+	kbd_deliver_keycode(keycode, release);
 }
 
 /* ------------------------------------------------------------------ */
@@ -114,81 +190,45 @@ static uint8_t current_modifiers(void)
 
 static void kbd_irq_handler(struct cpu_state *st)
 {
-	uint8_t sc = inb(KBD_DATA_PORT);
-	uint16_t keycode;
-	bool release;
-	bool is_e0;
+	uint8_t sc;
 
 	(void)st;
 
-	/* 0xE0 prefix: set flag and wait for the real scancode byte. */
+	sc = inb(KBD_DATA_PORT);
+
+	/* 0xE0 prefix: wait for the real scancode byte. */
 	if (sc == 0xE0) {
 		e0_pending = true;
+		e1_state = 0;
 		goto done;
 	}
 
-	is_e0 = e0_pending;
-	e0_pending = false;
-
-	/* Bit 7 set = break (release) code. */
-	release = (sc & 0x80u) != 0;
-	keycode = scandata_sc1_to_keycode(sc, is_e0);
-
-	if (keycode == KEY_NONE) {
-		goto done;
-	}
-
-	/* Update modifier state on make/break. */
-	switch (keycode) {
-	case KEY_LSHIFT:
-	case KEY_RSHIFT:
-		shift_held = !release;
-		goto done;
-	case KEY_LCTRL:
-	case KEY_RCTRL:
-		ctrl_held = !release;
-		goto done;
-	case KEY_LALT:
-	case KEY_RALT:
-		alt_held = !release;
-		goto done;
-	case KEY_CAPSLOCK:
-		if (!release) {
-			caps_on = !caps_on;
+	/* Collect Pause sequence bytes (E1 1D 45 E1 9D C5) before decode. */
+	if (e1_state > 0) {
+		if (sc == e1_pause_seq[e1_state]) {
+			e1_state++;
+			if (e1_state == E1_SEQ_LEN) {
+				kbd_deliver_keycode(KEY_PAUSE, false);
+				e1_state = 0;
+			}
+			goto done;
 		}
-		goto done;
-	case KEY_NUMLOCK:
-	case KEY_SCROLLLOCK:
-		/* Tracked but not acted on in v0.0.2. */
-		goto done;
-	default:
-		break;
+		e1_state = 0;
+		/* Fall through and try to decode this byte normally. */
 	}
 
-	/* Only key-down events produce characters. */
-	if (release) {
+	/* 0xE1 begins the Pause sequence. */
+	if (sc == 0xE1) {
+		e0_pending = false;
+		e1_state = 1;
 		goto done;
 	}
 
 	{
-		uint8_t mods = current_modifiers();
-		char c = scandata_keycode_to_ascii(keycode, mods);
+		bool is_e0 = e0_pending;
 
-		/*
-		 * The pr_debug stays inside `if (c)` on purpose: only
-		 * key-downs that actually produce an ASCII byte are worth
-		 * tracing.  A previous hack pulled it out so it fired on
-		 * every non-modifier key-down (F-keys, arrows, etc.); that
-		 * spammed the COM1 backend from IRQ context and made it
-		 * trivial to overrun the 64-byte ring buffer at typing
-		 * speed.  See `personalhacks` for context.
-		 */
-		if (c) {
-			pr_debug("kbd: sc=0x%02x kc=%s char='%c'\n",
-				 (unsigned)sc, scandata_keycode_name(keycode),
-				 (c >= 0x20 && c <= 0x7E) ? c : '.');
-			ring_put(c);
-		}
+		e0_pending = false;
+		kbd_feed_scancode(sc, is_e0);
 	}
 
 done:
@@ -241,24 +281,46 @@ static uint8_t kbd_read(void)
 
 static ssize_t kbd_cdev_read(struct char_device *dev, void *buf, size_t len)
 {
-	(void)dev;
 	char *p = buf;
 	size_t n = 0;
-	uint64_t flags = spin_lock_irqsave(&kbd_lock);
 
-	while (n < len && kbd_ring_tail != kbd_ring_head) {
-		p[n++] = kbd_ring[kbd_ring_tail];
+	(void)dev;
+
+	while (n < len) {
+		struct key_event ev;
+		char c;
+		uint64_t flags = spin_lock_irqsave(&kbd_lock);
+
+		if (kbd_ring_tail == kbd_ring_head) {
+			spin_unlock_irqrestore(&kbd_lock, flags);
+			break;
+		}
+
+		ev = kbd_ring[kbd_ring_tail];
 		kbd_ring_tail = (kbd_ring_tail + 1) % KBD_RING_SIZE;
+		spin_unlock_irqrestore(&kbd_lock, flags);
+
+		if (ev.type != KEY_EV_PRESS) {
+			continue;
+		}
+
+		c = scandata_keycode_to_ascii(ev.keycode, ev.modifiers);
+		if (c) {
+			p[n++] = c;
+		}
 	}
-	spin_unlock_irqrestore(&kbd_lock, flags);
+
 	return (ssize_t)n;
 }
 
 static bool kbd_cdev_poll(struct char_device *dev)
 {
+	bool ready;
+
 	(void)dev;
+
 	uint64_t flags = spin_lock_irqsave(&kbd_lock);
-	bool ready = (kbd_ring_tail != kbd_ring_head);
+	ready = (kbd_ring_tail != kbd_ring_head);
 	spin_unlock_irqrestore(&kbd_lock, flags);
 	return ready;
 }

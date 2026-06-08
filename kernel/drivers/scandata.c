@@ -58,11 +58,13 @@ static const uint16_t sc1_keycode[128] = {
 /* ------------------------------------------------------------------ */
 
 static const uint16_t sc1_e0_keycode[128] = {
-    [0x1C] = KEY_KPENTER, [0x1D] = KEY_RCTRL,  [0x35] = KEY_KPSLASH,
-    [0x38] = KEY_RALT,	  [0x47] = KEY_HOME,   [0x48] = KEY_UP,
-    [0x49] = KEY_PAGEUP,  [0x4B] = KEY_LEFT,   [0x4D] = KEY_RIGHT,
-    [0x4F] = KEY_END,	  [0x50] = KEY_DOWN,   [0x51] = KEY_PAGEDOWN,
-    [0x52] = KEY_INSERT,  [0x53] = KEY_DELETE,
+    [0x1C] = KEY_KPENTER, [0x1D] = KEY_RCTRL,	[0x35] = KEY_KPSLASH,
+    [0x37] = KEY_PRINTSCREEN, [0x38] = KEY_RALT, [0x46] = KEY_BREAK,
+    [0x47] = KEY_HOME,	  [0x48] = KEY_UP,	[0x49] = KEY_PAGEUP,
+    [0x4B] = KEY_LEFT,	  [0x4D] = KEY_RIGHT, [0x4F] = KEY_END,
+    [0x50] = KEY_DOWN,	  [0x51] = KEY_PAGEDOWN, [0x52] = KEY_INSERT,
+    [0x53] = KEY_DELETE,  [0x5B] = KEY_LGUI,	[0x5C] = KEY_RGUI,
+    [0x5D] = KEY_APPS,
 };
 
 /* ------------------------------------------------------------------ */
@@ -234,6 +236,42 @@ static const char ascii_shift[KEY_MAX] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* Numpad dual-role (Num Lock off → navigation keys)                  */
+/* ------------------------------------------------------------------ */
+
+static uint16_t scandata_resolve_numpad(uint16_t keycode, uint8_t modifiers)
+{
+	if (modifiers & KMOD_NUMLOCK) {
+		return keycode;
+	}
+
+	switch (keycode) {
+	case KEY_KP7:
+		return KEY_HOME;
+	case KEY_KP8:
+		return KEY_UP;
+	case KEY_KP9:
+		return KEY_PAGEUP;
+	case KEY_KP4:
+		return KEY_LEFT;
+	case KEY_KP6:
+		return KEY_RIGHT;
+	case KEY_KP1:
+		return KEY_END;
+	case KEY_KP2:
+		return KEY_DOWN;
+	case KEY_KP3:
+		return KEY_PAGEDOWN;
+	case KEY_KP0:
+		return KEY_INSERT;
+	case KEY_KPDOT:
+		return KEY_DELETE;
+	default:
+		return keycode;
+	}
+}
+
+/* ------------------------------------------------------------------ */
 /* Public API                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -254,6 +292,8 @@ char scandata_keycode_to_ascii(uint16_t keycode, uint8_t modifiers)
 	if (keycode >= KEY_MAX) {
 		return '\0';
 	}
+
+	keycode = scandata_resolve_numpad(keycode, modifiers);
 
 	c = (modifiers & KMOD_SHIFT) ? ascii_shift[keycode]
 				     : ascii_unshift[keycode];
@@ -395,6 +435,10 @@ static const char *const keycode_names[KEY_MAX] = {
 
     [KEY_PRINTSCREEN] = "KEY_PRINTSCREEN",
     [KEY_PAUSE] = "KEY_PAUSE",
+    [KEY_BREAK] = "KEY_BREAK",
+    [KEY_LGUI] = "KEY_LGUI",
+    [KEY_RGUI] = "KEY_RGUI",
+    [KEY_APPS] = "KEY_APPS",
 };
 
 const char *scandata_keycode_name(uint16_t keycode)

@@ -28,7 +28,8 @@ uint16_t scandata_sc1_to_keycode(uint8_t scancode, bool e0_prefix);
  * modifiers, navigation, etc.).
  *
  * Caps Lock is handled: letters toggle case regardless of Shift.
- * Ctrl+letter produces 0x01–0x1A.
+ * Num Lock selects numpad digits vs navigation role.  Ctrl+letter
+ * produces 0x01–0x1A.
  */
 char scandata_keycode_to_ascii(uint16_t keycode, uint8_t modifiers);
 

@@ -1,5 +1,7 @@
 #include <jnu_syscall.h>
 
+#define O_RDONLY 0
+
 static void puts(const char *s)
 {
 	size_t len = 0;
@@ -28,6 +30,29 @@ static void put_uint(unsigned value)
 }
 
 static char *const musltest_argv[] = {"musltest", 0};
+
+static void kbd_echo_loop(void)
+{
+	int kbd_fd;
+	char buf[64];
+	ssize_t n;
+
+	kbd_fd = open("/dev/kbd", O_RDONLY);
+	if (kbd_fd < 0) {
+		puts("JNU init: /dev/kbd open failed\n");
+		return;
+	}
+
+	puts("JNU init: keyboard ready — type here (Ctrl+C not wired yet)\n");
+
+	for (;;) {
+		n = read(kbd_fd, buf, sizeof(buf));
+		if (n > 0) {
+			(void)write(1, buf, (size_t)n);
+		}
+		(void)yield();
+	}
+}
 
 int main(int argc, char **argv)
 {
@@ -61,5 +86,6 @@ int main(int argc, char **argv)
 		puts("JNU init: fork failed\n");
 	}
 
+	kbd_echo_loop();
 	return 0;
 }

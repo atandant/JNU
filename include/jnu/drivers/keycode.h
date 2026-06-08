@@ -30,6 +30,7 @@
 #define KMOD_CTRL (1u << 1)
 #define KMOD_ALT (1u << 2)
 #define KMOD_CAPSLOCK (1u << 3)
+#define KMOD_NUMLOCK (1u << 4)
 
 /* ------------------------------------------------------------------ */
 /* Key event — produced by the keyboard driver on every make/break     */
@@ -167,6 +168,12 @@ enum {
 	/* Misc */
 	KEY_PRINTSCREEN,
 	KEY_PAUSE,
+	KEY_BREAK,
+
+	/* Windows / menu keys (0xE0-prefixed on PS/2 set 1) */
+	KEY_LGUI,
+	KEY_RGUI,
+	KEY_APPS,
 
 	KEY_MAX,
 };

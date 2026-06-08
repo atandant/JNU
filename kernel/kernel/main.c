@@ -19,7 +19,8 @@
  *  14. Keyboard init.
  *  15. Selftests, gated on `selftest=1`.
  *  16. Optional debug hooks (`panictest=1`, `dump=mem`, `dump=blocks`).
- *  17. Idle loop.
+ *  17. Spawn /init as a user task (boot task stays in ring 0).
+ *  18. Idle loop (optional kernel kbd echo via kbd=kernel cmdline).
  *
  * Copyright (c) 2026 The JNU Authors.
  * SPDX-License-Identifier: GPL-2.0-only
@@ -29,7 +30,6 @@
 #include <jnu/arch/cpu.h>
 #include <jnu/arch/gdt.h>
 #include <jnu/arch/idt.h>
-#include <jnu/arch/usermode.h>
 #include <jnu/base/compiler.h>
 #include <jnu/base/types.h>
 #include <jnu/drivers/acpi.h>
@@ -58,6 +58,7 @@
 #include <jnu/lib/klog.h>
 #include <jnu/lib/prng.h>
 #include <jnu/lib/string.h>
+#include <jnu/mm/kmalloc.h>
 #include <jnu/mm/paging.h>
 #include <jnu/mm/pmm.h>
 #include <jnu/mm/slab.h>
@@ -304,7 +305,8 @@ static void start_init(void)
 	const char *init_path = cmdline_get("init");
 	const char *source = NULL;
 	struct exec_load_info init_info;
-	struct task *task;
+	struct process *proc;
+	struct task *init_task;
 	struct addr_space *space;
 	uint64_t stack;
 	int err;
@@ -318,34 +320,39 @@ static void start_init(void)
 		init_path = "/init";
 	}
 
-	task = sched_current();
-	if (!task || !task->process) {
-		panic("userspace: no current process");
+	proc = kzalloc(sizeof(*proc));
+	if (!proc) {
+		panic("userspace: failed to allocate init process");
 	}
+
+	proc->pid = process_alloc_pid();
+	if (proc->pid < 0) {
+		panic("userspace: failed to allocate init pid (err=%d)",
+		      proc->pid);
+	}
+	proc->state = PROCESS_ALIVE;
+	fd_table_init(&proc->fds);
 
 	space = vmm_create_space();
 	if (!space) {
 		panic("userspace: failed to create init address space");
 	}
-	task->process->space = space;
+	proc->space = space;
 
-	vmm_switch_to(space);
 	err = load_boot_exec(space, init_path, &init_info, &stack, &source);
 	if (err) {
 		panic("userspace: failed to load init '%s' (err=%d)", init_path,
 		      err);
 	}
-	task->process->user_entry = init_info.entry;
-	task->process->user_stack = stack;
-	task->process->has_user_frame = false;
+	proc->user_entry = init_info.entry;
+	proc->user_stack = stack;
+	proc->has_user_frame = false;
 
 	/*
-	 * Register the init process so process_exit_current can reparent
-	 * orphans here instead of leaving stale `parent` pointers behind.
-	 * Must happen before any fork from this process can succeed, i.e.
-	 * before we drop into ring 3.
+	 * Register init before it becomes runnable so any early exit
+	 * reparents onto a valid process instead of a stale pointer.
 	 */
-	process_set_init(task->process);
+	process_set_init(proc);
 
 	pr_info("userspace: init '%s' from %s entry=0x%lx "
 		"range=0x%lx..0x%lx\n",
@@ -353,10 +360,55 @@ static void start_init(void)
 		(unsigned long)init_info.entry, (unsigned long)init_info.low,
 		(unsigned long)init_info.high);
 
-	pr_info("userspace: entering ring 3 at 0x%lx stack=0x%lx\n",
-		(unsigned long)init_info.entry, (unsigned long)stack);
-	err = usermode_enter(init_info.entry, stack);
-	panic("userspace: ring-3 entry returned (err=%d)", err);
+	err = sched_create_user_task("init", proc, &init_task);
+	if (err) {
+		panic("userspace: failed to schedule init (err=%d)", err);
+	}
+
+	pr_info("userspace: init scheduled tid=%d pid=%d\n", init_task->tid,
+		proc->pid);
+}
+
+static void kernel_idle_loop(void)
+{
+	for (;;) {
+		sched_yield();
+		__asm__ __volatile__("sti; hlt; cli");
+	}
+}
+
+/*
+ * Kernel-side keyboard echo for noinit=1 or kbd=kernel debugging.
+ * Normal boots read /dev/kbd from userspace instead — both paths share
+ * the same char_device ring and must not run concurrently.
+ */
+static void kbd_echo_loop(void)
+{
+	struct char_device *kbd = kbd_get_chardev();
+	char buf[32];
+
+	if (!kbd || !kbd->ops || !kbd->ops->read) {
+		kernel_idle_loop();
+	}
+
+	for (;;) {
+		if (kbd->ops->poll(kbd)) {
+			ssize_t n = kbd->ops->read(kbd, buf, sizeof(buf));
+
+			for (ssize_t i = 0; i < n; i++) {
+				char c = buf[i];
+
+				if (c >= 0x20 && c <= 0x7E) {
+					pr_info("kbd: typed '%c'\n", c);
+				} else {
+					pr_info("kbd: typed 0x%02x\n",
+						 (unsigned char)c);
+				}
+			}
+		}
+		sched_yield();
+		__asm__ __volatile__("sti; hlt; cli");
+	}
 }
 
 /* ------------------------------------------------------------------------- */
@@ -566,15 +618,9 @@ void kernel_main(void)
 	start_init();
 	pr_info("kernel: boot complete; idle\n");
 
-	struct char_device *kbd = kbd_get_chardev();
-	for (;;) {
-		if (kbd && kbd->ops->poll(kbd)) {
-			char c;
-			if (kbd->ops->read(kbd, &c, 1) == 1) {
-				pr_info("kbd: typed '%c'\n",
-					c >= 0x20 ? c : '.');
-			}
-		}
-		__asm__ __volatile__("sti; hlt; cli");
+	if (cmdline_bool("noinit") ||
+	    (cmdline_get("kbd") && strcmp(cmdline_get("kbd"), "kernel") == 0)) {
+		kbd_echo_loop();
 	}
+	kernel_idle_loop();
 }

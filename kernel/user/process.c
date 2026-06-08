@@ -25,8 +25,8 @@ static int next_pid = 1;
 struct spinlock process_tree_lock = SPINLOCK_INITIALIZER;
 
 /*
- * Init process pointer. Set once by main.c after the boot task's
- * process has been wired up to run /init. Used by process_exit_current
+ * Init process pointer. Set once by main.c when the dedicated init
+ * process is created. Used by process_exit_current
  * to reparent children of a dying process so they never leave a stale
  * `parent` pointer behind.
  */

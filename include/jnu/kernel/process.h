@@ -45,7 +45,7 @@ void process_destroy(struct process *proc);
 
 /*
  * Register `proc` as the init process. Called once from main.c after
- * start_init() has loaded /init into the boot task's process. Any
+ * start_init() has loaded /init into a dedicated user process. Any
  * process that subsequently exits while it still has live (non-zombie)
  * children reparents those children to `proc` so they are not orphaned
  * onto a freed `parent` pointer. Init must outlive every other process;
