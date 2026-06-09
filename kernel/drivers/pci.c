@@ -78,7 +78,7 @@ void pci_write_config_word(uint8_t bus, uint8_t dev, uint8_t func,
 	uint32_t dw =
 	    pci_read_config_dword(bus, dev, func, (uint8_t)(offset & 0xFCu));
 	unsigned shift = (offset & 2u) * 8;
-	dw &= ~(0xFFFFu << shift);
+	dw &= ~((uint32_t)0xFFFFu << shift);
 	dw |= ((uint32_t)val << shift);
 	pci_write_config_dword(bus, dev, func, (uint8_t)(offset & 0xFCu), dw);
 }
@@ -89,7 +89,7 @@ void pci_write_config_byte(uint8_t bus, uint8_t dev, uint8_t func,
 	uint32_t dw =
 	    pci_read_config_dword(bus, dev, func, (uint8_t)(offset & 0xFCu));
 	unsigned shift = (offset & 3u) * 8;
-	dw &= ~(0xFFu << shift);
+	dw &= ~((uint32_t)0xFFu << shift);
 	dw |= ((uint32_t)val << shift);
 	pci_write_config_dword(bus, dev, func, (uint8_t)(offset & 0xFCu), dw);
 }
@@ -196,7 +196,6 @@ int pci_read_bar(const struct pci_device *dev, unsigned bar_idx,
 	uint32_t orig_hi = 0;
 	uint32_t probe_lo;
 	uint32_t probe_hi = 0;
-	uint64_t mask;
 
 	if (!dev || !out || bar_idx > 5)
 		return -EINVAL;
@@ -211,22 +210,33 @@ int pci_read_bar(const struct pci_device *dev, unsigned bar_idx,
 		return -EINVAL;
 
 	if (orig_lo & 1u) {
-		/* I/O BAR */
+		/*
+		 * I/O BAR. Bits [1:0] are read-only type bits; the size mask
+		 * lives in the remaining 32-bit field, so the size must be
+		 * computed with 32-bit (not 64-bit) two's complement.
+		 */
+		uint32_t mask;
+
 		out->base = (uint64_t)(orig_lo & 0xFFFFFFFCu);
-		pci_write_config_dword(bus, pci_dev, func, off, 0xFFFFFFFCu);
+		pci_write_config_dword(bus, pci_dev, func, off, 0xFFFFFFFFu);
 		probe_lo = pci_read_config_dword(bus, pci_dev, func, off);
 		pci_write_config_dword(bus, pci_dev, func, off, orig_lo);
-		mask = (uint64_t)(probe_lo & 0xFFFFFFFCu);
+		mask = probe_lo & 0xFFFFFFFCu;
+		if (mask == 0)
+			return -EINVAL;
+		out->size = (uint64_t)(uint32_t)(~mask + 1u);
 		out->is_mmio = false;
 	} else if ((orig_lo & 0x6u) == 0x4u) {
 		/* 64-bit memory BAR uses BAR n and BAR n+1. */
+		uint64_t mask;
+
 		if (bar_idx > 4)
 			return -EINVAL;
 		orig_hi = pci_read_config_dword(bus, pci_dev, func,
 						(uint8_t)(off + 4u));
 		out->base = ((uint64_t)(orig_lo & 0xFFFFFFF0u)) |
 			    ((uint64_t)orig_hi << 32);
-		pci_write_config_dword(bus, pci_dev, func, off, 0xFFFFFFF0u);
+		pci_write_config_dword(bus, pci_dev, func, off, 0xFFFFFFFFu);
 		pci_write_config_dword(bus, pci_dev, func, (uint8_t)(off + 4u),
 				       0xFFFFFFFFu);
 		probe_lo = pci_read_config_dword(bus, pci_dev, func, off);
@@ -235,25 +245,63 @@ int pci_read_bar(const struct pci_device *dev, unsigned bar_idx,
 		pci_write_config_dword(bus, pci_dev, func, off, orig_lo);
 		pci_write_config_dword(bus, pci_dev, func, (uint8_t)(off + 4u),
 				       orig_hi);
-		mask = ((uint64_t)(probe_hi & 0xFFFFFFFFu) << 32) |
+		mask = ((uint64_t)probe_hi << 32) |
 		       (uint64_t)(probe_lo & 0xFFFFFFF0u);
+		if (mask == 0)
+			return -EINVAL;
+		out->size = ~mask + 1u;
 		out->is_mmio = true;
 	} else {
-		/* 32-bit memory BAR */
+		/*
+		 * 32-bit memory BAR. Compute the size with 32-bit two's
+		 * complement so the unused upper bits are not inverted into
+		 * the result.
+		 */
+		uint32_t mask;
+
 		out->base = (uint64_t)(orig_lo & 0xFFFFFFF0u);
-		pci_write_config_dword(bus, pci_dev, func, off, 0xFFFFFFF0u);
+		pci_write_config_dword(bus, pci_dev, func, off, 0xFFFFFFFFu);
 		probe_lo = pci_read_config_dword(bus, pci_dev, func, off);
 		pci_write_config_dword(bus, pci_dev, func, off, orig_lo);
-		mask = (uint64_t)(probe_lo & 0xFFFFFFF0u);
+		mask = probe_lo & 0xFFFFFFF0u;
+		if (mask == 0)
+			return -EINVAL;
+		out->size = (uint64_t)(uint32_t)(~mask + 1u);
 		out->is_mmio = true;
 	}
 
-	if (mask == 0)
-		return -EINVAL;
-
-	out->size = (uint64_t)(~mask + 1u);
 	if (out->size == 0)
 		return -EINVAL;
+
+	return 0;
+}
+
+uint8_t pci_find_capability(const struct pci_device *dev, uint8_t cap_id)
+{
+	uint16_t status;
+	uint8_t ptr;
+	unsigned steps = 0;
+
+	if (!dev)
+		return 0;
+
+	/* Capability list is only valid if Status register bit 4 is set. */
+	status = pci_read_config_word(dev->bus, dev->dev, dev->func, 0x06);
+	if (!(status & (1u << 4)))
+		return 0;
+
+	ptr = pci_read_config_byte(dev->bus, dev->dev, dev->func, 0x34) & 0xFCu;
+
+	/* Bounded walk: a malformed/looping list must never hang the scan. */
+	while (ptr != 0 && steps++ < 48) {
+		uint8_t id =
+		    pci_read_config_byte(dev->bus, dev->dev, dev->func, ptr);
+		if (id == cap_id)
+			return ptr;
+		ptr = pci_read_config_byte(dev->bus, dev->dev, dev->func,
+					   (uint8_t)(ptr + 1u)) &
+		      0xFCu;
+	}
 
 	return 0;
 }

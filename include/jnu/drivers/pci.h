@@ -71,6 +71,20 @@ int pci_read_bar(const struct pci_device *dev, unsigned bar_idx,
  */
 void pci_enable_device(const struct pci_device *dev);
 
+/* Standard PCI capability IDs (config space, capability list). */
+#define PCI_CAP_ID_PM     0x01 /* Power Management */
+#define PCI_CAP_ID_MSI    0x05 /* Message Signalled Interrupts */
+#define PCI_CAP_ID_VENDOR 0x09 /* Vendor specific (e.g. virtio) */
+#define PCI_CAP_ID_PCIE   0x10 /* PCI Express */
+#define PCI_CAP_ID_MSIX   0x11 /* MSI-X */
+
+/*
+ * Walk the device's capability list and return the config-space offset
+ * of the first capability whose ID equals `cap_id`, or 0 if absent.
+ * Returns 0 when the device reports no capability list.
+ */
+uint8_t pci_find_capability(const struct pci_device *dev, uint8_t cap_id);
+
 /* Configuration space accessors. */
 uint8_t pci_read_config_byte(uint8_t bus, uint8_t dev, uint8_t func,
 			     uint8_t offset);

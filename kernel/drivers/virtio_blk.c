@@ -61,6 +61,8 @@
 #define VIRTQ_DESC_F_NEXT 1u
 #define VIRTQ_DESC_F_WRITE 2u
 
+#define VIRTQ_AVAIL_F_NO_INTERRUPT 1u
+
 #define VIRTIO_BLK_SECTOR_SIZE 512u
 #define VIRTQ_SIZE 32u
 #define VIRTIO_PCI_CAP_MAX 256u
@@ -403,6 +405,15 @@ static int virtq_init(struct virtio_blk_dev *d, uint16_t qsize)
 					      sizeof(struct virtq_used_hdr));
 	vq->last_used_idx = 0;
 
+	/*
+	 * This is a polling-only driver with no MSI-X vector assigned
+	 * (queue_msix_vector == VIRTIO_NO_VECTOR), so ask the device not to
+	 * raise used-buffer notifications. Otherwise the device would assert
+	 * its legacy INTx line for every completion with no handler to clear
+	 * it. Must be set before the queue is enabled.
+	 */
+	vq->avail->flags = VIRTQ_AVAIL_F_NO_INTERRUPT;
+
 	c->queue_size = qsize;
 	c->queue_msix_vector = VIRTIO_NO_VECTOR;
 	c->queue_desc = (uint64_t)pa;
@@ -726,7 +737,24 @@ static int virtio_blk_setup(const struct pci_device *pci)
 		return err;
 
 	c = m->common;
+
+	/*
+	 * Reset the device, then wait (bounded) for the reset to complete:
+	 * the spec requires device_status to read back 0 before the driver
+	 * reinitializes it. On real hardware the reset is not instantaneous.
+	 */
 	c->device_status = 0;
+	{
+		uint32_t spin = 0;
+		while (c->device_status != 0) {
+			if (++spin > VIRTIO_POLL_BUDGET) {
+				err = -EIO;
+				goto fail;
+			}
+			__asm__ __volatile__("pause");
+		}
+	}
+
 	c->device_status = VIRTIO_STATUS_ACKNOWLEDGE;
 	c->device_status =
 	    (uint8_t)(VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER);
