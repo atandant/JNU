@@ -1,6 +1,103 @@
 JNU Kernel Internals Manual
 ============================
 
+JNU is an x86_64 hobby kernel (currently v0.0.3.x) booted via `Limine
+v8 <https://github.com/limine-bootloader/limine>`_. It runs a native
+userspace built on ``libjnu`` and can also execute statically-linked
+`musl <https://musl.libc.org/>`_ programs when the kernel's
+Linux-compatible syscall surface is satisfied.
+
+This manual documents how the kernel is built, how it boots, and how
+each major subsystem fits together. It is generated from the source tree
+alongside the code and is intended for developers working on or auditing
+the kernel — not as an end-user guide.
+
+Quick start
+-----------
+
+If you only need to build and run the kernel, start with :doc:`build`.
+To link musl programs, see :doc:`musl`.
+
+System overview
+---------------
+
+At a high level, JNU follows a conventional monolithic layout:
+
+.. code-block:: text
+
+   Firmware / Limine
+        │
+        ▼
+   kernel_main()          ← arch, MM, drivers, VFS
+        │
+        ├── initramfs     ← early /init, test binaries (CPIO in memory)
+        └── Minix root    ← persistent disk on hda (ATA) or vda (virtio-blk)
+        │
+        ▼
+   /init (ring 3)        ← forks, execs musltest, keyboard echo
+
+**Boot media.** Limine loads ``kernel.elf`` and an ``initramfs.cpio``
+module. The kernel parses the CPIO archive for early executables, then
+mounts a MINIX v1 filesystem from a block device as ``/``.
+
+**Memory.** Physical pages are managed by a buddy allocator (PMM).
+Four-level paging maps virtual addresses; each process has an
+``addr_space`` (PML4 + VMA red-black tree). Kernel heap objects use slab
+caches behind ``kmalloc``.
+
+**Processes.** A *process* holds PID, fd table, and address space. A
+*task* is the schedulable execution context (kernel stack, saved
+registers). The scheduler is single-CPU round-robin, preempted by the
+LAPIC timer.
+
+**Syscalls.** Userspace enters the kernel via ``SYSCALL``/``SYSRET``.
+Since v0.0.3, syscall *numbers* match the Linux x86_64 ABI so musl can
+link without patches; semantics and error handling remain JNU's. See
+:doc:`syscall/interface` and :doc:`syscall/table`.
+
+**Filesystems.** The VFS layer sits above Minix v1 on block devices.
+Initramfs files are accessed through a separate fd backing type until
+the root disk is mounted.
+
+Suggested reading order
+-----------------------
+
+For a first pass through the codebase:
+
+1. :doc:`build` — toolchain, Make targets, QEMU/VMware disk setup
+2. :doc:`arch/boot` — Limine handoff and ``kernel_main()`` bring-up order
+3. :doc:`mm/pmm` → :doc:`mm/paging` → :doc:`mm/vmm` → :doc:`mm/vma` — memory stack
+4. :doc:`proc/process` → :doc:`proc/scheduler` → :doc:`proc/exec` — tasks and ELF load
+5. :doc:`syscall/interface` → :doc:`syscall/table` — userspace/kernel boundary
+6. :doc:`fs/initramfs` → :doc:`fs/vfs` → :doc:`fs/fd` — file I/O path
+7. :doc:`infra/panic` → :doc:`infra/klog` — diagnostics when things go wrong
+
+Repository layout
+-----------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 78
+
+   * - Path
+     - Contents
+   * - ``kernel/``
+     - Kernel source: ``arch/x86_64/``, ``mm/``, ``fs/``, ``syscall/``,
+       ``drivers/``, ``kernel/`` (main, sched, panic), ``user/`` (fd, copy)
+   * - ``include/jnu/``
+     - Kernel-internal headers
+   * - ``include/uapi/jnu/``
+     - Userspace ABI: syscall numbers, errno, stat, mman
+   * - ``user/``
+     - Native programs (``init/``, etc.), ``libjnu/`` thin libc, optional
+       ``musl/`` and ``musltest/``
+   * - ``boot/``
+     - ``limine.cfg``, prebuilt Limine binaries
+   * - ``scripts/``
+     - Build helpers (initramfs, ISO, QEMU, code generation)
+   * - ``docs/source/``
+     - This manual (reStructuredText, built with Sphinx)
+
 .. toctree::
    :maxdepth: 1
    :caption: Setup and Build

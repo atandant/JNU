@@ -1,15 +1,34 @@
 Virtual Memory Manager
 ======================
 
-The Virtual Memory Manager (VMM) owns the per-process concept of an
-*address space*. It couples a physical PML4 (managed by the paging layer)
-with a red-black tree of Virtual Memory Areas (VMAs) that record the
-logical permissions of each mapped range.
+The Virtual Memory Manager (VMM) owns the per-process *address space*:
+a PML4 page table (managed by :doc:`paging`) plus a red-black tree of
+:doc:`vma` descriptors recording logical permissions for each mapped
+range.
 
-Address Space
--------------
+Source: ``kernel/mm/vmm.c``, ``include/jnu/mm/vmm.h``. CoW cloning:
+``kernel/mm/clone_space.c``.
 
-Each process holds exactly one ``struct addr_space``:
+Address space layout
+--------------------
+
+User virtual addresses occupy the low canonical half:
+
+.. code-block:: text
+
+   0x0000000000000000
+        │
+        ├── ELF PT_LOAD segments (executable, data, bss)
+        ├── mmap region (grows downward from MMAP_BASE)
+        └── user stack (grows down from near USER_STACK_TOP)
+   0x0000800000000000  USER_TOP (exclusive — no user mappings at or above)
+
+``USER_TOP`` is enforced by ``user_range_ok()`` in the syscall path.
+The kernel maps itself in the upper canonical half via Limine's HHDM and
+the shared kernel PML4 entries copied into every user address space.
+
+Address space structure
+-----------------------
 
 .. code-block:: c
 
@@ -19,16 +38,18 @@ Each process holds exactly one ``struct addr_space``:
        struct rb_root vmas;  /* Red-black tree of struct vma */
    };
 
-The kernel itself has an address space returned by ``vmm_kernel_space()``.
-User processes receive a freshly allocated space from ``vmm_create_space()``.
-``vmm_switch_to(space)`` loads ``space->pml4_phys`` into CR3.
+* ``vmm_kernel_space()`` — singleton used while running kernel code on
+  behalf of no user process.
+* ``vmm_create_space()`` — fresh PML4 for ``exec`` or first user process.
+* ``vmm_switch_to(space)`` — load ``space->pml4_phys`` into CR3.
 
-VMA Flags
----------
+VMA flags vs PTE flags
+----------------------
 
-VMA permission flags are independent of the PTE flags. The VMA records the
-*intended* permissions; the PTE may have ``PTE_WRITE`` cleared for CoW
-purposes while the VMA retains ``VMA_WRITE``.
+VMA permission flags record *intent*; PTE flags record *hardware* state.
+During CoW, a VMA may keep ``VMA_WRITE`` while ``PTE_WRITE`` is cleared
+on shared pages. The ``#PF`` handler consults the VMA to decide whether a
+write fault is legal, then calls ``vmm_handle_cow_fault()``.
 
 .. list-table::
    :header-rows: 1
@@ -39,88 +60,84 @@ purposes while the VMA retains ``VMA_WRITE``.
      - Meaning
    * - ``VMA_READ``
      - 0
-     - Region is readable by the owning process.
+     - Region readable by owner.
    * - ``VMA_WRITE``
      - 1
-     - Region is writable. Write faults are CoW-resolved if ``PTE_WRITE``
-       is clear.
+     - Logically writable; CoW may defer ``PTE_WRITE``.
    * - ``VMA_EXEC``
      - 2
-     - Region is executable. Absence implies ``PTE_NX`` on all PTEs.
+     - Executable; else ``PTE_NX``.
    * - ``VMA_USER``
      - 3
-     - Region belongs to user space. ``PTE_USER`` is set on all PTEs.
+     - User mapping; ``PTE_USER`` on all PTEs in range.
 
-Mapping and Unmapping
----------------------
+Mapping API
+-----------
 
 .. code-block:: c
 
    int vmm_map(struct addr_space *space, vaddr_t virt,
                paddr_t phys, size_t pages, uint32_t flags);
 
-Inserts a VMA covering ``[virt, virt + pages * PAGE_SIZE)`` into the RB
-tree and calls ``paging_map()`` to install the PTEs. Returns 0 or a negative
-errno. Fails with ``-EEXIST`` if the range overlaps an existing VMA.
+Insert a VMA for ``[virt, virt + pages * PAGE_SIZE)`` and install PTEs
+via ``paging_map()``. Returns ``-EEXIST`` on overlap.
 
 .. code-block:: c
 
    int vmm_unmap(struct addr_space *space, vaddr_t virt, size_t pages);
 
-Removes the VMA from the tree, calls ``paging_unmap()`` to clear the PTEs,
-and releases the physical pages via ``pmm_put_user_page()`` for each page
-that was marked ``VMA_USER``.
+Remove overlapping VMA coverage, clear PTEs, and for user pages call
+``pmm_put_user_page()`` per released frame.
 
 .. code-block:: c
 
    int vmm_protect(struct addr_space *space, vaddr_t virt,
                    size_t pages, uint32_t new_flags);
 
-Updates the VMA flags and calls ``paging_protect()`` to modify the PTEs.
-Used by the ELF loader to apply segment-specific permissions (``PT_LOAD``
-segments with different ``p_flags``).
+Update VMA flags and PTE permissions. Used by the ELF loader for
+per-segment ``p_flags`` and by ``mprotect``.
 
-Copy-on-Write
--------------
+Copy-on-write (fork)
+--------------------
 
-``vmm_clone_space(src, &dst)`` implements the address-space duplication
-required by ``fork()``:
+``vmm_clone_space(src, &dst)`` implements address-space duplication for
+``fork()``:
 
-1. A new PML4 is allocated and the kernel half is copied in.
-2. For every VMA in ``src`` with ``VMA_USER``:
+1. Allocate a new PML4; copy the kernel half from ``src``.
+2. For each user VMA in ``src``, insert a matching VMA in ``dst``.
+3. For each user PTE, clear ``PTE_WRITE`` and bump
+   ``pmm_get_user_page()`` refcount.
+4. Map the same physical pages into ``dst`` at the same virtual addresses.
 
-   a. A new ``struct vma`` with the same range and flags is inserted into
-      ``dst``.
-   b. Every PTE in the range has ``PTE_WRITE`` cleared and a reference
-      is bumped via ``pmm_get_user_page()``.
-   c. The same physical pages are mapped read-only into ``dst`` at the
-      same virtual addresses.
-
-After cloning, both the parent and child observe the shared pages as
-read-only. The first write by either party triggers a ``#PF`` with
-``PF_EC_W | PF_EC_P | PF_EC_U``, which is handled by
+The first write in either process triggers a ``#PF`` handled by
 ``vmm_handle_cow_fault()``:
 
-1. The faulting VMA is found in the current address space.
-2. The current PTE's physical address is read.
-3. If ``pmm_user_refcount(pa) > 1``, a new page is allocated, the content
-   is copied, the old page is released with ``pmm_put_user_page()``, and
-   the PTE is updated to point to the new page with ``PTE_WRITE`` restored.
-4. If the refcount is already 1, ``PTE_WRITE`` is simply restored in place
-   (no copy needed; this process is the sole owner).
-5. ``paging_invlpg()`` flushes the TLB entry.
+1. Locate VMA; verify write permission.
+2. Read current PTE physical address.
+3. If ``pmm_user_refcount(pa) > 1``, allocate a new page, copy content,
+   drop old refcount, remap with ``PTE_WRITE``.
+4. If refcount is 1, restore ``PTE_WRITE`` in place (sole owner).
+5. ``paging_invlpg()`` for the faulting address.
 
-Address Space Destruction
---------------------------
+Lazy anonymous mmap
+-------------------
 
-``vmm_destroy_space(space)`` iterates every user VMA, unmaps it (releasing
-physical pages), then frees the page-table tree via
-``paging_destroy_user_half()`` and frees the PML4 page itself.
+``sys_mmap`` (``kernel/mm/mmap.c``) creates a VMA with no backing pages
+initially. The first access faults with "not present"; the page fault path
+allocates a zeroed user page and installs the PTE. This keeps ``mmap``
+cheap for large reserved regions.
+
+Destruction
+-----------
+
+``vmm_destroy_space(space)`` unmaps every user VMA (releasing physical
+pages), destroys user half page tables via ``paging_destroy_user_half()``,
+and frees the PML4 frame. Called when a process is reaped after ``wait``.
 
 Selftests
 ---------
 
-``vmm_selftest()`` verifies map, protect, and CoW semantics. It also calls
-``clone_space_selftest()``, which creates a parent space, writes a pattern,
-clones it, mutates the child, and verifies that the parent's mapping is
-unchanged.
+``vmm_selftest()`` verifies map, protect, and unmap on a scratch space.
+``clone_space_selftest()`` forks CoW semantics: parent and child share
+pages, child write does not mutate parent. Run with ``selftest=1`` at boot
+(see :doc:`/infra/selftest`).

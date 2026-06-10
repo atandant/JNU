@@ -1,23 +1,29 @@
 Virtual File System
 ===================
 
-The VFS provides a uniform file access interface over multiple backing
-filesystems. In v0.0.2.2, the only registered filesystem type is Minix.
-The VFS layer is read-only; write operations are not yet implemented.
+The VFS provides a uniform path and inode interface over concrete
+filesystem implementations. In v0.0.3 the only registered type is **Minix
+v1** on a block device; the ops table also supports write, create, and
+unlink for musl filesystem tests.
+
+Source: ``kernel/fs/vfs.c``, ``kernel/fs/minix/``, ``include/jnu/fs/vfs.h``.
 
 Architecture
 ------------
 
-The VFS is structured around three types:
+Three core types:
 
-- ``struct vfs_mount``: one per mounted filesystem. Holds a pointer to the
-  backing block device, the filesystem operations table, and the root inode.
-- ``struct vfs_inode``: one per open file or directory. Holds the inode
-  number, size, mode, UID/GID, and a pointer back to the owning mount.
-- ``struct vfs_ops``: a vtable of function pointers implementing the
-  operations for a specific filesystem type.
+* ``struct vfs_mount`` — one mounted instance (block device, ops vtable,
+  filesystem-private ``priv``, root inode).
+* ``struct vfs_inode`` — file or directory metadata (ino, size, mode,
+  per-inode mutex).
+* ``struct vfs_ops`` — filesystem callbacks (mount, lookup, read, write, …).
 
-Data Structures
+At boot, ``kernel_main()`` calls ``vfs_mount("vda", "minix", "/")`` or
+falls back to ``hda``. Only a single root mount exists; there is no
+mount-namespace or ``..`` traversal across mount points.
+
+Data structures
 ---------------
 
 .. code-block:: c
@@ -30,17 +36,30 @@ Data Structures
                          struct vfs_dirent *out);
        ssize_t(*read)   (struct vfs_inode *ino, uint64_t offset,
                          size_t len, void *buf);
+       ssize_t(*write)  (struct vfs_inode *ino, uint64_t offset,
+                         size_t len, const void *buf);
+       int    (*truncate)(struct vfs_inode *ino, uint64_t size);
+       int    (*create) (struct vfs_inode *dir, const char *name,
+                         uint16_t mode, struct vfs_inode **out);
+       int    (*unlink) (struct vfs_inode *dir, const char *name);
+       int    (*mkdir)  (struct vfs_inode *dir, const char *name,
+                         uint16_t mode);
+       int    (*rmdir)  (struct vfs_inode *dir, const char *name);
+       int    (*rename) (struct vfs_inode *old_dir, const char *old_name,
+                         struct vfs_inode *new_dir, const char *new_name);
+       int    (*fsync)  (struct vfs_inode *ino);
        void   (*close)  (struct vfs_inode *ino);
    };
 
    struct vfs_mount {
        struct block_device     *bdev;
        const struct vfs_ops    *ops;
-       void                    *priv;   /* filesystem-private state */
+       void                    *priv;
        struct vfs_inode        *root;
    };
 
    struct vfs_inode {
+       struct mutex      lock;
        struct vfs_mount *mnt;
        uint32_t          ino;
        uint64_t          size;
@@ -48,88 +67,90 @@ Data Structures
        uint16_t          mode;
        uint16_t          uid;
        uint16_t          gid;
-       void             *priv;  /* filesystem-private inode state */
+       void             *priv;
    };
 
-   struct vfs_dirent {
-       uint32_t ino;
-       char     name[VFS_NAME_MAX];   /* VFS_NAME_MAX = 64 */
-   };
-
-API
----
+Mount and path operations
+-------------------------
 
 .. code-block:: c
 
    void vfs_init(void);
+   int vfs_mount(const char *bdev_name, const char *fstype, const char *target);
 
-Initializes the VFS subsystem. Must be called before ``vfs_mount()``.
-
-.. code-block:: c
-
-   int vfs_mount(const char *bdev_name, const char *fstype,
-                 const char *target);
-
-Mounts the filesystem of type ``fstype`` from the block device named
-``bdev_name`` at the path ``target``. In v0.0.2.2 the only supported
-``fstype`` is ``"minix"`` and the only supported ``target`` is ``"/"``.
-Returns 0 or a negative errno.
+``vfs_mount`` looks up the block device by name, calls ``ops->mount``,
+and records the root inode. Supported: ``fstype == "minix"``,
+``target == "/"``.
 
 .. code-block:: c
 
    int vfs_open(const char *path, struct vfs_inode **out);
 
-Resolves ``path`` relative to the mounted root. Walks each path component
-by calling ``ops->lookup()`` from the root inode. Returns 0 and sets
-``*out`` to the resolved inode on success, or a negative errno if any
-component is not found or the caller lacks permission.
+Tokenize ``path`` on ``/`` and walk from root via ``ops->lookup`` per
+component. Does not resolve ``.`` or ``..`` or symlinks.
 
 .. code-block:: c
 
    ssize_t vfs_read(struct vfs_inode *ino, uint64_t offset,
                     size_t len, void *buf);
+   ssize_t vfs_write(struct vfs_inode *ino, uint64_t offset,
+                     size_t len, const void *buf);
 
-Reads ``len`` bytes from ``ino`` starting at ``offset`` into the kernel
-buffer ``buf``. Returns the number of bytes read (may be less than ``len``
-at EOF), or a negative errno.
+Read/write through inode mutex and Minix file ops.
+
+.. code-block:: c
+
+   int vfs_create(const char *path, uint16_t mode, struct vfs_inode **out);
+   int vfs_unlink(const char *path);
+   int vfs_mkdir(const char *path, uint16_t mode);
+   int vfs_rmdir(const char *path);
+   int vfs_rename(const char *old_path, const char *new_path);
+   int vfs_truncate(struct vfs_inode *ino, uint64_t size);
+   int vfs_fsync(struct vfs_inode *ino);
+
+Mutators used by write-related syscalls (``creat``, ``unlink``, ``mkdir``,
+etc.). All paths are relative to the single root mount.
 
 .. code-block:: c
 
    int vfs_readdir(struct vfs_inode *dir, size_t index,
                    struct vfs_dirent *out);
-
-Reads the directory entry at position ``index`` from ``dir``. Returns 1
-if an entry was written to ``out``, 0 if the index is past the last entry,
-or a negative errno on error.
-
-.. code-block:: c
-
    void vfs_close(struct vfs_inode *ino);
 
-Releases the inode. Calls ``ops->close()`` to allow the filesystem to
-free any private state. The inode pointer must not be used after this call.
+Path resolution limits
+----------------------
 
-Path Resolution
----------------
+* ``VFS_NAME_MAX`` is 64 bytes per path component.
+* No symbolic links, permission checks against current uid, or multiple
+  mount points.
+* Longer component names fail lookup with ``-ENOENT``.
 
-The path resolver in ``vfs_open()`` is minimal: it tokenizes on ``/`` and
-calls ``ops->lookup()`` once per component from the root. It does not
-handle ``.`` or ``..``, symlinks, or mount-point traversal.
+Integration with file descriptors
+---------------------------------
 
-.. note::
+Syscall handlers do not call VFS directly. Flow:
 
-   ``VFS_NAME_MAX`` is 64 bytes. Path components longer than 63 characters
-   (plus NUL) will cause ``ops->lookup()`` to return ``-ENOENT``.
+1. ``open`` → resolve path (initramfs, VFS, or chardev) → wrap in
+   ``struct file`` → ``fd_alloc()``.
+2. ``read``/``write``/``lseek``/``fstat`` → ``fd_get()`` → dispatch by
+   ``file->type``.
 
-Integration with the File Descriptor Layer
-------------------------------------------
+See :doc:`fd` and :doc:`/syscall/table`.
 
-Syscall handlers do not call the VFS directly. They interact with it
-through the file descriptor layer (``fd.h``). ``sys_open()`` calls
-``vfs_open()``, wraps the resulting inode in a ``struct file`` of type
-``JNU_FILE_VFS``, and allocates a slot in the process fd table via
-``fd_alloc()``.
+Minix implementation
+--------------------
 
-Subsequent ``read()``, ``lseek()``, and ``fstat()`` calls retrieve the
-``struct file`` via ``fd_get()`` and dispatch to ``vfs_read()`` or
-equivalent.
+Under ``kernel/fs/minix/``:
+
+* Superblock and magic ``0x137F`` at byte offset 1024 on disk
+* Inode and zone tables, bitmap allocation
+* Buffer cache for block I/O via :doc:`block`
+
+Wrong or blank disk images panic at mount with invalid magic — see
+:doc:`/build` (VMware/QEMU disk setup).
+
+Selftests
+---------
+
+``vfs_selftest()`` opens and reads a file from the mounted root when
+``selftest=1``. Requires successful Minix mount on ``vda`` or ``hda``.

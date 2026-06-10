@@ -1,14 +1,52 @@
 Syscall Entry and Frame Layout
 ==============================
 
-The JNU native syscall ABI uses the ``SYSCALL``/``SYSRET`` instruction pair.
-``SYSCALL`` saves ``RIP`` into ``RCX``, saves ``RFLAGS`` into ``R11``, and
-transfers control to the address in ``IA32_LSTAR``.
+The JNU syscall path uses the x86_64 ``SYSCALL``/``SYSRET`` instruction
+pair. ``SYSCALL`` saves user ``RIP`` in ``RCX``, user ``RFLAGS`` in
+``R11``, and jumps to ``IA32_LSTAR`` (``syscall_entry`` in
+``syscall_entry.S``).
 
-Register Convention
+MSR setup
+---------
+
+``arch_syscall_init()`` in ``kernel/arch/x86_64/arch_syscall.c`` runs
+during boot (step 5 in :doc:`boot`), after GDT install:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
+
+   * - MSR
+     - Value / purpose
+   * - ``IA32_STAR`` (``0xC0000081``)
+     - Encodes kernel CS/SS selectors for ``SYSCALL``/``SYSRET`` target.
+       User CS/SS are derived by adding 16/8 to STAR's user field per
+       Intel rules — must match :doc:`descriptors` GDT layout.
+   * - ``IA32_LSTAR`` (``0xC0000082``)
+     - Entry point: ``syscall_entry``.
+   * - ``IA32_FMASK`` (``0xC0000084``)
+     - RFLAGS mask: clears TF, IF, DF, IOPL, NT, AC on syscall entry.
+   * - ``IA32_EFER.SCE``
+     - Enables the syscall mechanism.
+
+``IA32_KERNEL_GS_BASE`` points at a per-CPU ``struct syscall_scratch``:
+
+.. code-block:: c
+
+   struct syscall_scratch {
+       uint64_t user_rsp;    /* offset 0 — saved user stack pointer */
+       uint64_t kernel_rsp;  /* offset 8 — current task kernel stack top */
+       int64_t  current_nr;  /* syscall number for debugging */
+   };
+
+``arch_syscall_set_kernel_stack()`` updates ``kernel_rsp`` on every
+context switch so the entry stub always switches to the correct task
+stack.
+
+Register convention
 -------------------
 
-On entry to ``syscall_entry.S``, the register assignments are:
+On entry to ``syscall_entry.S``:
 
 .. list-table::
    :header-rows: 1
@@ -17,7 +55,7 @@ On entry to ``syscall_entry.S``, the register assignments are:
    * - Register
      - Role
    * - ``RAX``
-     - Syscall number (``JNU_SYS_*``).
+     - Syscall number (Linux x86_64 values — see :doc:`/syscall/table`).
    * - ``RDI``
      - Argument 0.
    * - ``RSI``
@@ -25,22 +63,34 @@ On entry to ``syscall_entry.S``, the register assignments are:
    * - ``RDX``
      - Argument 2.
    * - ``R10``
-     - Argument 3 (replaces ``RCX``, which is overwritten by ``SYSCALL``).
+     - Argument 3 (replaces ``RCX``, clobbered by ``SYSCALL``).
    * - ``R8``
      - Argument 4.
    * - ``R9``
      - Argument 5.
    * - ``RCX``
-     - (Clobbered by ``SYSCALL``; holds user RIP on entry to the stub.)
+     - User return RIP (saved by hardware).
    * - ``R11``
-     - (Clobbered by ``SYSCALL``; holds user RFLAGS on entry to the stub.)
+     - User RFLAGS (saved by hardware).
 
-Kernel Stack Layout
+Entry sequence (summary)
+------------------------
+
+1. ``SWAPGS`` — activate kernel GS base (scratch struct).
+2. Save user ``RSP`` to scratch slot 0.
+3. Load kernel ``RSP`` from scratch slot 8.
+4. Push ``struct syscall_args`` and callee-saved user registers onto the
+   kernel stack.
+5. ``sti`` — interrupts enabled during C handler.
+6. Call ``syscall_dispatch(&args)``.
+7. Store return value in frame; ``cli`` before return path.
+8. Restore registers, ``SWAPGS``, ``sysret``.
+
+Kernel stack layout
 -------------------
 
-The entry stub builds a ``struct syscall_frame`` on the kernel stack. The
-layout from lowest to highest address reflects the push order in
-``syscall_entry.S``:
+The entry stub builds a ``struct syscall_frame`` on the task's kernel
+stack:
 
 .. code-block:: c
 
@@ -57,7 +107,7 @@ layout from lowest to highest address reflects the push order in
 
        struct syscall_user_state {
            uint64_t rflags;  /* saved R11 */
-           uint64_t rip;     /* saved RCX (user return address) */
+           uint64_t rip;     /* saved RCX */
            uint64_t rsp;     /* saved user RSP from GS slot 0 */
            uint64_t r12;
            uint64_t rbx;
@@ -68,37 +118,40 @@ layout from lowest to highest address reflects the push order in
        } user;
    };
 
-The ``syscall_user_state_of(args)`` inline accessor returns a pointer to
-the ``syscall_user_state`` that immediately follows a ``syscall_args`` on
-the stack. This is used by ``sys_fork()`` to forge the child's return frame
-without a separate allocation.
+``syscall_user_state_of(args)`` returns a pointer to the ``user`` sub-struct
+immediately following ``args`` on the stack. ``sys_fork()`` uses this to
+forge the child's return frame (``RAX = 0``, same ``RIP``/``RSP`` as parent
+syscall site) without a separate allocation.
 
-``SWAPGS`` and GS Slot Usage
------------------------------
+``SWAPGS`` and user RSP
+-----------------------
 
-On entry, the stub executes ``SWAPGS`` to bring in the kernel GS base. GS
-slot 0 holds the saved user RSP, which is saved there by the kernel before
-returning to userspace. This avoids a chicken-and-egg problem: the stub
-cannot save RSP to the kernel stack before knowing the kernel RSP.
+The stub cannot push user ``RSP`` onto the kernel stack before knowing the
+kernel ``RSP``. GS slot 0 holds the user stack pointer across the
+transition; the kernel saves it there before returning to userspace.
 
-On return, ``SWAPGS`` is executed again before ``SYSRET`` to restore user
-GS. The user ``RFLAGS`` is restored from the saved ``R11``; ``SYSRET``
-restores ``RIP`` from ``RCX``.
+On ``SYSRET``, user ``RFLAGS`` comes from saved ``R11``; user ``RIP``
+from ``RCX``.
 
 .. warning::
 
-   ``SYSRET`` to a non-canonical ``RIP`` raises ``#GP`` in ring 0, not in
-   ring 3. Userspace RIP values must be validated against the canonical
-   address mask before returning to avoid an unrecoverable kernel exception.
+   ``SYSRET`` to a non-canonical ``RIP`` raises ``#GP`` in ring 0.
+   Validate userspace entry points during ELF load and after ``execve``.
 
 Dispatcher
 ----------
 
-The C dispatcher ``syscall_dispatch(const struct syscall_args *args)``
-performs a bounds check against ``JNU_SYS_MAX`` and dispatches to the
-appropriate handler via a jump table. Unknown syscall numbers return
-``-ENOSYS``.
+``syscall_dispatch()`` in ``kernel/syscall/dispatch.c`` indexes a sparse
+table by Linux syscall number. See :doc:`/syscall/interface` and
+:doc:`/syscall/table`.
 
-Path strings passed in userspace pointers are copied via
-``syscall_copy_path(dst, upath)``, which internally calls
-``copy_string_from_user()`` with a ``JNU_PATH_MAX`` (256 byte) limit.
+Path strings use ``syscall_copy_path()`` → ``copy_string_from_user()``
+with ``JNU_PATH_MAX`` (256 bytes).
+
+First userspace entry (contrast)
+--------------------------------
+
+The **first** ring-3 entry for a new process uses ``usermode_enter()``
+in ``kernel/arch/x86_64/usermode.c`` (``iretq`` with constructed trap
+frame), not ``SYSRET``. Subsequent kernel entry from that process uses
+``SYSCALL`` after it invokes libc wrappers.

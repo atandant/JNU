@@ -126,3 +126,32 @@ on each ``read()`` call.
 
    The initramfs does not support ``write()``, ``mkdir()``, or any
    mutating operation. It is a pure read-only bootstrap archive.
+
+How the archive is built
+------------------------
+
+The Makefile target ``make`` / ``make user`` builds native userspace
+binaries under ``build/user/``. ``scripts/make-initramfs.sh`` packs them
+into ``build/initramfs.cpio`` using the **newc** format.
+
+``scripts/make-image.sh`` stages ``kernel.elf`` and ``initramfs.cpio``
+into the ISO root. Limine loads the kernel and the module; the module
+cmdline must be ``initramfs`` (see ``boot/limine.cfg`` and
+:doc:`/arch/boot`).
+
+Typical contents include ``/init``, ``/bin/hello``, and other programs
+discovered as ``user/*/main.c`` (excluding ``libjnu``, ``musl``,
+``musltest``). musl binaries use a separate ``initramfs-musl.cpio`` when
+building ``make iso-musl``.
+
+Module selection at boot
+------------------------
+
+``find_initramfs_module()`` in ``kernel_main()``:
+
+1. Prefer a Limine module whose cmdline is exactly ``initramfs``.
+2. If none labeled and exactly one module exists, use that module.
+3. If multiple unlabeled modules exist, boot panics.
+
+The module's file bytes are passed to ``initramfs_init(base, len)`` without
+copy — the archive must remain mapped for the kernel lifetime.

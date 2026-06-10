@@ -1,21 +1,25 @@
 Command Line Parser
 ===================
 
-The kernel command line is a single string passed by the Limine bootloader
-through the ``limine_kernel_file`` response. It is parsed once during early
-boot into a flat key-value table that subsystems query at runtime.
+The kernel command line is a single string from Limine's
+``limine_kernel_file`` response (see ``boot/limine.cfg`` ``CMDLINE=``).
+Parsed once in early boot into a flat key/value table for runtime queries.
+
+Source: ``kernel/kernel/cmdline.c``, ``include/jnu/kernel/cmdline.h``.
 
 Format
 ------
 
-The command line is a space-separated list of tokens. Each token is one of:
+Space-separated tokens:
 
-- ``key=value`` — sets the key to the given value string.
-- ``key`` — sets the key to the implicit value ``"1"``.
+* ``key=value`` — store value string.
+* ``key`` alone — implicit value ``"1"``.
 
-Token parsing stops at ``CMDLINE_MAX_ENTRIES`` (32) entries. Keys are
-truncated to ``CMDLINE_MAX_KEY`` (32) characters; values are truncated to
-``CMDLINE_MAX_VALUE`` (64) characters. Excess tokens are silently ignored.
+Limits:
+
+* At most ``CMDLINE_MAX_ENTRIES`` (32) pairs; excess tokens dropped.
+* Keys truncated to ``CMDLINE_MAX_KEY`` (32) chars.
+* Values truncated to ``CMDLINE_MAX_VALUE`` (64) chars.
 
 API
 ---
@@ -24,56 +28,84 @@ API
 
    void cmdline_parse(const char *s);
 
-Parses the command-line string ``s`` and populates the internal table.
-Must be called once during ``kernel_main()``, before any subsystem calls
-``cmdline_get()`` or ``cmdline_bool()``. The function is idempotent: if
-called more than once, later calls overwrite the existing table.
+Called from ``kernel_main()`` before subsystems read options. Re-parsing
+overwrites the table.
 
 .. code-block:: c
 
    const char *cmdline_get(const char *key);
 
-Returns a pointer to the value string for ``key``, or ``NULL`` if the key
-is not present. Bare keys return ``"1"``. The returned pointer is valid
-for the lifetime of the kernel.
+Return value pointer (lifetime = entire kernel) or ``NULL`` if absent.
+Bare keys return ``"1"``.
 
 .. code-block:: c
 
    bool cmdline_bool(const char *key);
 
-A convenience wrapper around ``cmdline_get()``. Returns ``true`` if the
-key is present and its value is not the string ``"0"``. Returns ``false``
-if the key is absent or its value is ``"0"``.
+``true`` if key present and value is not ``"0"``.
 
-Known Keys
+Known keys
 ----------
-
-The following keys are recognized by the kernel. Unrecognized keys are
-stored verbatim and are accessible by drivers or future subsystems.
 
 .. list-table::
    :header-rows: 1
-   :widths: 20 80
+   :widths: 22 78
 
    * - Key
-     - Description
+     - Effect
    * - ``init=<path>``
-     - Overrides the default init path (``/init``). Queried by
-       ``start_init()`` in ``kernel_main()``.
+     - Init executable path (default ``/init``). Loaded from initramfs
+       first, then VFS. See :doc:`/proc/process`.
    * - ``noinit=1``
-     - Disables userspace launch. The kernel enters its idle loop after
-       completing all initialization steps.
+     - Skip ``start_init()``; kernel enters idle loop after init.
    * - ``selftest=1``
-     - Enables the boot-time selftest suite. See :doc:`/infra/selftest`.
+     - Run ``selftest_run_all()`` before userspace; panic on failure.
+       See :doc:`selftest`.
    * - ``panictest=1``
-     - Unconditionally triggers a panic after init launch to test the
-       panic output path. For development use only.
+     - Deliberate ``panic()`` after init for panic-path testing.
    * - ``execprobe=1``
-     - Runs ``run_exec_probes()``, which validates the init binary without
-       executing it. Useful for diagnosing ELF loader issues.
+     - Validate ELF headers for probe paths without executing.
    * - ``dump=mem``
-     - Calls ``pmm_dump()`` to print the physical memory map after the
-       PMM is initialized.
+     - After PMM init, print physical memory map via ``pmm_dump()``.
    * - ``dump=blocks``
-     - Hex-dumps the first 8 sectors of ``hda`` to the kernel log after
-       the ATA driver is initialized.
+     - After ATA init, hex-dump first 8 sectors of ``hda``. Useful when
+       Minix mount fails (wrong/empty disk). See :doc:`/build`.
+   * - ``kbd=kernel``
+     - Keep keyboard echo in kernel idle loop instead of userspace only.
+
+Limine configuration example
+----------------------------
+
+From ``boot/limine.cfg``:
+
+.. code-block:: text
+
+   TIMEOUT=3
+   DEFAULT_ENTRY=1
+
+   :JNU
+   PROTOCOL=limine
+   KERNEL_PATH=boot:///kernel.elf
+   MODULE_PATH=boot:///initramfs.cpio
+   MODULE_CMDLINE=initramfs
+   CMDLINE=loglevel=3
+
+   :JNU Selftest
+   ...
+   CMDLINE=loglevel=4 selftest=1
+
+The initramfs module **must** have ``MODULE_CMDLINE=initramfs`` (or be
+the sole module) so ``find_initramfs_module()`` locates the CPIO archive.
+See :doc:`/arch/boot`.
+
+Unrecognized keys
+-----------------
+
+Stored in the table and available via ``cmdline_get()`` for drivers or
+future features. No error is raised for unknown keys.
+
+Related docs
+------------
+
+* Boot sequence and cmdline hooks: :doc:`/arch/boot`
+* VMware disk debugging: :doc:`/build`

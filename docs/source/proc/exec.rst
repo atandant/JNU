@@ -109,11 +109,50 @@ The calling task is expected to return to userspace via ``usermode_enter()``
 (for boot-time init) or by restoring a forged ``syscall_frame`` (for
 ``execve`` within a running process).
 
-.. note::
+Boot vs syscall exec paths
+--------------------------
 
-   The exec adapter functions ``load_initramfs_exec()``,
-   ``load_vfs_exec()``, ``validate_initramfs_exec()``, and
-   ``validate_vfs_exec()`` are defined in ``kernel/exec/initfs_exec.c``
-   and ``kernel/exec/vfs_exec.c``. They are not part of the public kernel
-   API but are referenced by ``kernel_main`` during the boot sequence to
-   load the init process.
+Two paths reach a loaded ELF in user space:
+
+* **Boot** — ``start_init()`` loads ``/init``, then
+  ``usermode_enter(entry, stack)`` via ``iretq`` (first ring-3 entry).
+* **Syscall** — ``sys_execve()`` replaces the address space and forges a
+  ``syscall_frame`` so ``SYSRET`` resumes at the new entry with the new
+  stack (same task, same PID).
+
+Both use ``process_execve()`` → ``elf64_load_image()`` and
+``elf64_setup_initial_stack()``.
+
+ELF types and validation
+------------------------
+
+``elf64_validate_image()`` accepts ``ET_EXEC`` and ``ET_DYN`` (PIE) for
+x86_64. Program headers must be ``PT_LOAD`` only for mapping; invalid
+magic, class, or machine returns ``-ENOEXEC``.
+
+Stack layout places ``argc``, ``argv`` pointers, ``envp`` pointers, and
+auxiliary vector entries (``AT_NULL`` terminator minimum) on the initial
+user stack. musl expects ``AT_PAGESZ`` and related auxv entries where
+implemented in ``elf64_setup_initial_stack()``.
+
+Load order for paths
+--------------------
+
+``load_boot_exec()`` (init) and ``sys_open`` resolution try **initramfs
+first**, then **VFS** root. Early boot binaries live only in the CPIO;
+after Minix mount, ``/bin/*`` on disk is used.
+
+Internal adapters
+-----------------
+
+``load_initramfs_exec()``, ``load_vfs_exec()``, and validate-only variants
+live in ``kernel/kernel/initfs_exec.c`` and ``kernel/kernel/vfs_exec.c``.
+They wrap ``struct exec_image`` with initramfs or VFS ``read_at``
+callbacks — not exported as public API.
+
+Related docs
+------------
+
+* VMA permissions per segment: :doc:`/mm/vmm`
+* Initramfs lookup: :doc:`/fs/initramfs`
+* First ring-3 entry: :doc:`/arch/syscall_entry`

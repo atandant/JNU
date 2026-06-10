@@ -20,9 +20,10 @@ Per-CPU Block
        bool     has_apic;
    };
 
-In v0.0.2 only a single CPU is supported. ``cpu_current()`` reads
+Only a single CPU is supported in v0.0.3. ``cpu_current()`` reads
 ``IA32_GS_BASE`` to return a pointer to the per-CPU block. The SMP
-extension path will populate one block per LAPIC ID.
+extension path will allocate one block per LAPIC ID and program each
+CPU's ``IA32_GS_BASE`` at bring-up.
 
 Feature Detection and Control Register Setup
 --------------------------------------------

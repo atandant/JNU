@@ -1,9 +1,13 @@
 kmalloc and kfree
 =================
 
-``kmalloc`` and ``kfree`` are the general-purpose dynamic memory allocation
-interface for kernel code. They sit on top of the slab allocator for small
-objects and fall back to the PMM for allocations larger than a page.
+``kmalloc``, ``kzalloc``, and ``kfree`` are the general-purpose dynamic
+memory interface for kernel code. They sit on top of the :doc:`slab`
+allocator for small objects and fall back to the :doc:`pmm` buddy allocator
+for multi-page requests.
+
+Implementation: ``kernel/mm/slab.c`` (size-class routing and large-allocation
+tracking). Public API: ``include/jnu/mm/kmalloc.h``.
 
 API
 ---
@@ -12,54 +16,107 @@ API
 
    void *kmalloc(size_t size);
 
-Allocates at least ``size`` bytes of kernel memory. The actual allocation
-is rounded up to the next power-of-two size class. Returns a pointer to
-zeroed memory on success, or ``NULL`` if the underlying slab cache or PMM
-cannot satisfy the request.
+Allocate at least ``size`` bytes. The request is rounded up to the next
+power-of-two size class for slab allocations, or to the smallest buddy
+order covering the size for large allocations. Returns a pointer to
+zeroed memory, or ``NULL`` on failure.
 
 .. code-block:: c
 
    void *kzalloc(size_t size);
 
-Identical to ``kmalloc`` but guarantees that the returned memory is zeroed.
-In the current implementation, ``kmalloc`` already returns zeroed memory,
-so ``kzalloc`` is an alias.
+Semantically "allocate and zero." In the current implementation ``kmalloc``
+already zeroes returned memory, so ``kzalloc`` is a thin alias.
 
 .. code-block:: c
 
    void kfree(void *ptr);
 
-Returns the memory at ``ptr`` to its originating allocator. The pointer
-must have been returned by ``kmalloc`` or ``kzalloc``. Passing a pointer
-obtained from any other source is undefined behavior.
+Return memory to its originating allocator. The pointer must have come from
+``kmalloc``/``kzalloc``. ``kfree(NULL)`` is a no-op.
 
-Size-Class Ladder
+Passing a pointer from ``pmm_alloc_pages``, ``kmem_cache_alloc`` of a
+different cache, or stack memory is undefined behavior.
+
+Size-class ladder
 -----------------
 
-For allocations of ``size <= PAGE_SIZE`` (4096 bytes), ``kmalloc`` selects
-the smallest power-of-two size class that can accommodate the request and
-allocates from the corresponding ``kmem_cache``. The caches are initialized
-by ``slab_init()`` and cover sizes 8, 16, 32, 64, 128, 256, 512, 1024, and
-2048 bytes.
+For ``size <= PAGE_SIZE`` (4096 bytes), ``kmalloc`` selects the smallest
+power-of-two cache that fits:
 
-Allocations larger than ``PAGE_SIZE`` are passed directly to
-``pmm_alloc_zeroed_pages()`` at the smallest order that covers the
-requested size. These allocations are tracked separately so ``kfree`` can
-call ``pmm_free_pages()`` with the correct order.
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - Class (bytes)
+     - Typical consumers
+   * - 8, 16, 32
+     - Tiny kernel structs, list nodes
+   * - 64, 128
+     - ``struct vma``, small driver state
+   * - 256, 512
+     - Path buffers, medium structs
+   * - 1024, 2048
+     - Larger single objects, temporary I/O buffers
+
+Caches are created in ``slab_init()`` after PMM and VMM are ready.
+
+Large allocations
+-----------------
+
+When ``size > PAGE_SIZE``, ``kmalloc`` calls
+``pmm_alloc_zeroed_pages()`` at the smallest order whose
+``PMM_ORDER_SIZE(order) >= size``. The returned pointer is recorded in an
+internal metadata table so ``kfree`` can call ``pmm_free_pages()`` with
+the correct order.
 
 .. note::
 
-   Because large allocations go directly to the PMM, they are always a
-   multiple of ``PAGE_SIZE``. Requesting, for example, 5000 bytes will
-   consume 8192 bytes (order 1). This waste is intentional; large kernel
-   allocations are infrequent and the simplicity is preferred over a
-   general-purpose large-object cache.
+   A request for 5000 bytes consumes 8192 bytes (buddy order 1). Large
+   kernel allocations are infrequent; simplicity is preferred over a
+   dedicated large-object cache.
 
-Usage Notes
------------
+Alignment
+---------
 
-- Callers must check the return value for ``NULL`` and handle allocation
-  failure gracefully. The kernel does not have an out-of-memory killer.
-- ``kfree(NULL)`` is a no-op.
-- Memory returned by ``kmalloc`` must not be passed to
-  ``pmm_free_pages()`` or ``kmem_cache_free()`` directly.
+Slab objects are aligned to at least the cache's alignment (typically
+natural alignment for the size class). Large buddy allocations are
+page-aligned (4096 bytes).
+
+There is no ``krealloc`` in v0.0.3. Callers that need resize must
+allocate a new block, copy, and ``kfree`` the old one.
+
+Failure behavior
+----------------
+
+``kmalloc`` returns ``NULL`` when the PMM or slab cannot satisfy the
+request. There is no OOM killer; callers **must** check the return value
+and propagate ``-ENOMEM`` or take a safe fallback path.
+
+Several boot paths use ``panic()`` on allocation failure (e.g. first
+process setup) where continuing would be unsafe.
+
+Usage guidelines
+----------------
+
+* Prefer stack or static storage for hot paths and boot-before-slab code.
+* Use ``kmem_cache_create`` directly when allocating many objects of the
+  same type (see :doc:`slab`).
+* Never ``kfree`` a pointer still reachable from another subsystem without
+  a clear ownership transfer.
+* Slab does not provide guard pages or use-after-free detection — treat
+  freed pointers as toxic.
+
+Boot ordering
+-------------
+
+``slab_init()`` runs in ``kernel_main()`` after ``pmm_init()``,
+``paging_init()``, and ``vmm_init()``. Code before step 9 in
+:doc:`/arch/boot` must not call ``kmalloc``.
+
+Selftests
+---------
+
+``slab_selftest()`` (invoked when ``selftest=1``) allocates and frees
+objects across multiple slab pages and verifies alloc/free count balance.
+See :doc:`/infra/selftest`.

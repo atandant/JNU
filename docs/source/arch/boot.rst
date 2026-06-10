@@ -107,14 +107,17 @@ comment in ``main.c``.
      - ``lapic_timer_init()`` / ``ioapic_mask(0)``
      - LAPIC timer takes over as the scheduler tick; PIT IRQ 0 is masked.
    * - 17
-     - ``pci_init()`` / ``ata_init()`` / ``kbd_init()``
-     - PCI enumeration, ATA disk driver, PS/2 keyboard driver.
+     - ``pci_init()`` / ``virtio_blk_init()`` / ``ata_init()`` / ``kbd_init()``
+     - PCI bus scan; VirtIO block (``vda``) and legacy ATA (``hda``)
+       drivers register block devices; PS/2 keyboard.
    * - 18
      - ``vfs_init()`` / ``vfs_mount()``
-     - VFS layer initialized; Minix filesystem mounted from ``hda`` as root.
+     - VFS initialized; Minix v1 mounted at ``/`` from ``vda`` if present,
+       otherwise ``hda``. Panics if neither device exists or mount fails.
    * - 19
      - ``start_init()``
-     - Loads the init process (``/init`` by default) and drops to ring 3.
+     - Loads ``/init`` (or ``init=<path>``) from initramfs, creates user
+       task, enters ring 3 via ``usermode_enter()``.
 
 HHDM Address Resolution
 ------------------------

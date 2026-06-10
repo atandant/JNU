@@ -24,7 +24,7 @@ The only defined flag is ``KLOG_BACKEND_ANSI`` (bit 0). Backends with this
 flag receive ANSI color escape sequences for ``KLOG_ERR`` and ``KLOG_WARN``
 levels; backends without it receive plain text.
 
-In v0.0.2 two backends are registered:
+In the current build two backends are registered:
 
 - **COM1 serial** (``KLOG_BACKEND_ANSI`` clear): raw text to the UART.
 - **Framebuffer console**: rendered via ``fbcon``; ANSI colors rendered
@@ -128,3 +128,22 @@ delivered even if the ring buffer lock is held by the panicking CPU.
 Drains the last ``n`` lines from the ring buffer and delivers each to
 ``cb``. Called by ``panic_with_state()`` to replay recent log history after
 the register dump.
+
+Ring buffer
+-----------
+
+The log ring holds up to 64 KiB of formatted text in ``printk.c``. When
+full, oldest data is overwritten. Early messages before framebuffer
+registration are retained and flushed when ``klog_register()`` adds a new
+backend.
+
+Serial output (COM1, 115200 8N1) is the primary boot console; framebuffer
+text console mirrors ``pr_*`` when Limine provides a framebuffer. QEMU
+users typically attach ``-serial stdio`` via ``scripts/run-qemu.sh`` to
+see kernel and panic output.
+
+Related docs
+------------
+
+* Panic replay: :doc:`panic`
+* Boot ordering (klog first): :doc:`/arch/boot`

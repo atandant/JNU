@@ -1,26 +1,51 @@
 Interrupt and Exception Handling
-=================================
+================================
 
-Exception Dispatch
-------------------
+All 256 IDT vectors dispatch through per-vector stubs in ``isr.S`` that
+converge on ``isr_common``, build a ``struct cpu_state`` trap frame, and
+call ``interrupt_dispatch(st)``.
 
-All 256 IDT vectors land in ``isr_common`` after their per-vector stub
-executes. ``isr_common`` saves the full GPR file and calls
-``interrupt_dispatch(struct cpu_state *st)``.
+Source: ``kernel/arch/x86_64/idt.c``, ``isr.S``, ``exceptions.c``.
 
-``interrupt_dispatch`` routes by vector number:
+Routing
+-------
 
-- Vectors 0–31 (architectural exceptions) are forwarded to
-  ``exceptions_handle()``.
-- Vectors 32–255 (external interrupts and IPIs) are dispatched through
-  the runtime handler table populated by ``idt_set_handler()``.
+``interrupt_dispatch`` branches on vector number:
 
-Page Fault Handler (#PF, Vector 14)
-------------------------------------
+* **Vectors 0–31** — architectural exceptions → ``exceptions_handle()``.
+* **Vectors 32–255** — hardware IRQs and driver-installed handlers via
+  the table populated by ``idt_set_handler()``.
 
-The page fault handler is one of the most complex paths in the kernel. On
-entry, ``CR2`` holds the faulting virtual address and the error code contains
-the following architectural bits:
+Exception policy (user vs kernel)
+---------------------------------
+
+``exceptions_handle()`` in ``kernel/arch/x86_64/exceptions.c`` applies
+different policies by privilege level:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 78
+
+   * - Fault origin
+     - Behavior
+   * - User mode (CS.CPL == 3)
+     - Log the fault, kill the offending process, schedule another task.
+       User bugs must not panic the kernel.
+   * - Kernel mode
+     - ``panic_with_state()`` with full register dump and backtrace.
+
+For ``#PF``, user origin is confirmed via both saved CS and error-code
+bit ``PF_EC_U`` (user/supervisor).
+
+This extends beyond page faults: ``#GP``, ``#UD``, ``#DE``, alignment
+checks, etc. in ring 3 terminate the process rather than halting the
+machine.
+
+Page fault handler (#PF, vector 14)
+-----------------------------------
+
+On entry, ``CR2`` holds the faulting virtual address. The error code
+bits (Intel SDM Vol. 3A §4.7):
 
 .. list-table::
    :header-rows: 1
@@ -30,49 +55,80 @@ the following architectural bits:
      - Mask
      - Meaning when set
    * - ``PF_EC_P``
-     - ``bit 0``
-     - Fault caused by a protection violation (page present but access denied).
+     - bit 0
+     - Protection violation (page present but access denied).
    * - ``PF_EC_W``
-     - ``bit 1``
-     - Fault was a write access.
+     - bit 1
+     - Write access.
    * - ``PF_EC_U``
-     - ``bit 2``
-     - Fault occurred while in user mode (CPL=3).
+     - bit 2
+     - Fault in user mode (CPL=3).
+   * - ``PF_EC_RSVD``
+     - bit 3
+     - Reserved bit set in PTE.
    * - ``PF_EC_I``
-     - ``bit 4``
-     - Instruction fetch caused the fault (NX violation).
+     - bit 4
+     - Instruction fetch (NX violation).
 
-The handler checks whether the fault qualifies for Copy-on-Write resolution.
-A CoW fault satisfies all of the following:
+Resolution order for user faults
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-1. ``PF_EC_U`` is set (user-mode fault).
-2. ``PF_EC_W`` is set (write attempt).
-3. ``PF_EC_P`` is set (page is present but write-protected).
-4. ``vma_find()`` returns a VMA covering the faulting address with
-   ``VMA_WRITE`` set in its flags.
+1. **Copy-on-write** — if ``PF_EC_U``, ``PF_EC_W``, and ``PF_EC_P`` are
+   set, and ``vma_find()`` returns a VMA with ``VMA_WRITE``,
+   ``vmm_handle_cow_fault()`` duplicates or promotes the page.
 
-If all conditions hold, ``vmm_handle_cow_fault()`` is called to duplicate
-the physical page and remap the VMA with ``PTE_WRITE``.
+2. **Demand paging** — if ``PF_EC_P`` is clear (not present) and the
+   address lies in a valid anonymous mmap VMA, allocate a zeroed page
+   and map it.
 
-Any fault that does not meet the CoW criteria calls ``panic_with_state()``
-and produces a full register dump.
+3. **Otherwise** — user fault kills the process; kernel fault panics.
 
-APIC EOI
----------
+Hardware interrupt handlers
+---------------------------
 
-All external interrupts delivered through the LAPIC must be acknowledged
-via ``apic_eoi()``. Forgetting to send EOI will prevent delivery of further
-interrupts at the same priority level. Exception handlers do not require
-EOI (the CPU acknowledges those internally).
+LAPIC timer (vector 48, ``VEC_LAPIC_TIMER``)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-LAPIC Timer
------------
+Fires periodically after ``lapic_timer_init()``. Handler calls
+``sched_tick()`` for round-robin preemption, then ``apic_eoi()``.
 
-The LAPIC timer operates in periodic mode and is configured during
-``lapic_timer_init()``. Each tick fires vector ``VEC_LAPIC_TIMER`` (48).
-The handler calls ``sched_tick()``, which performs round-robin task
-selection and invokes a context switch if the current task's quantum has
-expired.
+Legacy PIT (vector 32, ``VEC_TIMER``)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-After ``lapic_timer_init()`` returns, the legacy PIT IRQ 0 is masked at
-the IOAPIC so there is exactly one active tick source.
+Used during early boot for TSC calibration. After the LAPIC timer is
+armed, PIT IRQ 0 is masked at the IOAPIC so only one tick source drives
+the scheduler.
+
+Keyboard (vector 33, ``VEC_KBD``)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+PS/2 keyboard IRQ. Scancode bytes are queued for ``/dev/kbd`` reads.
+
+Serial (COM1)
+^^^^^^^^^^^^^
+
+Not IRQ-driven in the current build; polled UART output for klog.
+
+APIC end-of-interrupt
+---------------------
+
+External interrupts delivered through the LAPIC must be acknowledged with
+``apic_eoi()``. Missing EOI blocks further interrupts at the same
+priority. Exception vectors do not require EOI.
+
+Context and preemption
+----------------------
+
+When ``sched_tick()`` decides to preempt, it calls ``context_switch()`` in
+``context.S`` from the timer IRQ handler's kernel context. The preempted
+task resumes later on its kernel stack with the same IRQ frame unwound.
+
+``SCHED_QUANTUM_TICKS`` is 1 in v0.0.3 — every timer tick can rotate the
+runqueue head. See :doc:`/proc/scheduler`.
+
+Related documentation
+---------------------
+
+* IDT layout and IST stacks: :doc:`descriptors`
+* CoW and VMA lookup: :doc:`/mm/vmm`, :doc:`/mm/vma`
+* Panic output on kernel faults: :doc:`/infra/panic`

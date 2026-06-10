@@ -1,10 +1,14 @@
 Scheduler
 =========
 
-The JNU scheduler implements preemptive round-robin scheduling. Preemption
-is driven by the LAPIC timer tick at vector ``VEC_LAPIC_TIMER`` (48).
+The JNU scheduler implements **preemptive round-robin** scheduling on a
+single CPU. Preemption is driven by the LAPIC timer tick
+(``sched_tick()`` from vector 48).
 
-Task Structure
+Source: ``kernel/kernel/sched.c``, ``include/jnu/kernel/sched.h``.
+Context switch: ``kernel/arch/x86_64/context.S``.
+
+Task structure
 --------------
 
 .. code-block:: c
@@ -13,19 +17,23 @@ Task Structure
        int              tid;
        int              pid;
        enum task_state  state;        /* RUNNABLE, RUNNING, SLEEPING, ZOMBIE */
-       struct context   ctx;          /* Saved register file for context switch */
+       struct context   ctx;          /* Saved GPRs for context_switch */
        void            *kstack_base;
        void            *kstack_top;
        struct process  *process;
        struct task     *parent;
        int              exit_status;
        unsigned int     wake_pending; /* Missed-wakeup counter */
-       struct task     *run_next;     /* Link in the runqueue */
-       struct task     *all_next;     /* Link in the all-tasks list */
+       struct task     *run_next;     /* Runqueue link */
+       struct task     *all_next;     /* All-tasks list */
        const char      *name;
    };
 
-Task States
+Kernel stacks are ``KSTACK_ORDER`` 2 buddy pages (16 KiB). User tasks
+additionally have userspace entry/stack in ``process`` and enter ring 3
+via ``usermode_enter()`` on first run.
+
+Task states
 -----------
 
 .. list-table::
@@ -35,112 +43,129 @@ Task States
    * - State
      - Description
    * - ``TASK_RUNNABLE``
-     - Task is eligible to run and is on the runqueue.
+     - Eligible to run; on the runqueue.
    * - ``TASK_RUNNING``
-     - Task is currently executing on the CPU.
+     - Currently executing on the CPU.
    * - ``TASK_SLEEPING``
-     - Task is blocked, waiting for a wakeup event. Not on the runqueue.
+     - Blocked (e.g. ``wait4``); not on runqueue until ``sched_wake()``.
    * - ``TASK_ZOMBIE``
-     - Task has exited. Kernel stack and structure remain allocated until
-       reaped by ``sched_reap_task()``.
+     - Exited; struct remains until ``sched_reap_task()``.
 
-Runqueue
---------
+Runqueue and quantum
+--------------------
 
-The runqueue is a singly-linked list chained through ``task->run_next``.
-``sched_tick()`` removes the head (the currently running task), moves it
-to the tail if it is still ``TASK_RUNNABLE``, and loads the new head. The
-``all_tasks`` list is a separate singly-linked chain through
-``task->all_next`` that covers all tasks regardless of state.
+The runqueue is a FIFO singly-linked list via ``task->run_next``.
+``sched_tick()`` (every LAPIC timer interrupt):
 
-Missed-Wakeup Avoidance
-------------------------
+1. Decrements ``quantum_left`` (``SCHED_QUANTUM_TICKS == 1`` in v0.0.3).
+2. If quantum expired and more than one runnable task exists, rotates the
+   current task to the tail and switches to the new head.
+3. Calls ``context_switch(&prev->ctx, &next->ctx)``.
 
-The ``wake_pending`` counter closes the race between ``sched_wake()`` and
-``sched_sleep_current()``:
+A separate ``all_tasks`` list tracks every task for debugging and reap.
 
-1. A waker calls ``sched_wake(target)`` while ``target->state == TASK_RUNNING``
-   (the target has not yet called ``sched_sleep_current()``).
-2. ``sched_wake()`` increments ``wake_pending`` instead of trying to add the
-   task to the runqueue.
-3. When the target calls ``sched_sleep_current()``, it checks
-   ``wake_pending``. If non-zero, it decrements the counter and returns
-   immediately without sleeping.
+Context switch
+--------------
 
-This scheme is safe in the single-CPU build because interrupts are disabled
-around the critical sections. SMP requires converting ``wake_pending`` to an
-atomic.
+``context_switch()`` in ``context.S`` saves callee-saved registers
+(``rbx``, ``rbp``, ``r12``–``r15``) and ``rsp`` in ``prev->ctx``, loads
+``next->ctx``, and jumps to where ``next`` last yielded.
 
-API
----
+On switch to a different address space, the scheduler calls
+``vmm_switch_to(next->process->space)`` and updates syscall scratch kernel
+stack via ``arch_syscall_set_kernel_stack()``.
+
+FPU state is saved/restored separately in ``fpu.c`` when switching tasks.
+
+User task first run
+-------------------
+
+``sched_create_user_task()`` sets the task entry to ``user_thread_entry``,
+which calls ``usermode_enter(proc->user_entry, proc->user_stack)`` and
+does not return. Subsequent preemption saves/restores kernel context on the
+task's kernel stack; userspace state lives in the process syscall frame or
+hardware on syscall boundary.
+
+Missed-wakeup avoidance
+-----------------------
+
+Race between ``sched_wake()`` and ``sched_sleep_current()``:
+
+1. Waker sees target still ``TASK_RUNNING`` → increment ``wake_pending``.
+2. Sleeper checks ``wake_pending`` before sleeping → if non-zero, decrement
+   and stay runnable.
+
+Safe on single-CPU with IRQ-disabled critical sections. SMP would need
+atomics on ``wake_pending``.
+
+API summary
+-----------
 
 .. code-block:: c
 
    void sched_init(void);
 
-Initializes the runqueue and creates the initial kernel task for the boot
-CPU.
+Initialize runqueue; create boot and idle tasks.
 
 .. code-block:: c
 
    struct task *sched_current(void);
 
-Returns the currently executing task. Reads the per-CPU block; callable
-from any kernel context.
+Currently running task.
 
 .. code-block:: c
 
    int sched_create_kernel_thread(const char *name, kernel_thread_fn fn,
                                   void *arg, struct task **out);
 
-Allocates a kernel-mode task and a 4 KiB kernel stack. Sets up the context
-so the task begins execution at ``fn(arg)``. Places the task on the
-runqueue in ``TASK_RUNNABLE`` state.
+Kernel-only task; starts at ``fn(arg)``.
 
 .. code-block:: c
 
    int sched_create_user_task(const char *name, struct process *proc,
                               struct task **out);
 
-Allocates a user-mode task associated with ``proc``. The task's initial
-userspace register state must be filled in by the caller (typically
-``process_fork()`` or ``start_init()``) before the task is added to the
-runqueue.
+User task bound to ``proc``; first run enters ring 3.
 
 .. code-block:: c
 
    void sched_yield(void);
 
-Voluntarily relinquishes the CPU. The current task remains ``TASK_RUNNABLE``
-and is moved to the tail of the runqueue.
+Move current task to runqueue tail and switch.
 
 .. code-block:: c
 
    void sched_exit_current(int status);
 
-Marks the current task ``TASK_ZOMBIE`` with ``exit_status = status`` and
-yields. The task will not be selected again by the scheduler.
+Mark zombie and yield; task not scheduled again.
 
 .. code-block:: c
 
    void sched_sleep_current(void);
 
-Moves the current task to ``TASK_SLEEPING`` and yields. The task must be
-woken by a call to ``sched_wake()`` from another context (typically an IRQ
-handler or a sibling kernel thread) before it will run again.
+Block until ``sched_wake()`` (or pending wake).
 
 .. code-block:: c
 
    void sched_wake(struct task *task);
 
-Transitions ``task`` from ``TASK_SLEEPING`` to ``TASK_RUNNABLE`` and
-appends it to the runqueue. If ``task`` has not yet called
-``sched_sleep_current()``, increments ``wake_pending`` instead.
+Runnable from sleeping, or bump ``wake_pending``.
 
 .. code-block:: c
 
    void sched_reap_task(struct task *task);
 
-Frees the kernel stack and the ``struct task`` of a zombie task. The caller
-must confirm that the task is not currently executing and has been removed
-from all process linkage.
+Free zombie task kernel stack and struct.
+
+Idle loop
+---------
+
+After ``start_init()``, ``kernel_main()`` enters ``kernel_idle_loop()``:
+``sti; hlt`` forever. User and kernel runnable tasks preempt the idle
+path via timer interrupts.
+
+Related docs
+------------
+
+* Timer IRQ: :doc:`/arch/interrupts`
+* Process lifecycle: :doc:`process`
