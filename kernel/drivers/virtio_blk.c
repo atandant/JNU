@@ -541,6 +541,21 @@ static int virtio_blk_submit(struct virtio_blk_dev *d, uint32_t type,
 		goto out;
 	}
 
+	/*
+	 * The used element's `len` is the number of bytes the device wrote
+	 * into the device-writable part of the chain. For a read that is the
+	 * data buffer (plus the 1-byte status). A conforming device that
+	 * really filled the buffer reports at least `bytes`; anything less
+	 * means it short-filled the bounce buffer while still claiming OK, so
+	 * the data is untrustworthy. Reject it rather than memcpy stale bytes.
+	 */
+	if (type == VIRTIO_BLK_T_IN &&
+	    vq->used[old_used % vq->size].len < bytes) {
+		virtio_mark_dead(d);
+		ret = -EIO;
+		goto out;
+	}
+
 	vq->last_used_idx = (uint16_t)(old_used + 1);
 	__asm__ __volatile__("" ::: "memory");
 

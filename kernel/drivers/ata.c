@@ -220,6 +220,11 @@ static int ata_bdev_read(struct block_device *bdev, uint64_t lba, size_t count,
 				 (uint8_t)(drv->drive_sel |
 					   (uint8_t)((sector >> 24) & 0x0Fu)));
 
+		/* Do not issue the command while the drive is still busy. */
+		err = ata_wait_ready(ch);
+		if (err)
+			return err;
+
 		outb((uint16_t)(ch->io_base + ATA_REG_SECCOUNT), 1);
 		outb((uint16_t)(ch->io_base + ATA_REG_LBA_LO),
 		     (uint8_t)(sector & 0xFFu));
@@ -261,6 +266,11 @@ static int ata_bdev_write(struct block_device *bdev, uint64_t lba, size_t count,
 		ata_select_drive(ch,
 				 (uint8_t)(drv->drive_sel |
 					   (uint8_t)((sector >> 24) & 0x0Fu)));
+
+		/* Do not issue the command while the drive is still busy. */
+		err = ata_wait_ready(ch);
+		if (err)
+			return err;
 
 		outb((uint16_t)(ch->io_base + ATA_REG_SECCOUNT), 1);
 		outb((uint16_t)(ch->io_base + ATA_REG_LBA_LO),

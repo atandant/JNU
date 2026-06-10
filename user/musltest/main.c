@@ -3,7 +3,6 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
-
 static int check(int ok, const char *what)
 {
 	if (ok) {
@@ -40,7 +39,6 @@ int main(void)
 		return 1;
 	}
 
-	fd = open("/mt-file", 0);
 	if (fd < 0) {
 		printf("musltest: open failed\n");
 		return 1;

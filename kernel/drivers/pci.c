@@ -196,6 +196,8 @@ int pci_read_bar(const struct pci_device *dev, unsigned bar_idx,
 	uint32_t orig_hi = 0;
 	uint32_t probe_lo;
 	uint32_t probe_hi = 0;
+	uint16_t cmd;
+	int ret = 0;
 
 	if (!dev || !out || bar_idx > 5)
 		return -EINVAL;
@@ -206,8 +208,22 @@ int pci_read_bar(const struct pci_device *dev, unsigned bar_idx,
 	off = (uint8_t)(0x10u + bar_idx * 4u);
 
 	orig_lo = pci_read_config_dword(bus, pci_dev, func, off);
-	if (orig_lo == 0)
-		return -EINVAL;
+
+	/*
+	 * Disable memory + I/O decode while we write the all-ones probe value
+	 * into the BAR. Otherwise the device's decode window briefly moves to
+	 * an aliased address and could shadow unrelated MMIO/port space for
+	 * the duration of the probe. The original command word is restored at
+	 * the single exit below.
+	 *
+	 * Note we do NOT early-return on orig_lo == 0: an implemented but
+	 * unprogrammed 32-bit memory BAR legitimately reads back zero, and the
+	 * per-branch mask checks already reject truly unimplemented BARs (their
+	 * probe also reads back zero -> mask == 0 -> -EINVAL).
+	 */
+	cmd = pci_read_config_word(bus, pci_dev, func, 0x04);
+	pci_write_config_word(bus, pci_dev, func, 0x04,
+			      (uint16_t)(cmd & ~0x0003u));
 
 	if (orig_lo & 1u) {
 		/*
@@ -222,16 +238,20 @@ int pci_read_bar(const struct pci_device *dev, unsigned bar_idx,
 		probe_lo = pci_read_config_dword(bus, pci_dev, func, off);
 		pci_write_config_dword(bus, pci_dev, func, off, orig_lo);
 		mask = probe_lo & 0xFFFFFFFCu;
-		if (mask == 0)
-			return -EINVAL;
+		if (mask == 0) {
+			ret = -EINVAL;
+			goto restore;
+		}
 		out->size = (uint64_t)(uint32_t)(~mask + 1u);
 		out->is_mmio = false;
 	} else if ((orig_lo & 0x6u) == 0x4u) {
 		/* 64-bit memory BAR uses BAR n and BAR n+1. */
 		uint64_t mask;
 
-		if (bar_idx > 4)
-			return -EINVAL;
+		if (bar_idx > 4) {
+			ret = -EINVAL;
+			goto restore;
+		}
 		orig_hi = pci_read_config_dword(bus, pci_dev, func,
 						(uint8_t)(off + 4u));
 		out->base = ((uint64_t)(orig_lo & 0xFFFFFFF0u)) |
@@ -247,8 +267,10 @@ int pci_read_bar(const struct pci_device *dev, unsigned bar_idx,
 				       orig_hi);
 		mask = ((uint64_t)probe_hi << 32) |
 		       (uint64_t)(probe_lo & 0xFFFFFFF0u);
-		if (mask == 0)
-			return -EINVAL;
+		if (mask == 0) {
+			ret = -EINVAL;
+			goto restore;
+		}
 		out->size = ~mask + 1u;
 		out->is_mmio = true;
 	} else {
@@ -264,16 +286,20 @@ int pci_read_bar(const struct pci_device *dev, unsigned bar_idx,
 		probe_lo = pci_read_config_dword(bus, pci_dev, func, off);
 		pci_write_config_dword(bus, pci_dev, func, off, orig_lo);
 		mask = probe_lo & 0xFFFFFFF0u;
-		if (mask == 0)
-			return -EINVAL;
+		if (mask == 0) {
+			ret = -EINVAL;
+			goto restore;
+		}
 		out->size = (uint64_t)(uint32_t)(~mask + 1u);
 		out->is_mmio = true;
 	}
 
 	if (out->size == 0)
-		return -EINVAL;
+		ret = -EINVAL;
 
-	return 0;
+restore:
+	pci_write_config_word(bus, pci_dev, func, 0x04, cmd);
+	return ret;
 }
 
 uint8_t pci_find_capability(const struct pci_device *dev, uint8_t cap_id)

@@ -52,6 +52,11 @@
 #define KB_CMD_SET_SCANCODE 0xF0
 #define KB_CMD_ENABLE_SCAN 0xF4
 
+/* Keyboard responses (received from data port). */
+#define KB_RESP_ACK 0xFA
+#define KB_RESP_RESEND 0xFE
+#define KB_MAX_RESEND 3
+
 #define KBD_SELF_TEST_OK 0x55
 
 /* Pause key set-1 sequence: E1 1D 45 E1 9D C5 */
@@ -245,10 +250,14 @@ static void kbd_wait_input(void)
 		__asm__ __volatile__("pause");
 }
 
-static void kbd_wait_output(void)
+static bool kbd_wait_output(void)
 {
-	for (int t = 100000; !(inb(KBD_STATUS_PORT) & KBD_STATUS_OBF) && t; t--)
+	for (int t = 100000; t; t--) {
+		if (inb(KBD_STATUS_PORT) & KBD_STATUS_OBF)
+			return true;
 		__asm__ __volatile__("pause");
+	}
+	return false;
 }
 
 static void kbd_flush(void)
@@ -269,10 +278,42 @@ static void kbd_data(uint8_t val)
 	outb(KBD_DATA_PORT, val);
 }
 
-static uint8_t kbd_read(void)
+/*
+ * Read one byte from the data port, bounded by a timeout. Returns true
+ * and stores the byte in *out on success; returns false (and leaves
+ * *out untouched) if no byte arrived, so callers never act on stale
+ * data left in the port from an earlier transaction.
+ */
+static bool kbd_read_response(uint8_t *out)
 {
-	kbd_wait_output();
-	return inb(KBD_DATA_PORT);
+	if (!kbd_wait_output())
+		return false;
+	*out = inb(KBD_DATA_PORT);
+	return true;
+}
+
+/*
+ * Send a byte to the keyboard (i8042 port 1 device) and wait for its
+ * ACK. The keyboard answers every byte with 0xFA (ACK) or 0xFE
+ * (RESEND); on RESEND we retransmit up to KB_MAX_RESEND times. Returns
+ * true on ACK, false on timeout, an unexpected response, or too many
+ * resends — so a wedged keyboard cannot leave init believing a mode
+ * change succeeded.
+ */
+static bool kbd_send(uint8_t val)
+{
+	for (int tries = 0; tries < KB_MAX_RESEND; tries++) {
+		uint8_t resp;
+
+		kbd_data(val);
+		if (!kbd_read_response(&resp))
+			return false;
+		if (resp == KB_RESP_ACK)
+			return true;
+		if (resp != KB_RESP_RESEND)
+			return false;
+	}
+	return false;
 }
 
 /* ------------------------------------------------------------------ */
@@ -348,13 +389,17 @@ void kbd_init(void)
 	kbd_flush();
 
 	kbd_cmd(KBD_CMD_SELF_TEST);
-	uint8_t res = kbd_read();
-	if (res != KBD_SELF_TEST_OK)
+	uint8_t res = 0;
+	if (!kbd_read_response(&res))
+		pr_warn("kbd: i8042 self-test timed out\n");
+	else if (res != KBD_SELF_TEST_OK)
 		pr_warn("kbd: i8042 self-test failed (0x%02x)\n",
 			(unsigned)res);
 
 	kbd_cmd(KBD_CMD_READ_CONFIG);
-	uint8_t cfg = kbd_read();
+	uint8_t cfg = 0;
+	if (!kbd_read_response(&cfg))
+		pr_warn("kbd: failed to read controller config\n");
 	cfg |= 0x01u;
 	cfg |= 0x40u; /* Enable translation from set 2 to set 1. */
 	cfg &= (uint8_t)~0x10u;
@@ -363,13 +408,16 @@ void kbd_init(void)
 
 	kbd_cmd(KBD_CMD_ENABLE_P1);
 
-	kbd_data(KB_CMD_SET_SCANCODE);
-	(void)kbd_read();
-	kbd_data(0x02); /* Tell keyboard to use set 2, i8042 translates. */
-	(void)kbd_read();
+	/*
+	 * Tell the keyboard to emit scancode set 2 (the i8042 translates it
+	 * back to set 1 for us). The set-scancode command takes an argument
+	 * byte; both bytes are individually ACKed.
+	 */
+	if (!kbd_send(KB_CMD_SET_SCANCODE) || !kbd_send(0x02))
+		pr_warn("kbd: failed to select scancode set 2\n");
 
-	kbd_data(KB_CMD_ENABLE_SCAN);
-	(void)kbd_read();
+	if (!kbd_send(KB_CMD_ENABLE_SCAN))
+		pr_warn("kbd: failed to enable scanning\n");
 
 	idt_set_handler(VEC_KBD, kbd_irq_handler);
 	ioapic_route_isa_irq(1, VEC_KBD);

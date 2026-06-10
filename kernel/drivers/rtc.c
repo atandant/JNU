@@ -78,6 +78,13 @@ void rtc_init(void)
 	bool is_bcd = (status_b & 0x04u) == 0;
 	bool is_12h = (status_b & 0x02u) == 0;
 
+	/*
+	 * Capture the PM flag (bit 7 of the raw hour byte) now, before the
+	 * byte is masked/converted below — re-reading the register later
+	 * would race against an RTC update tick.
+	 */
+	bool hour_pm = (hour & 0x80u) != 0;
+
 	if (is_bcd) {
 		sec = bcd_to_bin(sec);
 		min = bcd_to_bin(min);
@@ -89,9 +96,16 @@ void rtc_init(void)
 		hour = (uint8_t)(hour & 0x7Fu);
 	}
 
-	/* Handle 12-hour mode: bit 7 of the raw hour byte means PM. */
-	if (is_12h && (cmos_read(RTC_HOURS) & 0x80u)) {
-		hour = (uint8_t)((hour % 12) + 12);
+	/*
+	 * In 12-hour mode the hour reads 1–12. 12 AM (midnight, PM clear)
+	 * must map to 0 and 12 PM (noon, PM set) to 12, so reduce mod 12
+	 * first and only then add 12 for PM.
+	 */
+	if (is_12h) {
+		hour = (uint8_t)(hour % 12);
+		if (hour_pm) {
+			hour = (uint8_t)(hour + 12);
+		}
 	}
 
 	/*
