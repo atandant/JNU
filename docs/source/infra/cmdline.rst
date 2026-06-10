@@ -72,6 +72,11 @@ Known keys
        Minix mount fails (wrong/empty disk). See :doc:`/build`.
    * - ``kbd=kernel``
      - Keep keyboard echo in kernel idle loop instead of userspace only.
+   * - ``numlock=on``
+     - Force Num Lock on at boot (numpad digits). Default for MF2
+       keyboards identified via PS/2 ``0xF2`` probe.
+   * - ``numlock=off``
+     - Force Num Lock off at boot (numpad keys act as navigation).
 
 Limine configuration example
 ----------------------------
@@ -93,6 +98,10 @@ From ``boot/limine.cfg``:
    :JNU Selftest
    ...
    CMDLINE=loglevel=4 selftest=1
+
+   :JNU (keyboard debug)
+   ...
+   CMDLINE=loglevel=4 kbd=kernel numlock=on
 
 The initramfs module **must** have ``MODULE_CMDLINE=initramfs`` (or be
 the sole module) so ``find_initramfs_module()`` locates the CPIO archive.

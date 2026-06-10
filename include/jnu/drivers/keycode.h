@@ -31,6 +31,8 @@
 #define KMOD_ALT (1u << 2)
 #define KMOD_CAPSLOCK (1u << 3)
 #define KMOD_NUMLOCK (1u << 4)
+#define KMOD_ALTGR (1u << 5)
+#define KMOD_SUPER (1u << 6)
 
 /* ------------------------------------------------------------------ */
 /* Key event — produced by the keyboard driver on every make/break     */

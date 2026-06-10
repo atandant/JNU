@@ -320,6 +320,30 @@ char scandata_keycode_to_ascii(uint16_t keycode, uint8_t modifiers)
 	return c;
 }
 
+char scandata_keycode_to_ascii_unmodified(uint16_t keycode, uint8_t modifiers)
+{
+	char c;
+
+	if (keycode >= KEY_MAX) {
+		return '\0';
+	}
+
+	keycode = scandata_resolve_numpad(keycode, modifiers);
+
+	c = (modifiers & KMOD_SHIFT) ? ascii_shift[keycode]
+				     : ascii_unshift[keycode];
+
+	if (modifiers & KMOD_CAPSLOCK) {
+		if (c >= 'a' && c <= 'z') {
+			c = (char)(c - 32);
+		} else if (c >= 'A' && c <= 'Z') {
+			c = (char)(c + 32);
+		}
+	}
+
+	return c;
+}
+
 /* ------------------------------------------------------------------ */
 /* Keycode → String name mapping                                      */
 /* ------------------------------------------------------------------ */

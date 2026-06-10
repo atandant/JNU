@@ -102,7 +102,10 @@ the scheduler.
 Keyboard (vector 33, ``VEC_KBD``)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-PS/2 keyboard IRQ. Scancode bytes are queued for ``/dev/kbd`` reads.
+PS/2 keyboard IRQ. Scancodes are decoded to key events; ``/dev/kbd``
+read returns a US QWERTY ASCII stream (Left-Alt Meta as ESC-prefix).
+Num Lock defaults from a PS/2 identify probe (MF2 → on) with optional
+``numlock=`` cmdline override.
 
 Serial (COM1)
 ^^^^^^^^^^^^^

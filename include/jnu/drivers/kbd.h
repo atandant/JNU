@@ -1,10 +1,11 @@
 /*
  * include/jnu/drivers/kbd.h — PS/2 keyboard driver (i8042, scancode set 1).
  *
- * Initializes the i8042 controller, enables port 1 scanning, and
- * installs an IRQ handler on vector 33 (IOAPIC ISA IRQ 1). Decoded
- * key events are queued in a fixed-size ring buffer and exposed
- * through a struct char_device for higher layers.
+ * Initializes the i8042 controller, probes keyboard layout via PS/2
+ * identify (0xF2), enables port 1 scanning, and installs an IRQ
+ * handler on vector 33 (IOAPIC ISA IRQ 1). Decoded key events are
+ * queued in a fixed-size ring buffer and exposed through a struct
+ * char_device for higher layers.
  *
  * Copyright (c) 2026 The JNU Authors.
  * SPDX-License-Identifier: GPL-2.0-only

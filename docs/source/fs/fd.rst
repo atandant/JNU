@@ -55,8 +55,9 @@ Backing types
    * - ``JNU_FILE_VFS``
      - Minix inode via VFS; read/write per open flags and inode type.
    * - ``JNU_FILE_CHARDEV``
-     - ``/dev/kbd`` — keyboard scancodes; ``/dev/serial`` — write-only
-       mirror of COM1 for userspace logging.
+     - ``/dev/kbd`` — US QWERTY ASCII stream (Left-Alt Meta as
+       ESC-prefix; non-printable keys omitted); ``/dev/serial`` —
+       write-only mirror of COM1 for userspace logging.
 
 ``open`` path resolution (``sys_open``) tries initramfs, then VFS root,
 then well-known chardev paths.

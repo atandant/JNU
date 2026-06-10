@@ -34,6 +34,13 @@ uint16_t scandata_sc1_to_keycode(uint8_t scancode, bool e0_prefix);
 char scandata_keycode_to_ascii(uint16_t keycode, uint8_t modifiers);
 
 /*
+ * Base printable character for a keycode with Shift/Caps/NumLock applied
+ * but without Ctrl or Meta (Left-Alt ESC-prefix) handling.  Used as the
+ * suffix byte when emitting GNU/xterm-style Meta sequences.
+ */
+char scandata_keycode_to_ascii_unmodified(uint16_t keycode, uint8_t modifiers);
+
+/*
  * Return a short human-readable name for a keycode (e.g. "KEY_A",
  * "KEY_F1", "KEY_UP").  Returns "KEY_NONE" for KEY_NONE and
  * "KEY_UNKNOWN" for values >= KEY_MAX.  Never returns NULL.
