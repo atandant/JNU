@@ -31,6 +31,7 @@ typedef unsigned int uint32_t;
 #define JNU_SYS_sched_yield 24
 #define JNU_SYS_nanosleep 35
 #define JNU_SYS_getpid 39
+#define JNU_SYS_clone 56
 #define JNU_SYS_fork 57
 #define JNU_SYS_execve 59
 #define JNU_SYS_exit 60

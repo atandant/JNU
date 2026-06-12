@@ -97,7 +97,13 @@ Implemented syscalls
    * - 39
      - ``getpid``
      - ``sys_getpid``
-     - Return calling process PID.
+     - Return calling thread group's PID (``task->pid`` / tgid).
+   * - 56
+     - ``clone``
+     - ``sys_clone``
+     - Create a thread in the current group (``CLONE_VM | CLONE_THREAD``
+       plus musl TLS/tid flags). Parent returns new ``tid``; child resumes
+       on ``child_stack`` with ``RAX = 0``. See :doc:`/proc/process`.
    * - 57
      - ``fork``
      - ``sys_fork``
@@ -110,7 +116,8 @@ Implemented syscalls
    * - 60
      - ``exit``
      - ``sys_exit``
-     - Terminate current process; never returns.
+     - Terminate **calling thread** only. Last thread performs full
+       process teardown; never returns.
    * - 61
      - ``wait4``
      - ``sys_waitpid``
@@ -151,7 +158,9 @@ Implemented syscalls
    * - 218
      - ``set_tid_address``
      - ``sys_set_tid_address``
-     - Record clear-child-tid address (minimal musl compat).
+     - Store ``clear_child_tid`` on the calling task; return caller's
+       ``tid``. On thread exit the kernel writes ``0`` (``futex_wake``
+       not yet implemented).
    * - 228
      - ``clock_gettime``
      - ``sys_clock_gettime``
@@ -159,7 +168,8 @@ Implemented syscalls
    * - 231
      - ``exit_group``
      - ``sys_exit_group``
-     - Aliases ``exit`` (single-process, no thread group).
+     - Terminate entire thread group (``TIF_NEED_DIE`` on siblings);
+       never returns. musl ``_Exit`` / ``abort`` route here.
    * - 318
      - ``getrandom``
      - ``sys_getrandom``
@@ -217,6 +227,8 @@ commonly appear in strace-style debugging but return ``-ENOSYS`` today:
 * ``brk``, ``mremap``, ``madvise``, ``prlimit64``
 * ``openat``, ``newfstatat``, ``readlink``, ``getcwd``
 * Full signal delivery (``kill``, ``tgkill``, ``rt_sigreturn``)
+* ``futex`` (``pthread_join`` may spin until implemented)
+* ``gettid`` (musl can use ``clone`` return value instead)
 * ``pipe``, ``socket``, ``poll``, ``epoll_*``
 
 When adding musl support for a new program, compare its startup syscall

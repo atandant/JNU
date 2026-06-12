@@ -72,11 +72,11 @@ int pci_read_bar(const struct pci_device *dev, unsigned bar_idx,
 void pci_enable_device(const struct pci_device *dev);
 
 /* Standard PCI capability IDs (config space, capability list). */
-#define PCI_CAP_ID_PM     0x01 /* Power Management */
-#define PCI_CAP_ID_MSI    0x05 /* Message Signalled Interrupts */
+#define PCI_CAP_ID_PM 0x01     /* Power Management */
+#define PCI_CAP_ID_MSI 0x05    /* Message Signalled Interrupts */
 #define PCI_CAP_ID_VENDOR 0x09 /* Vendor specific (e.g. virtio) */
-#define PCI_CAP_ID_PCIE   0x10 /* PCI Express */
-#define PCI_CAP_ID_MSIX   0x11 /* MSI-X */
+#define PCI_CAP_ID_PCIE 0x10   /* PCI Express */
+#define PCI_CAP_ID_MSIX 0x11   /* MSI-X */
 
 /*
  * Walk the device's capability list and return the config-space offset

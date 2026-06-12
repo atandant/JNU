@@ -22,6 +22,7 @@ bits 64
 
 global syscall_entry
 extern syscall_dispatch
+extern arch_return_to_user_work
 
 ; struct syscall_scratch layout (matches arch_syscall.c):
 ;   gs:[0]  = saved user RSP
@@ -64,6 +65,17 @@ syscall_entry:
 	mov rdi, rsp			; struct syscall_args *
 	call syscall_dispatch
 	cli				; disable IRQs again before touching SYSRET state
+
+	; v0.0.4 (G1): run pending return-to-user work (TIF_NEED_DIE).
+	; GS is still the kernel base here. Save the syscall return value
+	; (rax) across the call and keep the stack 16-byte aligned for the
+	; SysV ABI. If the thread must die, arch_return_to_user_work never
+	; returns and this frame is dropped.
+	push rax			; save return value
+	sub rsp, 8			; pad to 16-byte alignment
+	call arch_return_to_user_work
+	add rsp, 8
+	pop rax
 
 	; Restore user registers from the saved frame. rax already holds
 	; the dispatcher return value.

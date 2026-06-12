@@ -50,9 +50,9 @@ All syscalls return a signed 64-bit integer in ``RAX``:
 * **Failure:** negative value in ``[-4095, -1]``. The magnitude is the
   negated POSIX ``errno`` (e.g. ``-ENOENT == -2``, ``-EINVAL == -22``).
 
-Syscalls that do not return on success (``exit``, ``execve``) never
-restore userspace; they terminate or replace the process image in kernel
-context.
+Syscalls that do not return on success (``exit``, ``exit_group``,
+``execve``) never restore userspace; they terminate the calling thread or
+group, or replace the process image in kernel context.
 
 Pointer validation
 ------------------
@@ -137,10 +137,12 @@ Several syscalls exist solely so musl's static startup does not abort:
 
 * ``rt_sigaction`` / ``rt_sigprocmask`` — return 0 (no signals yet).
 * ``ioctl`` — returns ``-ENOTTY`` (stdio terminal probes).
-* ``set_tid_address`` — records address, returns TID.
+* ``set_tid_address`` — records ``clear_child_tid``, returns ``tid``.
+* ``clone`` — thread creation for musl ``pthread``; ``child_stack`` must
+  pass ``user_range_ok()`` before the task is scheduled.
 
-Real signal delivery and terminal ioctls are future work. See
-:doc:`table` for the full list.
+Real signal delivery, ``futex``, and terminal ioctls are future work.
+See :doc:`table` for the full list.
 
 Native vs musl userspace
 ------------------------

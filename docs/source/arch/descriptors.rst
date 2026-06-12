@@ -66,8 +66,8 @@ currently assigned:
        does not immediately triple-fault.
 
 ``tss_set_rsp0(rsp0)`` updates the RSP0 field of the active TSS. It is
-called once at boot to the aligned top of the boot stack, and must be
-called again on every context switch once multi-threading is implemented.
+called at boot and on every context switch to the scheduled task's
+``kstack_top`` (see ``kernel/kernel/sched.c``).
 
 IDT
 ---

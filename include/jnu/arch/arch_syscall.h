@@ -34,3 +34,11 @@ int64_t arch_syscall_current_nr(void);
  * the GS state was during kernel-side preparation.
  */
 void arch_syscall_install_user_gs(void);
+
+/*
+ * v0.0.4: run pending return-to-user work (TIF_NEED_DIE retirement)
+ * before returning to ring 3. Called from the syscall and IRQ return
+ * gates with the kernel GS base active. Does not return if the current
+ * thread must die.
+ */
+void arch_return_to_user_work(void);

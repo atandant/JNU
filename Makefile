@@ -19,7 +19,7 @@ SPHINXBUILD ?= sphinx-build
 
 # ---- project knobs ----------------------------------------------------------
 
-VERSION ?= 0.0.3.1
+VERSION ?= 0.0.4
 SIZE    ?= 32
 MEMORY  ?= 850M
 CPU     ?= qemu64,+smep,+smap
@@ -155,6 +155,7 @@ KERNEL_SYSCALL_SRCS := \
     kernel/syscall/sys_write.c \
     kernel/syscall/sys_yield.c \
     kernel/syscall/sys_fork.c \
+    kernel/syscall/sys_clone.c \
     kernel/syscall/sys_execve.c \
     kernel/syscall/sys_writev.c \
     kernel/syscall/sys_arch_prctl.c \
@@ -185,6 +186,8 @@ KERNEL_FS_SRCS := \
 KERNEL_CORE_SRCS := \
     kernel/kernel/cmdline.c \
     kernel/kernel/fork.c \
+    kernel/kernel/clone.c \
+    kernel/kernel/retire.c \
     kernel/kernel/execve.c \
     kernel/kernel/initfs_exec.c \
     kernel/kernel/vfs_exec.c \

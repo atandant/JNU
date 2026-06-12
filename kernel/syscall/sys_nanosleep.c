@@ -49,6 +49,16 @@ int64_t sys_nanosleep(const void *ureq, void *urem)
 
 	start = cpu_us_since_boot();
 	while (cpu_us_since_boot() - start < us_target) {
+		/*
+		 * v0.0.4 (P2): this loop is bounded by a user-supplied
+		 * timeout (up to hours), so poll the death flag — without
+		 * it a thread sleeping here would make exit_group() stall
+		 * for the whole duration. Bail toward the syscall-return
+		 * gate, which retires us.
+		 */
+		if (signal_pending()) {
+			return -EINTR;
+		}
 		sched_yield();
 	}
 

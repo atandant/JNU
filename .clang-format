@@ -1,4 +1,7 @@
-BasedOnStyle: LLVM
+# llvm is the style we use, Linux is currently not avalible
+# for my clang-format version, uncomment if Linux is avalible on clang format
+#BasedOnStyle: Linux or whatever, and comment
+BasedOnStyle: LLVM # <-- this line
 UseTab: Always
 IndentWidth: 8
 TabWidth: 8

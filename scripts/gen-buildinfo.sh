@@ -18,7 +18,7 @@ fi
 out="$1"
 mkdir -p "$(dirname "$out")"
 
-: "${VERSION:=0.0.3.1}"
+: "${VERSION:=0.0.4}"
 : "${SHA:=unknown}"
 : "${BUILDTIME:=unknown}"
 

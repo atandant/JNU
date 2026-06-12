@@ -69,6 +69,7 @@ int64_t sys_creat(const char *upath, int mode);
 int64_t sys_execve(const struct syscall_args *args);
 int64_t sys_exit(int status);
 int64_t sys_fork(const struct syscall_args *args);
+int64_t sys_clone(const struct syscall_args *args);
 int64_t sys_fstat(int fd, void *ust);
 int64_t sys_fsync(int fd);
 int64_t sys_ftruncate(int fd, int64_t length);

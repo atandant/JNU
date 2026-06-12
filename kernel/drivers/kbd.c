@@ -71,8 +71,8 @@
 
 /* Pause key set-1 sequence: E1 1D 45 E1 9D C5 */
 #define E1_SEQ_LEN 6
-static const uint8_t e1_pause_seq[E1_SEQ_LEN] = { 0xE1, 0x1D, 0x45,
-						  0xE1, 0x9D, 0xC5 };
+static const uint8_t e1_pause_seq[E1_SEQ_LEN] = {0xE1, 0x1D, 0x45,
+						 0xE1, 0x9D, 0xC5};
 
 /* ------------------------------------------------------------------ */
 /* key_event ring buffer                                               */
@@ -379,10 +379,7 @@ static void kbd_sync_leds(void)
 	}
 }
 
-static void kbd_request_led_sync(void)
-{
-	kbd_leds_dirty = true;
-}
+static void kbd_request_led_sync(void) { kbd_leds_dirty = true; }
 
 static void kbd_sync_leds_if_needed(void)
 {
@@ -418,8 +415,9 @@ static void kbd_probe_layout(void)
 	if (id0 == 0xAB && kbd_try_read_response(&id1, 100000)) {
 		if (id1 == 0x83 || id1 == 0x41) {
 			kbd_has_numpad = true;
-			pr_info("kbd: MF2 keyboard (ID AB %02x), numpad present\n",
-				(unsigned)id1);
+			pr_info(
+			    "kbd: MF2 keyboard (ID AB %02x), numpad present\n",
+			    (unsigned)id1);
 		} else {
 			kbd_has_numpad = true;
 			pr_info("kbd: keyboard ID AB %02x (treating as MF2)\n",
@@ -458,8 +456,7 @@ static void kbd_apply_numlock_boot_state(void)
  * small for a multi-byte sequence (leave the event queued).
  */
 static bool kbd_try_emit_event(const struct key_event *ev, char *out,
-			       size_t out_cap, size_t out_off,
-			       size_t *written)
+			       size_t out_cap, size_t out_off, size_t *written)
 {
 	char c;
 	char meta_c;

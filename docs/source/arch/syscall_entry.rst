@@ -119,9 +119,10 @@ stack:
    };
 
 ``syscall_user_state_of(args)`` returns a pointer to the ``user`` sub-struct
-immediately following ``args`` on the stack. ``sys_fork()`` uses this to
-forge the child's return frame (``RAX = 0``, same ``RIP``/``RSP`` as parent
-syscall site) without a separate allocation.
+immediately following ``args`` on the stack. ``sys_fork()`` and
+``sys_clone()`` copy this frame to forge the child's first userspace
+return (``RAX = 0``). Fork keeps the parent's ``RSP``; clone overrides
+``rsp`` with ``child_stack``.
 
 ``SWAPGS`` and user RSP
 -----------------------
@@ -153,5 +154,23 @@ First userspace entry (contrast)
 
 The **first** ring-3 entry for a new process uses ``usermode_enter()``
 in ``kernel/arch/x86_64/usermode.c`` (``iretq`` with constructed trap
-frame), not ``SYSRET``. Subsequent kernel entry from that process uses
-``SYSCALL`` after it invokes libc wrappers.
+frame), not ``SYSRET``. **Cloned threads** use ``usermode_enter_fork_frame()``
+from ``thread_user_entry`` with a per-task forged frame (``rsp =
+child_stack``, ``rax = 0``). Subsequent kernel entry from that process
+uses ``SYSCALL`` after it invokes libc wrappers.
+
+Return-to-user gates (G1 / G2)
+------------------------------
+
+Before restoring userspace at the end of a syscall (G1 in
+``syscall_entry.S``) or an IRQ return path (G2 in ``isr.S``), the stub
+calls ``arch_return_to_user_work()`` in ``kernel/kernel/retire.c``.
+If ``signal_pending()`` (``TIF_NEED_DIE``) is set, the thread unwinds
+through ``process_thread_exit()`` — the same path used by ``exit`` and
+``exit_group`` teardown. Gates only run when returning to CPL 3, so
+retirement never runs with kernel locks held from an interrupted kernel
+context.
+
+Blocking syscalls that must respond to group exit (e.g. ``wait4``) use
+``sched_sleep_interruptible()`` and return ``-EINTR`` when
+``TIF_NEED_DIE`` is pending, allowing the thread to reach a gate.

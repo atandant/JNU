@@ -58,12 +58,12 @@ static const uint16_t sc1_keycode[128] = {
 /* ------------------------------------------------------------------ */
 
 static const uint16_t sc1_e0_keycode[128] = {
-    [0x1C] = KEY_KPENTER, [0x1D] = KEY_RCTRL,	[0x35] = KEY_KPSLASH,
-    [0x37] = KEY_PRINTSCREEN, [0x38] = KEY_RALT, [0x46] = KEY_BREAK,
-    [0x47] = KEY_HOME,	  [0x48] = KEY_UP,	[0x49] = KEY_PAGEUP,
-    [0x4B] = KEY_LEFT,	  [0x4D] = KEY_RIGHT, [0x4F] = KEY_END,
-    [0x50] = KEY_DOWN,	  [0x51] = KEY_PAGEDOWN, [0x52] = KEY_INSERT,
-    [0x53] = KEY_DELETE,  [0x5B] = KEY_LGUI,	[0x5C] = KEY_RGUI,
+    [0x1C] = KEY_KPENTER,     [0x1D] = KEY_RCTRL,    [0x35] = KEY_KPSLASH,
+    [0x37] = KEY_PRINTSCREEN, [0x38] = KEY_RALT,     [0x46] = KEY_BREAK,
+    [0x47] = KEY_HOME,	      [0x48] = KEY_UP,	     [0x49] = KEY_PAGEUP,
+    [0x4B] = KEY_LEFT,	      [0x4D] = KEY_RIGHT,    [0x4F] = KEY_END,
+    [0x50] = KEY_DOWN,	      [0x51] = KEY_PAGEDOWN, [0x52] = KEY_INSERT,
+    [0x53] = KEY_DELETE,      [0x5B] = KEY_LGUI,     [0x5C] = KEY_RGUI,
     [0x5D] = KEY_APPS,
 };
 

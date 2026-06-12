@@ -13,6 +13,18 @@
  *   - Recursive locking panics (deadlock on single-CPU).
  *   - mutex_trylock() returns 0 on success, -EBUSY if held.
  *
+ * INVARIANT (v0.0.4, thread teardown): a mutex MUST NOT be held across
+ * an indefinite sleep (anything that waits on external events: I/O
+ * completion, a futex, a child exit, etc.).  mutex_lock() is therefore
+ * deliberately *uninterruptible* — a thread blocked on a contended
+ * mutex is only ever waiting for a short, bounded critical section to
+ * finish, after which it proceeds and retires at its next
+ * return-to-user gate.  Holding a mutex across an unbounded wait would
+ * silently break exit_group()/fatal-signal promptness (the group could
+ * never fully tear down).  Keep critical sections short and drop the
+ * mutex before any long wait (see kernel/fs/minix/buffer.c for the
+ * established pattern).
+ *
  * Copyright (c) 2026 The JNU Authors.
  * SPDX-License-Identifier: GPL-2.0-only
  */

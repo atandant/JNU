@@ -22,11 +22,25 @@ enum process_state {
 struct process {
 	int pid;
 	enum process_state state;
+	/*
+	 * main_task is the thread-group "leader" — the task wait4() wakes
+	 * and the fallback target for parent notification. v0.0.4: a
+	 * process may now own multiple tasks (threads); they are linked
+	 * via `tasks` and counted by `live_threads`. When all threads
+	 * exit (live_threads hits 0) the process becomes a zombie.
+	 */
 	struct task *main_task;
+	struct task *tasks; /* thread-group task list (task_next) */
+	int live_threads;   /* number of non-exited tasks in group */
 	struct process *parent;
 	struct process *first_child;
 	struct process *next_sibling;
 	int exit_status;
+	/*
+	 * v0.0.4: exit_group() status, recorded so whichever thread is
+	 * last out reports the group's code regardless of teardown order.
+	 */
+	int group_exit_code;
 	struct fd_table fds;
 	struct addr_space *space;
 	uint64_t user_entry;
@@ -40,6 +54,36 @@ void process_release_pid(int pid);
 
 struct process *process_create_kernel(struct task *task);
 void process_exit_current(int status);
+
+/*
+ * v0.0.4: exit a single thread of the current thread group. Decrements
+ * live_threads. If other threads remain the caller self-reaps as a
+ * detached TASK_DEAD task; if it is the last thread it performs full
+ * process teardown (process_exit_current) and becomes a TASK_ZOMBIE for
+ * the parent to wait4(). Never returns. This is the back end of both
+ * sys_exit() and a TIF_NEED_DIE retirement.
+ */
+void process_thread_exit(int status);
+
+/*
+ * v0.0.4: terminate the entire current thread group (exit_group). Sets
+ * TIF_NEED_DIE on every sibling task and wakes any that are sleeping so
+ * they unwind and retire at their next return-to-user boundary, then
+ * exits the calling thread. Never returns.
+ */
+void process_group_exit(int status);
+
+/*
+ * v0.0.4: add a new thread (task) to the current process. Implements
+ * the clone(CLONE_VM|CLONE_THREAD|...) path: shares the caller's
+ * address space and fd table, allocates a fresh tid (same pid/tgid),
+ * and schedules the new task to resume in userspace on `child_stack`
+ * with rax = 0 and FS base = `tls`. `*tid_out` receives the new tid.
+ */
+int process_clone_thread(const struct syscall_frame *frame,
+			 uint64_t child_stack, uint64_t tls, void *parent_tid,
+			 void *child_tid, uint64_t flags, int *tid_out);
+
 int process_wait(int pid, int *status_out);
 void process_destroy(struct process *proc);
 

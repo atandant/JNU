@@ -402,7 +402,7 @@ static void kbd_echo_loop(void)
 					pr_info("kbd: typed '%c'\n", c);
 				} else {
 					pr_info("kbd: typed 0x%02x\n",
-						 (unsigned char)c);
+						(unsigned char)c);
 				}
 			}
 		}

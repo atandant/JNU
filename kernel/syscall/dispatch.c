@@ -100,6 +100,8 @@ static int64_t wrap_getpid(const struct syscall_args *a)
 
 static int64_t wrap_fork(const struct syscall_args *a) { return sys_fork(a); }
 
+static int64_t wrap_clone(const struct syscall_args *a) { return sys_clone(a); }
+
 static int64_t wrap_execve(const struct syscall_args *a)
 {
 	return sys_execve(a);
@@ -211,6 +213,7 @@ static const syscall_handler_t syscall_table[JNU_SYS_MAX + 1] = {
     [JNU_SYS_nanosleep] = wrap_nanosleep,
     [JNU_SYS_getpid] = wrap_getpid,
     [JNU_SYS_fork] = wrap_fork,
+    [JNU_SYS_clone] = wrap_clone,
     [JNU_SYS_execve] = wrap_execve,
     [JNU_SYS_exit] = wrap_exit,
     [JNU_SYS_wait4] = wrap_wait4,

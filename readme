@@ -46,31 +46,30 @@
 
                 For deep refactors or when you need deep reasoning:
                     --Anthropic--
+                    Fable 5 (if you're rich)
+                    Opus 4.8
                     Opus 4.7
                     Opus 4.6
                     --OpenAI--
                     GPT 5.5
-                    GPT 5.4 (in some cases)
                 For fast and agile edits:
-                    --Anthropic--
-                    Haiku 4.5
-                    --Meta--
-                    Llama 4 70B
-                    Llama 4 8B
                     --Open source models--
                     GLM 5/5.1
                     KIMI 2.5/2.6
+                    Deepseek V4 Pro
                     Deepseek V4 Flash
-                    Deepseek V3 Flash
 
                 An all-rounder who is both good at coding and cost-effective:
+                    --Cursor--
+                    Composer 2.5
+                    Composer 2.5 fast
                     --Anthropic--
                     Sonnet 4.6
-                    Sonnet 4.5
                     --Google--
-                    Gemini 3.1 Pro
+                    Gemini 3.5 Flash
                     --Open source models--
-                    Deepseek V3
+                    Deepseek V4 Pro
+                    Deepseek V4 Flash
         
         --Operating system developers--
         For those learning how to make operating systems, I advise you

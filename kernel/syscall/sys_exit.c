@@ -11,7 +11,12 @@
 
 int64_t sys_exit(int status)
 {
-	process_exit_current(status);
-	sched_exit_current(status);
+	/*
+	 * v0.0.4: exit only the calling thread. If it is the last thread
+	 * in its group, process_thread_exit() performs full process
+	 * teardown; otherwise the thread self-reaps as detached. Never
+	 * returns. (exit_group() terminates the whole group instead.)
+	 */
+	process_thread_exit(status);
 	return 0;
 }

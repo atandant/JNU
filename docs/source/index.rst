@@ -1,7 +1,7 @@
 JNU Kernel Internals Manual
 ============================
 
-JNU is an x86_64 hobby kernel (currently v0.0.3.x) booted via `Limine
+JNU is an x86_64 hobby kernel (currently v0.0.4) booted via `Limine
 v8 <https://github.com/limine-bootloader/limine>`_. It runs a native
 userspace built on ``libjnu`` and can also execute statically-linked
 `musl <https://musl.libc.org/>`_ programs when the kernel's
@@ -45,10 +45,12 @@ Four-level paging maps virtual addresses; each process has an
 ``addr_space`` (PML4 + VMA red-black tree). Kernel heap objects use slab
 caches behind ``kmalloc``.
 
-**Processes.** A *process* holds PID, fd table, and address space. A
-*task* is the schedulable execution context (kernel stack, saved
-registers). The scheduler is single-CPU round-robin, preempted by the
-LAPIC timer.
+**Processes.** A *process* is a thread group: PID (tgid), fd table, and
+address space. A *task* is one schedulable thread (kernel stack, saved
+registers, unique ``tid``). Since v0.0.4, ``clone(CLONE_VM |
+CLONE_THREAD)`` adds threads to a group; ``fork()`` still creates a new
+group with one thread. The scheduler is single-CPU round-robin,
+preempted by the LAPIC timer.
 
 **Syscalls.** Userspace enters the kernel via ``SYSCALL``/``SYSRET``.
 Since v0.0.3, syscall *numbers* match the Linux x86_64 ABI so musl can
@@ -83,7 +85,8 @@ Repository layout
      - Contents
    * - ``kernel/``
      - Kernel source: ``arch/x86_64/``, ``mm/``, ``fs/``, ``syscall/``,
-       ``drivers/``, ``kernel/`` (main, sched, panic), ``user/`` (fd, copy)
+       ``drivers/``, ``kernel/`` (main, sched, clone, retire, panic),
+       ``user/`` (fd, copy, process)
    * - ``include/jnu/``
      - Kernel-internal headers
    * - ``include/uapi/jnu/``

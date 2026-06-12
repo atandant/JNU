@@ -34,6 +34,7 @@
 default rel
 
 extern interrupt_dispatch
+extern arch_return_to_user_work
 global isr_table
 
 section .text
@@ -72,6 +73,11 @@ isr_common:
 	mov rax, [rsp + 15*8 + 24]	; saved CS
 	test rax, 3
 	jz .no_swap_out
+	; v0.0.4 (G2): returning to ring 3 — run pending work (TIF_NEED_DIE)
+	; while the kernel GS base is still active. The stack is 16-byte
+	; aligned here. If the thread must die, this never returns and the
+	; IRQ frame is dropped (EOI was already issued in the dispatcher).
+	call arch_return_to_user_work
 	swapgs
 .no_swap_out:
 

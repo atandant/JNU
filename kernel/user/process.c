@@ -58,6 +58,10 @@ struct process *process_create_kernel(struct task *task)
 	proc->pid = task->pid;
 	proc->state = PROCESS_ALIVE;
 	proc->main_task = task;
+	/* v0.0.4: single-thread group at creation. */
+	task->task_next = NULL;
+	proc->tasks = task;
+	proc->live_threads = 1;
 	fd_table_init(&proc->fds);
 	proc->space = vmm_kernel_space();
 	task->process = proc;
@@ -191,8 +195,23 @@ static void process_reap(struct process *child)
 	if (child->space && child->space != vmm_kernel_space()) {
 		vmm_destroy_space(child->space);
 	}
-	if (child->main_task) {
-		sched_reap_task(child->main_task);
+	/*
+	 * v0.0.4: reap every task still attached to the group. Detached
+	 * threads already self-reaped (TASK_DEAD); what remains here is
+	 * the last/zombie thread that performed process teardown. Walk the
+	 * list so no kernel stack is leaked for multi-threaded groups.
+	 */
+	{
+		struct task *t = child->tasks;
+
+		while (t) {
+			struct task *next = t->task_next;
+
+			sched_reap_task(t);
+			t = next;
+		}
+		child->tasks = NULL;
+		child->main_task = NULL;
 	}
 	process_release_pid(child->pid);
 	kfree(child);
@@ -210,6 +229,15 @@ int process_wait(int pid, int *status_out)
 	}
 
 	for (;;) {
+		/*
+		 * v0.0.4: death preempts a pending reap. If this thread is
+		 * being torn down (exit_group / fatal), bail before
+		 * touching the process tree so it can retire promptly.
+		 */
+		if (signal_pending()) {
+			return -EINTR;
+		}
+
 		flags = spin_lock_irqsave(&process_tree_lock);
 		child = find_child(parent, pid);
 		if (!child) {
@@ -235,7 +263,9 @@ int process_wait(int pid, int *status_out)
 			return child_pid;
 		}
 		spin_unlock_irqrestore(&process_tree_lock, flags);
-		sched_sleep_current();
+		if (sched_sleep_interruptible() == -EINTR) {
+			return -EINTR;
+		}
 	}
 }
 
