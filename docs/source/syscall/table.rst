@@ -155,12 +155,17 @@ Implemented syscalls
      - ``arch_prctl``
      - ``sys_arch_prctl``
      - TLS setup: ``ARCH_SET_FS``, ``ARCH_GET_FS`` for musl thread pointer.
+   * - 202
+     - ``futex``
+     - ``sys_futex``
+     - ``FUTEX_WAIT`` / ``FUTEX_WAKE`` / ``FUTEX_REQUEUE`` for musl
+       pthread primitives. See :doc:`/proc/futex`.
    * - 218
      - ``set_tid_address``
      - ``sys_set_tid_address``
      - Store ``clear_child_tid`` on the calling task; return caller's
-       ``tid``. On thread exit the kernel writes ``0`` (``futex_wake``
-       not yet implemented).
+       ``tid``. On thread exit the kernel writes ``0`` and issues
+       ``futex_wake`` so ``pthread_join`` can complete.
    * - 228
      - ``clock_gettime``
      - ``sys_clock_gettime``
@@ -227,7 +232,6 @@ commonly appear in strace-style debugging but return ``-ENOSYS`` today:
 * ``brk``, ``mremap``, ``madvise``, ``prlimit64``
 * ``openat``, ``newfstatat``, ``readlink``, ``getcwd``
 * Full signal delivery (``kill``, ``tgkill``, ``rt_sigreturn``)
-* ``futex`` (``pthread_join`` may spin until implemented)
 * ``gettid`` (musl can use ``clone`` return value instead)
 * ``pipe``, ``socket``, ``poll``, ``epoll_*``
 

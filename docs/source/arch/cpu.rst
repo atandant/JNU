@@ -2,7 +2,8 @@ CPU Initialization
 ==================
 
 The CPU bring-up is performed by ``cpu_init()``, called early in
-``kernel_main()`` before any memory allocator is available. The per-CPU
+``kernel_main()`` — immediately after ``klog_init()`` and before the
+banner — so TSC timestamps are live for the rest of bring-up. The per-CPU
 block is a statically allocated ``struct cpu`` accessed via the
 ``IA32_GS_BASE`` MSR.
 
@@ -50,11 +51,21 @@ Feature Detection and Control Register Setup
    ``usercopy.h`` will trigger a ``#PF`` with error code bit ``PF_EC_RSVD``
    clear and ``PF_EC_P`` set, causing ``panic_with_state()``.
 
+8. **FPU eager-save** — ``fpu_init_early()``.
+9. **Early TSC calibration** — ``cpu_calibrate_tsc()`` via PIT channel 2
+   polling (does not require ``pit_init()``).
+
+``cpu_mark_boot()`` records the TSC at kernel entry (called from
+``kernel_main()`` before ``klog_init()``). ``cpu_us_since_boot()`` returns
+microseconds since that anchor.
+
 TSC Calibration
 ---------------
 
-``cpu_calibrate_tsc()`` must be called after ``pit_init()``. It measures
-the TSC tick rate against either the HPET (if available) or PIT channel 2:
+``cpu_calibrate_tsc()`` measures the TSC tick rate against either the HPET
+(if available) or PIT channel 2. It runs during ``cpu_init()`` for early
+klog timestamps and may run again after ``hpet_init()`` when HPET is
+present for a tighter rate.
 
 - HPET path: arms the HPET counter, spins for a fixed interval, and divides
   the observed TSC delta by the elapsed nanoseconds.
@@ -63,7 +74,7 @@ the TSC tick rate against either the HPET (if available) or PIT channel 2:
 
 The result is stored as ``tsc_per_us`` in the per-CPU block. After
 calibration, ``cpu_us_since_boot()`` provides a monotonic microsecond
-timestamp derived from ``rdtsc``.
+timestamp derived from ``rdtsc`` relative to the boot anchor.
 
 MSR Accessors
 -------------

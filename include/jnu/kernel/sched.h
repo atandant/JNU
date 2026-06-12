@@ -74,7 +74,7 @@ struct task {
 	uint32_t flags;
 	/*
 	 * v0.0.4: CLONE_CHILD_CLEARTID / set_tid_address pointer. On
-	 * thread exit the kernel writes 0 here and (TODO: item 2) issues
+	 * thread exit the kernel writes 0 here and issues
 	 * a FUTEX_WAKE so pthread_join() can complete.
 	 */
 	void *clear_child_tid;
@@ -100,6 +100,13 @@ struct task {
 	 * consumes the credit instead of blocking.
 	 */
 	unsigned int wake_pending;
+	/*
+	 * Timed sleep state. Non-zero sleep_deadline_us means the task
+	 * is blocked with a TSC deadline; sched_tick() promotes expired
+	 * sleepers to runnable and sets sleep_timed_out.
+	 */
+	uint64_t sleep_deadline_us;
+	int sleep_timed_out;
 	/*
 	 * v0.0.3 §2.9: per-task FS/GS base for arch_prctl.
 	 * Saved and restored on every context switch via wrmsr.
@@ -145,6 +152,17 @@ void sched_sleep_current(void);
  * blocking syscalls (e.g. wait4) so a group-exit can unwind them.
  */
 int sched_sleep_interruptible(void);
+/*
+ * Block until woken, interrupted, or timeout_us elapses. timeout_us == 0
+ * waits indefinitely (equivalent to sched_sleep_interruptible()).
+ * Returns 0 if woken, -EINTR on TIF_NEED_DIE, -ETIMEDOUT on expiry.
+ */
+int sched_sleep_timed_interruptible(uint64_t timeout_us);
+/*
+ * Drop one wake_pending credit posted by sched_wake() when the caller
+ * observed the wake without entering sched_sleep_current().
+ */
+void sched_consume_wake_pending(struct task *task);
 void sched_wake(struct task *task);
 void sched_tick(void);
 

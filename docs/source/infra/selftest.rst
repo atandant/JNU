@@ -66,6 +66,11 @@ The following subsystems register selftests:
      - CPIO header parsing against a small embedded test archive.
    * - ``sched_selftest()``
      - Kernel thread creation; yield; zombie reaping.
+   * - ``mutex_selftest()``
+     - In-kernel spinlock mutex acquire/release and contention paths.
+   * - ``futex_selftest()``
+     - ``futex_wake`` / ``futex_wait`` non-blocking paths and timed
+       timeout on a scratch user mapping. See :doc:`/proc/futex`.
    * - ``process_selftest()``
      - Process creation; fork; wait; exit status propagation.
    * - ``syscall_selftest()``

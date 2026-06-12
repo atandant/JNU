@@ -582,14 +582,68 @@ bool signal_pending(void)
 
 int sched_sleep_interruptible(void)
 {
+	return sched_sleep_timed_interruptible(0);
+}
+
+int sched_sleep_timed_interruptible(uint64_t timeout_us)
+{
+	uint64_t flags;
+	uint64_t deadline = 0;
+
 	if (signal_pending()) {
 		return -EINTR;
 	}
-	sched_sleep_current();
+
+	if (timeout_us != 0) {
+		uint64_t now = cpu_us_since_boot();
+
+		if (timeout_us > ~0ULL - now) {
+			deadline = ~0ULL;
+		} else {
+			deadline = now + timeout_us;
+		}
+	}
+
+	flags = spin_lock_irqsave(&sched_lock);
+	if (current->wake_pending > 0) {
+		current->wake_pending--;
+		spin_unlock_irqrestore(&sched_lock, flags);
+		if (signal_pending()) {
+			return -EINTR;
+		}
+		return 0;
+	}
+
+	current->sleep_timed_out = 0;
+	current->sleep_deadline_us = deadline;
+	current->state = TASK_SLEEPING;
+	schedule_locked();
+	spin_unlock_irqrestore(&sched_lock, flags);
+
+	current->sleep_deadline_us = 0;
 	if (signal_pending()) {
 		return -EINTR;
+	}
+	if (current->sleep_timed_out) {
+		current->sleep_timed_out = 0;
+		return -ETIMEDOUT;
 	}
 	return 0;
+}
+
+void sched_consume_wake_pending(struct task *task)
+{
+	uint64_t flags;
+
+	if (!task) {
+		return;
+	}
+
+	flags = spin_lock_irqsave(&sched_lock);
+	if (task->wake_pending > 0) {
+		task->wake_pending--;
+	}
+	spin_unlock_irqrestore(&sched_lock, flags);
 }
 
 void sched_sleep_current(void)
@@ -631,10 +685,31 @@ void sched_wake(struct task *task)
 	task->wake_pending++;
 	if (task->state == TASK_SLEEPING) {
 		task->wake_pending--;
+		task->sleep_timed_out = 0;
+		task->sleep_deadline_us = 0;
 		task->state = TASK_RUNNABLE;
 		runq_push(task);
 	}
 	spin_unlock_irqrestore(&sched_lock, flags);
+}
+
+static void sched_expire_timed_sleepers(void)
+{
+	struct task *t;
+	uint64_t now = cpu_us_since_boot();
+
+	for (t = all_tasks; t; t = t->all_next) {
+		if (t->state != TASK_SLEEPING || t->sleep_deadline_us == 0) {
+			continue;
+		}
+		if (now < t->sleep_deadline_us) {
+			continue;
+		}
+		t->sleep_timed_out = 1;
+		t->sleep_deadline_us = 0;
+		t->state = TASK_RUNNABLE;
+		runq_push(t);
+	}
 }
 
 void sched_tick(void)
@@ -642,6 +717,10 @@ void sched_tick(void)
 	uint64_t flags;
 
 	tick_count++;
+	flags = spin_lock_irqsave(&sched_lock);
+	sched_expire_timed_sleepers();
+	spin_unlock_irqrestore(&sched_lock, flags);
+
 	if (quantum_left > 0) {
 		quantum_left--;
 	}

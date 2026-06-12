@@ -49,8 +49,9 @@ caches behind ``kmalloc``.
 address space. A *task* is one schedulable thread (kernel stack, saved
 registers, unique ``tid``). Since v0.0.4, ``clone(CLONE_VM |
 CLONE_THREAD)`` adds threads to a group; ``fork()`` still creates a new
-group with one thread. The scheduler is single-CPU round-robin,
-preempted by the LAPIC timer.
+group with one thread. ``futex(2)`` provides the wait/wake primitives
+musl ``pthread`` uses (mutex, cond, join). The scheduler is single-CPU
+round-robin, preempted by the LAPIC timer.
 
 **Syscalls.** Userspace enters the kernel via ``SYSCALL``/``SYSRET``.
 Since v0.0.3, syscall *numbers* match the Linux x86_64 ABI so musl can
@@ -69,7 +70,7 @@ For a first pass through the codebase:
 1. :doc:`build` — toolchain, Make targets, QEMU/VMware disk setup
 2. :doc:`arch/boot` — Limine handoff and ``kernel_main()`` bring-up order
 3. :doc:`mm/pmm` → :doc:`mm/paging` → :doc:`mm/vmm` → :doc:`mm/vma` — memory stack
-4. :doc:`proc/process` → :doc:`proc/scheduler` → :doc:`proc/exec` — tasks and ELF load
+4. :doc:`proc/process` → :doc:`proc/scheduler` → :doc:`proc/futex` → :doc:`proc/exec` — tasks and ELF load
 5. :doc:`syscall/interface` → :doc:`syscall/table` — userspace/kernel boundary
 6. :doc:`fs/initramfs` → :doc:`fs/vfs` → :doc:`fs/fd` — file I/O path
 7. :doc:`infra/panic` → :doc:`infra/klog` — diagnostics when things go wrong
@@ -85,7 +86,7 @@ Repository layout
      - Contents
    * - ``kernel/``
      - Kernel source: ``arch/x86_64/``, ``mm/``, ``fs/``, ``syscall/``,
-       ``drivers/``, ``kernel/`` (main, sched, clone, retire, panic),
+       ``drivers/``, ``kernel/`` (main, sched, clone, futex, retire, panic),
        ``user/`` (fd, copy, process)
    * - ``include/jnu/``
      - Kernel-internal headers
@@ -135,6 +136,7 @@ Repository layout
 
    proc/process
    proc/scheduler
+   proc/futex
    proc/exec
 
 .. toctree::

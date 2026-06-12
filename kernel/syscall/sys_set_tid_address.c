@@ -2,8 +2,8 @@
  * kernel/syscall/sys_set_tid_address.c — set_tid_address.
  *
  * v0.0.4: stores the clear_child_tid pointer on the calling task. On
- * thread exit the kernel writes 0 to this address and (TODO item 2)
- * issues a FUTEX_WAKE so a joiner blocked on the word can proceed.
+ * thread exit the kernel writes 0 to this address and issues a 
+ * FUTEX_WAKE so a joiner blocked on the word can proceed.
  * Returns the caller's tid.
  *
  * Copyright (c) 2026 The JNU Authors.

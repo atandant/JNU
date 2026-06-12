@@ -175,6 +175,12 @@ static int64_t wrap_set_tid_address(const struct syscall_args *a)
 	return sys_set_tid_address((void *)a->arg0);
 }
 
+static int64_t wrap_futex(const struct syscall_args *a)
+{
+	return sys_futex((uint32_t *)a->arg0, (int)a->arg1, (uint32_t)a->arg2,
+			 a->arg3, (uint32_t *)a->arg4, (uint32_t)a->arg5);
+}
+
 static int64_t wrap_clock_gettime(const struct syscall_args *a)
 {
 	return sys_clock_gettime((int)a->arg0, (void *)a->arg1);
@@ -226,6 +232,7 @@ static const syscall_handler_t syscall_table[JNU_SYS_MAX + 1] = {
     [JNU_SYS_unlink] = wrap_unlink,
     [JNU_SYS_arch_prctl] = wrap_arch_prctl,
     [JNU_SYS_set_tid_address] = wrap_set_tid_address,
+    [JNU_SYS_futex] = wrap_futex,
     [JNU_SYS_clock_gettime] = wrap_clock_gettime,
     [JNU_SYS_exit_group] = wrap_exit_group,
     [JNU_SYS_getrandom] = wrap_getrandom,

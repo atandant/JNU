@@ -187,7 +187,8 @@ same thread group). Any other flag outside the accepted set returns
 * ``CLONE_CHILD_SETTID``: **child** writes its ``tid`` to ``child_tid``
   at first userspace entry (not in the parent), avoiding a tid race.
 * ``CLONE_CHILD_CLEARTID``: records ``child_tid`` as ``clear_child_tid``;
-  on thread exit the kernel writes ``0`` there (``futex_wake`` is TODO).
+  on thread exit the kernel writes ``0`` there and issues ``futex_wake``
+  so ``pthread_join`` can complete.
 
 **Validation and limits:**
 
@@ -241,15 +242,16 @@ reboot — there is no global reaper beyond init reparenting.
 Known gaps (v0.0.4)
 -------------------
 
-* ``clear_child_tid`` writes ``0`` on thread exit but does not yet issue
-  ``futex_wake`` — ``pthread_join`` may spin until futex support lands.
 * No ``tgkill``, ``gettid``, or signal delivery to individual threads.
+* Futex ops beyond ``WAIT`` / ``WAKE`` / ``REQUEUE`` return ``-ENOSYS``
+  (no priority-inheritance or ``FUTEX_FD``).
 * Thread limits are fixed constants, not ``RLIMIT_NPROC`` / ``threads-max``.
 
 Related docs
 ------------
 
 * Scheduling and context switch: :doc:`scheduler`
+* Futex wait/wake (pthread join): :doc:`futex`
 * ELF load and stack setup: :doc:`exec`
 * Syscall entry for fork/clone return frames: :doc:`/arch/syscall_entry`
 * Syscall numbers: :doc:`/syscall/table`

@@ -137,11 +137,14 @@ Several syscalls exist solely so musl's static startup does not abort:
 
 * ``rt_sigaction`` / ``rt_sigprocmask`` — return 0 (no signals yet).
 * ``ioctl`` — returns ``-ENOTTY`` (stdio terminal probes).
-* ``set_tid_address`` — records ``clear_child_tid``, returns ``tid``.
+* ``set_tid_address`` — records ``clear_child_tid``, returns ``tid``;
+  thread exit writes ``0`` and wakes joiners via ``futex_wake``.
 * ``clone`` — thread creation for musl ``pthread``; ``child_stack`` must
   pass ``user_range_ok()`` before the task is scheduled.
+* ``futex`` — ``FUTEX_WAIT`` / ``FUTEX_WAKE`` / ``FUTEX_REQUEUE`` for
+  musl pthread synchronization. See :doc:`/proc/futex`.
 
-Real signal delivery, ``futex``, and terminal ioctls are future work.
+Real signal delivery and terminal ioctls are future work.
 See :doc:`table` for the full list.
 
 Native vs musl userspace

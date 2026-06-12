@@ -81,7 +81,8 @@ the backend was available) are not lost.
    void vprintk(enum klog_level level, const char *fmt, __builtin_va_list ap);
 
 The central formatting functions. ``printk`` prepends a timestamp in
-``[secs.usecs]`` format and a level indicator, then writes to all backends.
+``[secs.usecs]`` format (microseconds since ``cpu_mark_boot()``) and a
+level indicator, then writes to all backends.
 
 ``pr_*`` Macros
 ---------------

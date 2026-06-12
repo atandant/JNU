@@ -163,6 +163,7 @@ KERNEL_SYSCALL_SRCS := \
     kernel/syscall/sys_nanosleep.c \
     kernel/syscall/sys_getrandom.c \
     kernel/syscall/sys_set_tid_address.c \
+    kernel/syscall/sys_futex.c \
     kernel/syscall/sys_rt_sigaction.c \
     kernel/syscall/sys_rt_sigprocmask.c \
     kernel/syscall/sys_ioctl.c \
@@ -187,6 +188,7 @@ KERNEL_CORE_SRCS := \
     kernel/kernel/cmdline.c \
     kernel/kernel/fork.c \
     kernel/kernel/clone.c \
+    kernel/kernel/futex.c \
     kernel/kernel/retire.c \
     kernel/kernel/execve.c \
     kernel/kernel/initfs_exec.c \

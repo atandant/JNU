@@ -3,14 +3,13 @@
  *
  * Boot flow:
  *   1. Verify Limine base revision support; declare requests.
- *   2. Bring up klog and serial.
+ *   2. Bring up klog and serial; mark boot TSC and calibrate it.
  *   3. Banner.
  *   4. Init framebuffer console.
- *   5. CPU bring-up (CPUID, CR0/CR4/EFER, GS_BASE), GDT/TSS, IDT, PIC
- *      remap+mask, ACPI/MADT/APIC.
+ *   5. GDT/TSS, IDT, PIC remap+mask, ACPI/MADT/APIC.
  *   6. PMM, paging, VMM, slab.
- *   7. PIT (100 Hz timer via IOAPIC, used for calibration).
- *   8. TSC calibration (klog timestamps now sensible).
+ *   7. HPET (optional TSC rate refinement).
+ *   8. PIT (100 Hz timer via IOAPIC).
  *   9. RTC wall-clock read.
  *  10. Initramfs parse, scheduler init.
  *  11. LAPIC timer takes over as scheduler tick; PIT IRQ masked.
@@ -468,6 +467,8 @@ void kernel_main(void)
 		}
 	}
 
+	cpu_mark_boot();
+
 	klog_init();
 
 	const char *cmd = NULL;
@@ -479,6 +480,9 @@ void kernel_main(void)
 
 	serial_init();
 
+	/* CPU bring-up and TSC calibration before banner so klog stamps are live. */
+	cpu_init();
+
 	banner();
 
 	if (cmd && cmd[0]) {
@@ -487,8 +491,6 @@ void kernel_main(void)
 
 	bring_up_fbcon();
 
-	/* CPU + descriptor tables. */
-	cpu_init();
 	gdt_init();
 	arch_syscall_init();
 	idt_init();
@@ -520,18 +522,16 @@ void kernel_main(void)
 	/* HPET: high-precision reference counter for TSC calibration
 	 * and monotonic timing. Optional — falls back to PIT. */
 	hpet_init(rsdp_phys, hhdm);
+	if (hpet_available()) {
+		cpu_calibrate_tsc();
+	}
 
 	/* ACPI power management: parse the FADT for reboot/poweroff and
 	 * the PM timer. Optional — reboot falls back to legacy methods. */
 	acpi_pm_init();
 
-	/* PIT timer: 100 Hz via IOAPIC. Must come before TSC calibration
-	 * if we ever switch cpu_calibrate_tsc to use PIT channel 0 IRQs
-	 * (currently it uses channel 2 polling, so order is flexible). */
+	/* PIT timer: 100 Hz via IOAPIC. */
 	pit_init();
-
-	/* TSC calibration: uses HPET if available, else PIT channel 2. */
-	cpu_calibrate_tsc();
 
 	/* Seed the PRNG from hardware entropy (RDRAND/RDTSC/HPET).
 	 * Must run after HPET and TSC calibration are done. */

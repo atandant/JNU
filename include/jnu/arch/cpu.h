@@ -28,15 +28,22 @@ struct cpu {
 /*
  * One-shot CPU bring-up. Detects required features, sets EFER.NXE,
  * CR0.WP, CR4.PGE, and (if available) CR4.SMEP, CR4.SMAP. Calibrates
- * the TSC against the PIT (cpu_calibrate_tsc must be called after
- * pit_init). Wires IA32_GS_BASE to point at the per-CPU block.
+ * the TSC against the PIT for early klog timestamps; HPET may refine the
+ * rate later once paging and ACPI are up. Wires IA32_GS_BASE to point at
+ * the per-CPU block.
  *
  * Panics if any required feature (long mode, APIC, NX, MSR, TSC) is
  * absent.
  */
 void cpu_init(void);
 
-/* Run after pit_init(): calibrates tsc_per_us. */
+/*
+ * Record the TSC at kernel entry. Call once from kernel_main() before
+ * any printk so cpu_us_since_boot() is anchored to kernel bring-up.
+ */
+void cpu_mark_boot(void);
+
+/* Calibrate tsc_per_us (PIT if HPET is unavailable, else HPET). */
 void cpu_calibrate_tsc(void);
 
 struct cpu *cpu_current(void);

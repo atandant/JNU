@@ -143,6 +143,9 @@ Limitations
      - Not supported; static linking only.
    * - ``ioctl`` / TTY
      - Stub returns ``-ENOTTY``; musl stdio falls back (no cooked TTY).
+   * - ``futex`` / pthread
+     - ``FUTEX_WAIT`` / ``WAKE`` / ``REQUEUE`` implemented; other futex
+       ops return ``-ENOSYS``. See :doc:`/proc/futex`.
    * - ``getrandom``
      - Implemented but documented as non-cryptographic in the kernel.
    * - ``musltest`` file tests

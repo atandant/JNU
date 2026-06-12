@@ -19,6 +19,7 @@
  */
 
 #include <jnu/base/types.h>
+#include <jnu/kernel/futex.h>
 #include <jnu/kernel/process.h>
 #include <jnu/kernel/sched.h>
 #include <jnu/lib/klog.h>
@@ -41,20 +42,21 @@ extern struct spinlock process_tree_lock;
 	 CLONE_CHILD_CLEARTID | CLONE_DETACHED | CLONE_CHILD_SETTID)
 
 /*
- * Write 0 to the exiting thread's clear_child_tid and (TODO item 2)
- * issue a FUTEX_WAKE so a pthread_join() blocked on that word can make
- * progress. Until futex lands, join spin-waits on the cleared word.
+ * Write 0 to the exiting thread's clear_child_tid and issue a
+ * FUTEX_WAKE so a pthread_join() blocked on that word makes progress.
  */
 static void clear_child_tid(struct task *t)
 {
+	void *addr;
 	int zero = 0;
 
 	if (!t || !t->clear_child_tid) {
 		return;
 	}
-	(void)copy_to_user(t->clear_child_tid, &zero, sizeof(zero));
+	addr = t->clear_child_tid;
+	(void)copy_to_user(addr, &zero, sizeof(zero));
 	t->clear_child_tid = NULL;
-	/* TODO(item 2: futex): futex_wake((uint32_t *)addr, 1); */
+	(void)futex_wake((uint32_t *)addr, 1);
 }
 
 /* Remove `task` from its thread group's task list. Caller holds lock. */

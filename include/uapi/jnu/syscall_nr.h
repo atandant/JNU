@@ -43,6 +43,7 @@
 #define JNU_SYS_creat 85
 #define JNU_SYS_unlink 87
 #define JNU_SYS_arch_prctl 158
+#define JNU_SYS_futex 202
 #define JNU_SYS_set_tid_address 218
 #define JNU_SYS_clock_gettime 228
 #define JNU_SYS_exit_group 231

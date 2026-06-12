@@ -24,6 +24,8 @@ Task structure
        struct task     *parent;
        int              exit_status;
        unsigned int     wake_pending;
+       uint64_t         sleep_deadline_us; /* TSC deadline when timed sleep */
+       int              sleep_timed_out;
        struct task     *run_next;      /* runqueue link */
        struct task     *all_next;      /* global task list */
        struct task     *task_next;     /* thread-group list (proc->tasks) */
@@ -56,7 +58,8 @@ Task states
    * - ``TASK_RUNNING``
      - Currently executing on the CPU.
    * - ``TASK_SLEEPING``
-     - Blocked (e.g. ``wait4``); not on runqueue until ``sched_wake()``.
+     - Blocked (e.g. ``wait4``, ``futex``); not on runqueue until
+       ``sched_wake()`` or a timed deadline expires.
    * - ``TASK_ZOMBIE``
      - Last thread of a group exited; struct remains until parent
        ``wait4`` reaps via ``sched_reap_task()``.
@@ -95,10 +98,12 @@ Runqueue and quantum
 The runqueue is a FIFO singly-linked list via ``task->run_next``.
 ``sched_tick()`` (every LAPIC timer interrupt):
 
-1. Decrements ``quantum_left`` (``SCHED_QUANTUM_TICKS == 1``).
-2. If quantum expired and more than one runnable task exists, rotates the
+1. Expires timed sleepers whose ``sleep_deadline_us`` has passed
+   (``sched_expire_timed_sleepers()``).
+2. Decrements ``quantum_left`` (``SCHED_QUANTUM_TICKS == 1``).
+3. If quantum expired and more than one runnable task exists, rotates the
    current task to the tail and switches to the new head.
-3. Calls ``context_switch(&prev->ctx, &next->ctx)``.
+4. Calls ``context_switch(&prev->ctx, &next->ctx)``.
 
 A separate ``all_tasks`` list tracks every task for debugging, global
 task counting, and reap.
@@ -223,6 +228,22 @@ Like ``sched_sleep_current`` but returns ``-EINTR`` if ``TIF_NEED_DIE``.
 
 .. code-block:: c
 
+   int sched_sleep_timed_interruptible(uint64_t timeout_us);
+
+Block until woken, interrupted, or ``timeout_us`` elapses. ``timeout_us ==
+0`` waits indefinitely (same as ``sched_sleep_interruptible()``).
+Returns ``0`` if woken, ``-EINTR`` on ``TIF_NEED_DIE``, ``-ETIMEDOUT`` on
+expiry. Used by timed ``futex`` waits.
+
+.. code-block:: c
+
+   void sched_consume_wake_pending(struct task *task);
+
+Drop one ``wake_pending`` credit when the caller observed a wake without
+entering the sleep path (futex cleanup).
+
+.. code-block:: c
+
    void sched_wake(struct task *task);
 
 Runnable from sleeping, or bump ``wake_pending``.
@@ -251,3 +272,4 @@ Related docs
 
 * Timer IRQ: :doc:`/arch/interrupts`
 * Process lifecycle and thread groups: :doc:`process`
+* Futex blocking path: :doc:`futex`

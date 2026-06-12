@@ -19,6 +19,7 @@
 #include <jnu/fs/minix.h>
 #include <jnu/fs/vfs.h>
 #include <jnu/kernel/elf64.h>
+#include <jnu/kernel/futex.h>
 #include <jnu/kernel/process.h>
 #include <jnu/kernel/sched.h>
 #include <jnu/kernel/selftest.h>
@@ -45,6 +46,7 @@ static const struct selftest tests[] = {
     {"usercopy", usercopy_selftest},
     {"sched", sched_selftest},
     {"mutex", mutex_selftest},
+    {"futex", futex_selftest},
     {"lapic_timer", lapic_timer_selftest},
     {"process", process_selftest},
     {"file_refcount", file_refcount_selftest},

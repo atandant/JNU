@@ -99,6 +99,8 @@ int64_t sys_writev(int fd, const void *uiov, int iovcnt);
 int64_t sys_nanosleep(const void *ureq, void *urem);
 int64_t sys_arch_prctl(int code, uint64_t addr);
 int64_t sys_set_tid_address(void *tidptr);
+int64_t sys_futex(uint32_t *uaddr, int op, uint32_t val,
+		  uint64_t timeout_or_val2, uint32_t *uaddr2, uint32_t val3);
 int64_t sys_clock_gettime(int clockid, void *utp);
 int64_t sys_exit_group(int status);
 int64_t sys_getrandom(void *ubuf, size_t buflen, unsigned int flags);

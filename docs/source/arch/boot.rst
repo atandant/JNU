@@ -59,17 +59,17 @@ comment in ``main.c``.
      - Subsystem
      - Notes
    * - 1
-     - ``klog_init()`` / ``serial_init()``
-     - Establishes COM1 output. No heap is available yet.
+     - ``cpu_mark_boot()`` / ``klog_init()`` / ``serial_init()``
+     - Anchor boot TSC; establish COM1 output. No heap yet.
    * - 2
+     - ``cpu_init()``
+     - CPUID, CR0/CR4/EFER, GS_BASE, early TSC calibration (PIT).
+   * - 3
      - ``cmdline_parse()``
      - Parses the Limine kernel command line into a flat key=value store.
-   * - 3
+   * - 4
      - ``fbcon_init()``
      - Optional; silently skipped if no framebuffer is present.
-   * - 4
-     - ``cpu_init()``
-     - CPUID feature detection, CR0/CR4/EFER setup. Panics on missing NX or APIC.
    * - 5
      - ``gdt_init()`` / ``arch_syscall_init()`` / ``idt_init()``
      - Descriptor tables, SYSCALL MSRs, and ISR vectors installed.
@@ -89,32 +89,35 @@ comment in ``main.c``.
      - ``apic_init()``
      - LAPIC and IOAPIC initialized from the ACPI MADT.
    * - 11
-     - ``hpet_init()`` / ``pit_init()``
-     - HPET is optional; PIT provides the reference for TSC calibration.
+     - ``hpet_init()`` / ``acpi_pm_init()``
+     - HPET optional; if present, ``cpu_calibrate_tsc()`` runs again.
    * - 12
-     - ``cpu_calibrate_tsc()``
-     - Measures ``tsc_per_us`` using HPET or PIT channel 2 polling.
+     - ``pit_init()``
+     - PIT 100 Hz via IOAPIC (scheduler tick source before LAPIC timer).
    * - 13
+     - ``prng_seed()``
+     - Seed PRNG from RDRAND/RDTSC/HPET (after timers calibrated).
+   * - 14
      - ``rtc_init()``
      - Reads the CMOS RTC; logs the wall-clock time.
-   * - 14
+   * - 15
      - ``initramfs_init()``
      - Parses the CPIO-newc archive delivered as a Limine module.
-   * - 15
+   * - 16
      - ``sched_init()``
      - Round-robin task list initialized; a kernel task is created for the boot path.
-   * - 16
+   * - 17
      - ``lapic_timer_init()`` / ``ioapic_mask(0)``
      - LAPIC timer takes over as the scheduler tick; PIT IRQ 0 is masked.
-   * - 17
+   * - 18
      - ``pci_init()`` / ``virtio_blk_init()`` / ``ata_init()`` / ``kbd_init()``
      - PCI bus scan; VirtIO block (``vda``) and legacy ATA (``hda``)
        drivers register block devices; PS/2 keyboard.
-   * - 18
+   * - 19
      - ``vfs_init()`` / ``vfs_mount()``
      - VFS initialized; Minix v1 mounted at ``/`` from ``vda`` if present,
        otherwise ``hda``. Panics if neither device exists or mount fails.
-   * - 19
+   * - 20
      - ``start_init()``
      - Loads ``/init`` (or ``init=<path>``) from initramfs, creates user
        task, enters ring 3 via ``usermode_enter()``.

@@ -8,7 +8,6 @@ Special Notes
    observations, design decisions, and known caveats that do not fit neatly
    into the technical reference sections above.
 
-----
 Welcome to JNU!
 ---------------
 Yeah, I built this kernel from absolute scratch using Limine v8. It was purely "vibe coded", most notably using Anthropic models. I built this entirely using free daily AI credits, so any support would motivate me to push this kernel further. I have several things on the roadmap I'd like to accomplish.

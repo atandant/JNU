@@ -20,8 +20,11 @@
 #include <jnu/lib/string.h>
 
 static struct cpu boot_cpu;
+static uint64_t boot_tsc;
 
 struct cpu *cpu_current(void) { return &boot_cpu; }
+
+void cpu_mark_boot(void) { boot_tsc = cpu_rdtsc(); }
 
 static void cpuid(uint32_t leaf, uint32_t *a, uint32_t *b, uint32_t *c,
 		  uint32_t *d)
@@ -134,6 +137,14 @@ void cpu_init(void)
 	/* v0.0.3 §2.7: FPU/SSE eager-save setup. */
 	fpu_init_early();
 
+	/*
+	 * PIT channel-2 polling works without pit_init(); calibrate now so
+	 * printk timestamps are live for the rest of bring-up. If HPET is
+	 * mapped later, cpu_calibrate_tsc() is called again for a tighter
+	 * rate.
+	 */
+	cpu_calibrate_tsc();
+
 	pr_info("cpu: features lm=%c apic=%c nx=%c smep=%c smap=%c\n",
 		has_lm ? 'y' : 'n', has_apic ? 'y' : 'n', has_nx ? 'y' : 'n',
 		has_smep ? 'y' : 'n', has_smap ? 'y' : 'n');
@@ -228,8 +239,15 @@ void cpu_calibrate_tsc(void)
 
 uint64_t cpu_us_since_boot(void)
 {
-	if (boot_cpu.tsc_per_us == 0) {
+	uint64_t tsc;
+	uint64_t per_us = boot_cpu.tsc_per_us;
+
+	if (per_us == 0) {
 		return 0;
 	}
-	return cpu_rdtsc() / boot_cpu.tsc_per_us;
+	tsc = cpu_rdtsc();
+	if (tsc <= boot_tsc) {
+		return 0;
+	}
+	return (tsc - boot_tsc) / per_us;
 }

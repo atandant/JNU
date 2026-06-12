@@ -466,10 +466,9 @@ void vprintk(enum klog_level level, const char *fmt, __builtin_va_list ap)
 	int hlen;
 
 	/*
-	 * Header. After Phase-2 cpu_calibrate_tsc(), `cpu_us_since_boot`
-	 * returns microseconds since CPU bring-up; before calibration it
-	 * returns 0, leaving the early-boot lines time-stamped at zero.
-	 * Format `[ssss.uuuuuu] LEVEL `.
+	 * Header. cpu_mark_boot() + cpu_calibrate_tsc() run early in
+	 * kernel_main() so cpu_us_since_boot() returns microseconds since
+	 * kernel entry. Format `[ssss.uuuuuu] LEVEL `.
 	 */
 	uint64_t us = cpu_us_since_boot();
 	uint64_t s = us / 1000000ull;

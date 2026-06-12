@@ -4,7 +4,7 @@ Error Codes
 The JNU kernel uses the Linux convention for error returns: functions return
 0 on success or the negation of an error code on failure (e.g.,
 ``-ENOMEM``). All error code symbols are defined in
-``include/jnu/errno.h``.
+``include/uapi/jnu/errno.h``.
 
 Error Code Table
 ----------------
@@ -24,6 +24,11 @@ Error Code Table
      - ``ENOENT``
      - No such file or directory. Returned by path resolution and
        ``initramfs_lookup()`` when a name is not found.
+   * - 4
+     - ``EINTR``
+     - Interrupted system call. Returned by interruptible sleeps
+       (``sched_sleep_interruptible``, timed futex waits) when
+       ``TIF_NEED_DIE`` is pending.
    * - 5
      - ``EIO``
      - Input/output error. Returned by block device drivers when a
@@ -108,6 +113,10 @@ Error Code Table
      - ``ENOSYS``
      - Function not implemented. Returned by retired or unimplemented
        syscalls (e.g., ``JNU_SYS_spawn``).
+   * - 110
+     - ``ETIMEDOUT``
+     - Operation timed out. Returned by ``sched_sleep_timed_interruptible``
+       and timed ``futex_wait`` when the deadline expires.
    * - 95
      - ``ENOTSUP``
      - Not supported. Returned by ``block_ops::write`` in v0.0.2.2, as
