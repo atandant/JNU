@@ -423,7 +423,7 @@ int sched_create_thread_task(struct process *proc,
 	task->fs_base = tls; /* CLONE_SETTLS */
 	task->gs_base = current ? current->gs_base : 0;
 	task->clear_child_tid = clear_child_tid; /* CLONE_CHILD_CLEARTID */
-	task->set_child_tid = set_child_tid;     /* CLONE_CHILD_SETTID */
+	task->set_child_tid = set_child_tid;	 /* CLONE_CHILD_SETTID */
 
 	/*
 	 * Forge the child's first userspace return: clone of the parent's

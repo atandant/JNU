@@ -191,7 +191,8 @@ int futex_wait(const uint32_t *uaddr, uint32_t val, uint64_t timeout_us)
 					break;
 				}
 				remaining = timeout_us - elapsed;
-				int s = sched_sleep_timed_interruptible(remaining);
+				int s =
+				    sched_sleep_timed_interruptible(remaining);
 
 				if (s == -EINTR) {
 					ret = -EINTR;

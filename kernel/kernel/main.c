@@ -480,7 +480,8 @@ void kernel_main(void)
 
 	serial_init();
 
-	/* CPU bring-up and TSC calibration before banner so klog stamps are live. */
+	/* CPU bring-up and TSC calibration before banner so klog stamps are
+	 * live. */
 	cpu_init();
 
 	banner();

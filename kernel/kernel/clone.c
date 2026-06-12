@@ -152,9 +152,9 @@ void process_group_exit(int status)
 	__builtin_unreachable();
 }
 
-int process_clone_thread(const struct syscall_frame *frame, uint64_t child_stack,
-			 uint64_t tls, void *parent_tid, void *child_tid,
-			 uint64_t flags, int *tid_out)
+int process_clone_thread(const struct syscall_frame *frame,
+			 uint64_t child_stack, uint64_t tls, void *parent_tid,
+			 void *child_tid, uint64_t flags, int *tid_out)
 {
 	struct task *self = sched_current();
 	struct process *proc = self ? self->process : NULL;
@@ -194,9 +194,9 @@ int process_clone_thread(const struct syscall_frame *frame, uint64_t child_stack
 	proc->live_threads++;
 	spin_unlock_irqrestore(&process_tree_lock, tree_flags);
 
-	err = sched_create_thread_task(proc, frame, child_stack,
-				       (flags & CLONE_SETTLS) ? tls : self->fs_base,
-				       cct, sct, &task);
+	err = sched_create_thread_task(
+	    proc, frame, child_stack,
+	    (flags & CLONE_SETTLS) ? tls : self->fs_base, cct, sct, &task);
 	if (err) {
 		tree_flags = spin_lock_irqsave(&process_tree_lock);
 		proc->live_threads--;
