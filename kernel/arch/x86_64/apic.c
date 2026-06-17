@@ -209,6 +209,13 @@ void apic_eoi(void)
 
 volatile uint32_t *lapic_mmio_base(void) { return lapic_mmio; }
 
+uint8_t apic_bsp_id(void)
+{
+	if (!lapic_mmio)
+		return 0;
+	return (uint8_t)(lapic_read(LAPIC_REG_ID) >> 24);
+}
+
 static void lapic_init(void)
 {
 	uint64_t apic_base = rdmsr(MSR_APIC_BASE);

@@ -2,8 +2,11 @@
  * kernel/drivers/virtio_blk.c — VirtIO block device driver (PCI modern).
  *
  * Probes 0x1AF4:0x1042 (modern) and 0x1AF4:0x1001 (transitional),
- * sets up one polled virtqueue, and registers "vda" with the block
- * layer. Reads and writes use DMA bounce buffers in ZONE_DMA.
+ * sets up one virtqueue, and registers "vda" with the block layer.
+ * Reads and writes use DMA bounce buffers in ZONE_DMA. When MSI-X is
+ * available the queue completion interrupt is wired to a dynamically
+ * allocated x86 vector; otherwise the request path falls back to the
+ * bounded poll loop.
  *
  * The single virtqueue is serialized with a per-device spinlock so the
  * shared descriptor ring and request metadata cannot be corrupted by
@@ -19,11 +22,15 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
+#include <jnu/arch/irq.h>
 #include <jnu/base/types.h>
+#include <jnu/drivers/apic.h>
 #include <jnu/drivers/io.h>
+#include <jnu/drivers/msi.h>
 #include <jnu/drivers/pci.h>
 #include <jnu/drivers/virtio_blk.h>
 #include <jnu/fs/block.h>
+#include <jnu/kernel/sched.h>
 #include <jnu/lib/klog.h>
 #include <jnu/lib/spinlock.h>
 #include <jnu/lib/string.h>
@@ -68,6 +75,9 @@
 #define VIRTIO_PCI_CAP_MAX 256u
 
 #define VIRTIO_POLL_BUDGET 1000000u
+#define VIRTIO_IRQ_WAIT_US 10000u
+#define VIRTIO_BLK_MSIX_QUEUE 0u
+#define VIRTIO_BUSY_WAIT_BUDGET 1000000u
 
 #define PAGE_DATA_BYTES PAGE_SIZE
 
@@ -167,12 +177,54 @@ struct virtio_blk_dev {
 	bool read_only;
 	struct block_device bdev;
 	struct spinlock lock;
+	struct task *waiter;
+	uint8_t irq_vector;
 	bool ready;
 	bool dead;
+	bool busy;
+	bool irq_enabled;
 };
 
 static struct virtio_blk_dev blk_dev;
 static bool virtio_present;
+
+static void virtio_blk_irq(struct cpu_state *st)
+{
+	struct virtio_blk_dev *d = &blk_dev;
+	struct task *waiter;
+	uint64_t flags;
+
+	(void)st;
+
+	flags = spin_lock_irqsave(&d->lock);
+	waiter = d->waiter;
+	spin_unlock_irqrestore(&d->lock, flags);
+
+	if (waiter)
+		sched_wake(waiter);
+	apic_eoi();
+}
+
+static int virtio_blk_setup_irq(const struct pci_device *pci,
+				struct virtio_blk_dev *d)
+{
+	uint8_t vector = 0;
+	int err;
+
+	err = irq_alloc_vector(0, virtio_blk_irq, &vector);
+	if (err)
+		return err;
+
+	err = msix_enable(pci, VIRTIO_BLK_MSIX_QUEUE, vector);
+	if (err) {
+		irq_free_vector(0, vector);
+		return err;
+	}
+
+	d->irq_vector = vector;
+	d->irq_enabled = true;
+	return 0;
+}
 
 static inline uint8_t pci_cfg8(const struct pci_device *pci, uint8_t off)
 {
@@ -406,16 +458,26 @@ static int virtq_init(struct virtio_blk_dev *d, uint16_t qsize)
 	vq->last_used_idx = 0;
 
 	/*
-	 * This is a polling-only driver with no MSI-X vector assigned
-	 * (queue_msix_vector == VIRTIO_NO_VECTOR), so ask the device not to
-	 * raise used-buffer notifications. Otherwise the device would assert
-	 * its legacy INTx line for every completion with no handler to clear
-	 * it. Must be set before the queue is enabled.
+	 * Without a bound MSI-X queue entry, ask the device not to raise
+	 * used-buffer notifications. Otherwise it may assert legacy INTx for
+	 * every completion with no handler to clear it. Must be set before
+	 * the queue is enabled.
 	 */
-	vq->avail->flags = VIRTQ_AVAIL_F_NO_INTERRUPT;
+	vq->avail->flags = d->irq_enabled ? 0 : VIRTQ_AVAIL_F_NO_INTERRUPT;
 
 	c->queue_size = qsize;
-	c->queue_msix_vector = VIRTIO_NO_VECTOR;
+	c->queue_msix_vector =
+	    d->irq_enabled ? VIRTIO_BLK_MSIX_QUEUE : VIRTIO_NO_VECTOR;
+	if (d->irq_enabled && c->queue_msix_vector != VIRTIO_BLK_MSIX_QUEUE) {
+		pr_warn(
+		    "virtio-blk: queue MSI-X rejected (%u); using polling\n",
+		    (unsigned)c->queue_msix_vector);
+		irq_free_vector(0, d->irq_vector);
+		d->irq_vector = 0;
+		d->irq_enabled = false;
+		vq->avail->flags = VIRTQ_AVAIL_F_NO_INTERRUPT;
+		c->queue_msix_vector = VIRTIO_NO_VECTOR;
+	}
 	c->queue_desc = (uint64_t)pa;
 	c->queue_driver = (uint64_t)virt_to_phys((void *)vq->avail);
 	c->queue_device = (uint64_t)virt_to_phys((void *)vq->used_hdr);
@@ -462,6 +524,8 @@ static int virtio_blk_submit(struct virtio_blk_dev *d, uint32_t type,
 	uint32_t poll = 0;
 	uint16_t ndesc;
 	uint64_t flags;
+	bool owns_busy = false;
+	uint32_t busy_wait = 0;
 	int ret;
 
 	if (type == VIRTIO_BLK_T_FLUSH) {
@@ -474,10 +538,22 @@ static int virtio_blk_submit(struct virtio_blk_dev *d, uint32_t type,
 
 	flags = spin_lock_irqsave(&d->lock);
 
+	while (d->busy && !d->dead) {
+		if (++busy_wait > VIRTIO_BUSY_WAIT_BUDGET) {
+			ret = -EBUSY;
+			goto out;
+		}
+		spin_unlock_irqrestore(&d->lock, flags);
+		sched_yield();
+		flags = spin_lock_irqsave(&d->lock);
+	}
+
 	if (d->dead) {
 		ret = -ENODEV;
 		goto out;
 	}
+	d->busy = true;
+	owns_busy = true;
 
 	desc = vq->desc;
 	head = vq->avail->idx;
@@ -517,7 +593,27 @@ static int virtio_blk_submit(struct virtio_blk_dev *d, uint32_t type,
 	vq->avail->idx = (uint16_t)(head + 1);
 	__asm__ __volatile__("" ::: "memory");
 
+	if (d->irq_enabled)
+		d->waiter = sched_current();
 	virtio_notify(d, 0);
+
+	while (d->irq_enabled && d->waiter && vq->used_hdr->idx == old_used) {
+		/*
+		 * Do not hold the virtqueue spinlock while yielding. The single
+		 * in-flight request is still serialized by this function, but
+		 * the IRQ handler must be able to take the lock and wake us.
+		 *
+		 * The timeout is not the I/O deadline; it is only a safety
+		 * valve that lets us fall back to the old bounded poll path if
+		 * MSI-X is missing or misrouted during early boot.
+		 */
+		spin_unlock_irqrestore(&d->lock, flags);
+		(void)sched_sleep_timed_interruptible(VIRTIO_IRQ_WAIT_US);
+		flags = spin_lock_irqsave(&d->lock);
+		if (vq->used_hdr->idx == old_used)
+			break;
+	}
+	d->waiter = NULL;
 
 	while (vq->used_hdr->idx == old_used) {
 		if (++poll > VIRTIO_POLL_BUDGET) {
@@ -562,6 +658,10 @@ static int virtio_blk_submit(struct virtio_blk_dev *d, uint32_t type,
 	ret = (meta->status != VIRTIO_BLK_S_OK) ? -EIO : 0;
 
 out:
+	if (owns_busy) {
+		d->waiter = NULL;
+		d->busy = false;
+	}
 	spin_unlock_irqrestore(&d->lock, flags);
 	return ret;
 }
@@ -681,6 +781,8 @@ static void virtio_blk_teardown(struct virtio_blk_dev *d)
 {
 	if (d->mmio.common)
 		d->mmio.common->device_status = VIRTIO_STATUS_FAILED;
+	if (d->irq_enabled)
+		irq_free_vector(0, d->irq_vector);
 	if (d->vq.mem_pa)
 		pmm_free_pages(d->vq.mem_pa, 0);
 	if (d->req_meta_pa)
@@ -785,6 +887,12 @@ static int virtio_blk_setup(const struct pci_device *pci)
 	}
 	d->req_meta = (struct virtio_req_meta *)phys_to_virt(d->req_meta_pa);
 
+	err = virtio_blk_setup_irq(pci, d);
+	if (err) {
+		pr_warn("virtio-blk: MSI-X unavailable (%d); using polling\n",
+			err);
+	}
+
 	err = virtq_init(d, VIRTQ_SIZE);
 	if (err)
 		goto fail;
@@ -812,6 +920,10 @@ static int virtio_blk_setup(const struct pci_device *pci)
 		(unsigned long long)d->capacity,
 		(unsigned long long)(d->capacity / 2048),
 		d->read_only ? " [ro]" : "");
+	if (d->irq_enabled) {
+		pr_info("virtio-blk: queue MSI-X entry %u -> vector %u\n",
+			VIRTIO_BLK_MSIX_QUEUE, (unsigned)d->irq_vector);
+	}
 	return 0;
 
 fail:

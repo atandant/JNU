@@ -29,6 +29,7 @@
 #include <jnu/arch/cpu.h>
 #include <jnu/arch/gdt.h>
 #include <jnu/arch/idt.h>
+#include <jnu/arch/irq.h>
 #include <jnu/base/compiler.h>
 #include <jnu/base/types.h>
 #include <jnu/drivers/acpi.h>
@@ -495,6 +496,7 @@ void kernel_main(void)
 	gdt_init();
 	arch_syscall_init();
 	idt_init();
+	irq_init();
 	pic_remap_and_mask();
 
 	uint64_t hhdm = resolve_hhdm();

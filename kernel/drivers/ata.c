@@ -8,7 +8,9 @@
  * well under the 128 GiB limit.
  *
  * No DMA, no interrupts for data transfer — pure polled PIO. This is
- * intentionally simple; AHCI arrives in v0.0.2.
+ * intentionally simple. A future AHCI path should reuse the dynamic
+ * vector allocator from irq.c, following the virtio-blk MSI/MSI-X
+ * integration once that path has been verified.
  *
  * Reference: ATA/ATAPI-6 §9 (PIO data-in), OSDev "ATA PIO Mode".
  *

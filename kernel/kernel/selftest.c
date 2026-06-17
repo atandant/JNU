@@ -10,6 +10,7 @@
  */
 
 #include <jnu/arch/cpu.h>
+#include <jnu/arch/irq.h>
 #include <jnu/base/types.h>
 #include <jnu/drivers/ata.h>
 #include <jnu/drivers/lapic_timer.h>
@@ -53,6 +54,7 @@ static const struct selftest tests[] = {
     {"clone_space", clone_space_selftest},
     {"elf64", elf64_selftest},
     {"syscall", syscall_selftest},
+    {"irq", irq_selftest},
     {"pci", pci_selftest},
     {"ata", ata_selftest},
     {"virtio_blk", virtio_blk_selftest},

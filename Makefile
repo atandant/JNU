@@ -105,6 +105,7 @@ KERNEL_DRIVER_SRCS := \
     kernel/drivers/kbd.c \
     kernel/drivers/scandata.c \
     kernel/drivers/pci.c \
+    kernel/drivers/msi.c \
     kernel/drivers/ata.c \
     kernel/drivers/virtio_blk.c \
     kernel/drivers/acpi.c \
@@ -115,6 +116,7 @@ KERNEL_ARCH_X86_64_C_SRCS := \
     kernel/arch/x86_64/cpu.c \
     kernel/arch/x86_64/gdt.c \
     kernel/arch/x86_64/idt.c \
+    kernel/arch/x86_64/irq.c \
     kernel/arch/x86_64/exceptions.c \
     kernel/arch/x86_64/pic.c \
     kernel/arch/x86_64/apic.c \

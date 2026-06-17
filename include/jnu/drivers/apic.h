@@ -35,6 +35,13 @@ void apic_eoi(void);
 volatile uint32_t *lapic_mmio_base(void);
 
 /*
+ * Return the LAPIC ID of the boot CPU. Used as the destination field
+ * when programming MSI / MSI-X message addresses. Returns 0 if the
+ * LAPIC has not been initialized.
+ */
+uint8_t apic_bsp_id(void);
+
+/*
  * Configure an IOAPIC redirection entry for an ISA IRQ. Honors any
  * MADT override (changing the global system interrupt, or flipping
  * edge/level / polarity).
