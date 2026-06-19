@@ -17,48 +17,237 @@
 #include <jnu/lib/string.h>
 #include <uapi/jnu/errno.h>
 
-static struct vfs_mount root_mount;
+/*
+ * Mount registry. Entry 0 is always the root mount ("/"); the rest are
+ * submounts.
+ *
+ * This is Design B (mountpoint pinning): a submount is pinned to the
+ * (covered_mnt, covered_ino) pair of the directory it is mounted on.
+ * JNU has no inode cache, but it does not need one here — every
+ * vfs_inode already carries a stable identity in (ino->mnt, ino->ino),
+ * so a freshly looked-up directory can be recognized as a mountpoint by
+ * a small scan of this table.
+ *
+ * VFS_MOUNT_MAX is a fixed cap. Raising it (or moving to a dynamic
+ * list) waits for a future update; eight live mounts is plenty for now.
+ */
+#define VFS_MOUNT_MAX 8
+
+/*
+ * Upper bound for a path after lexical normalization. Matches the
+ * userspace JNU_PATH_MAX (256); kept local so vfs.c does not depend on
+ * the syscall headers.
+ */
+#define VFS_PATH_MAX 256
+
+struct vfs_mountpoint {
+	bool used;
+	struct vfs_mount *covered_mnt; /* parent fs holding the dir, NULL=root */
+	uint32_t covered_ino;	       /* inode of the covered directory */
+	struct vfs_mount mnt;	       /* the mounted filesystem */
+};
+
+static struct vfs_mountpoint mounts[VFS_MOUNT_MAX];
 static bool root_mounted = false;
+
+/* The root mount lives in slot 0. */
+#define root_mount (mounts[0].mnt)
+
+static int next_component(const char *path, char *comp, size_t max_len,
+			  const char **next_path);
 
 void vfs_init(void)
 {
 	/* Minimal init; slab handles inode allocation later if needed */
 }
 
+static const struct vfs_ops *ops_for_fstype(const char *fstype)
+{
+	if (strcmp(fstype, "minix") == 0)
+		return &minix_ops;
+	/* Future filesystems (fat32, …) register their ops table here. */
+	return NULL;
+}
+
 int vfs_mount(const char *bdev_name, const char *fstype, const char *target)
 {
-	if (strcmp(target, "/") != 0) {
-		pr_err("vfs: only '/' mount supported in v0.0.1\n");
-		return -ENOSYS;
+	const struct vfs_ops *ops;
+	struct block_device *bdev;
+	int err;
+
+	ops = ops_for_fstype(fstype);
+	if (!ops) {
+		pr_err("vfs: unknown fstype '%s'\n", fstype);
+		return -ENODEV;
 	}
 
-	if (root_mounted) {
-		pr_err("vfs: root already mounted\n");
-		return -EBUSY;
-	}
-
-	struct block_device *bdev = block_lookup(bdev_name);
+	bdev = block_lookup(bdev_name);
 	if (!bdev) {
 		pr_err("vfs: block device '%s' not found\n", bdev_name);
 		return -ENODEV;
 	}
 
-	if (strcmp(fstype, "minix") == 0) {
-		root_mount.ops = &minix_ops;
-	} else {
-		pr_err("vfs: unknown fstype '%s'\n", fstype);
-		return -ENODEV;
+	/* Root mount: target must be "/", and only once. */
+	if (strcmp(target, "/") == 0) {
+		if (root_mounted) {
+			pr_err("vfs: root already mounted\n");
+			return -EBUSY;
+		}
+		mounts[0].covered_mnt = NULL;
+		mounts[0].covered_ino = 0;
+		root_mount.bdev = bdev;
+		root_mount.ops = ops;
+		err = ops->mount(&root_mount, bdev);
+		if (err) {
+			pr_err("vfs: mount failed: %d\n", err);
+			return err;
+		}
+		mounts[0].used = true;
+		root_mounted = true;
+		pr_info("vfs: mounted %s on %s type %s\n", bdev_name, target,
+			fstype);
+		return 0;
 	}
 
-	root_mount.bdev = bdev;
-	int err = root_mount.ops->mount(&root_mount, bdev);
+	/* Submount: the root fs must exist so the target dir can be found. */
+	if (!root_mounted)
+		return -ENOENT;
+
+	/* Resolve the target directory → its (covered_mnt, covered_ino). */
+	struct vfs_inode *tdir = NULL;
+	err = vfs_open(target, &tdir);
+	if (err)
+		return err;
+	if (!tdir->is_dir) {
+		vfs_close(tdir);
+		return -ENOTDIR;
+	}
+	struct vfs_mount *covered_mnt = tdir->mnt;
+	uint32_t covered_ino = tdir->ino;
+	vfs_close(tdir);
+
+	/* Reject a second mount on a directory that is already a mountpoint. */
+	size_t slot = 0;
+	for (size_t i = 1; i < VFS_MOUNT_MAX; i++) {
+		if (mounts[i].used && mounts[i].covered_mnt == covered_mnt &&
+		    mounts[i].covered_ino == covered_ino)
+			return -EBUSY;
+		if (!mounts[i].used && slot == 0)
+			slot = i;
+	}
+	if (slot == 0) {
+		pr_err("vfs: mount table full (max %d); raising the cap waits "
+		       "for a future update\n",
+		       VFS_MOUNT_MAX);
+		return -ENOSPC;
+	}
+
+	mounts[slot].mnt.bdev = bdev;
+	mounts[slot].mnt.ops = ops;
+	err = ops->mount(&mounts[slot].mnt, bdev);
 	if (err) {
 		pr_err("vfs: mount failed: %d\n", err);
 		return err;
 	}
-
-	root_mounted = true;
+	mounts[slot].covered_mnt = covered_mnt;
+	mounts[slot].covered_ino = covered_ino;
+	mounts[slot].used = true;
 	pr_info("vfs: mounted %s on %s type %s\n", bdev_name, target, fstype);
+	return 0;
+}
+
+/*
+ * If *inode is a directory that something is mounted on, replace it with
+ * a fresh clone of the submount's root inode. Loops so that stacked
+ * mounts (a mount whose root is itself a mountpoint) resolve fully.
+ *
+ * On success *inode is a live, owned inode (possibly the original). On
+ * error the original inode is closed and *inode is set to NULL.
+ */
+static int cross_mounts(struct vfs_inode **inode)
+{
+	struct vfs_inode *cur = *inode;
+
+	for (;;) {
+		struct vfs_mount *sub = NULL;
+
+		for (size_t i = 1; i < VFS_MOUNT_MAX; i++) {
+			if (mounts[i].used &&
+			    mounts[i].covered_mnt == cur->mnt &&
+			    mounts[i].covered_ino == cur->ino) {
+				sub = &mounts[i].mnt;
+				break;
+			}
+		}
+		if (!sub)
+			break;
+
+		struct vfs_inode *subroot = NULL;
+		int err = sub->ops->lookup(sub->root, ".", &subroot);
+		cur->mnt->ops->close(cur);
+		if (err) {
+			*inode = NULL;
+			return err;
+		}
+		cur = subroot;
+	}
+
+	*inode = cur;
+	return 0;
+}
+
+/*
+ * Collapse "." and ".." components of an absolute path lexically into
+ * `out` (which must hold at least VFS_PATH_MAX bytes). Requires an
+ * absolute path. The result always begins with '/', has no "."/".."
+ * components, and the parent of "/" is "/".
+ *
+ * TODO(symlinks): lexical ".." collapsing is only correct while JNU has
+ * no symbolic links. Once symlinks land this must become per-component
+ * resolution that consults the filesystem at each step, because ".."
+ * after a symlink does not commute with lexical removal.
+ */
+static int normalize_path(const char *path, char *out)
+{
+	char comp[VFS_NAME_MAX];
+	size_t len;
+	int res;
+
+	if (path[0] != '/')
+		return -EINVAL;
+
+	out[0] = '/';
+	len = 1;
+
+	while ((res = next_component(path, comp, sizeof(comp), &path)) != 0) {
+		if (res < 0)
+			return res;
+
+		if (strcmp(comp, ".") == 0)
+			continue;
+
+		if (strcmp(comp, "..") == 0) {
+			/* Pop the last component; parent of "/" is "/". */
+			while (len > 1 && out[len - 1] != '/')
+				len--;
+			if (len > 1)
+				len--; /* drop the separating slash */
+			continue;
+		}
+
+		/* Append "/comp" (no leading slash when out is still "/"). */
+		size_t clen = strlen(comp);
+		size_t need = (len == 1 ? 0 : 1) + clen;
+
+		if (len + need + 1 > VFS_PATH_MAX)
+			return -ENAMETOOLONG;
+		if (len != 1)
+			out[len++] = '/';
+		memcpy(out + len, comp, clen);
+		len += clen;
+	}
+
+	out[len] = '\0';
 	return 0;
 }
 
@@ -100,16 +289,24 @@ static int vfs_parent(const char *path, struct vfs_inode **dir, char *name,
 		      size_t name_len)
 {
 	struct vfs_inode *curr;
+	char norm[VFS_PATH_MAX];
 	char comp[VFS_NAME_MAX];
-	const char *p = path;
+	const char *p;
 	int err;
 
 	if (!root_mounted || !root_mount.root)
 		return -ENOENT;
-	if (path[0] != '/')
-		return -EINVAL;
+
+	/* Strip "." / ".." up front so the walk only sees real names. */
+	err = normalize_path(path, norm);
+	if (err)
+		return err;
+	p = norm;
 
 	err = root_mount.ops->lookup(root_mount.root, ".", &curr);
+	if (err)
+		return err;
+	err = cross_mounts(&curr);
 	if (err)
 		return err;
 
@@ -139,10 +336,6 @@ static int vfs_parent(const char *path, struct vfs_inode **dir, char *name,
 			return -ENOTDIR;
 		}
 
-		if (strcmp(comp, "..") == 0 &&
-		    curr->ino == root_mount.root->ino)
-			continue;
-
 		{
 			struct vfs_inode *next = NULL;
 
@@ -151,24 +344,36 @@ static int vfs_parent(const char *path, struct vfs_inode **dir, char *name,
 			if (err)
 				return err;
 			curr = next;
+			err = cross_mounts(&curr);
+			if (err)
+				return err;
 		}
 	}
 }
 
 int vfs_open(const char *path, struct vfs_inode **out)
 {
+	char norm[VFS_PATH_MAX];
+	char comp[VFS_NAME_MAX];
+	const char *p;
+	int err;
+
 	if (!root_mounted || !root_mount.root)
 		return -ENOENT;
 
-	if (path[0] != '/')
-		return -EINVAL;
+	/* Strip "." / ".." up front so the walk only sees real names. */
+	err = normalize_path(path, norm);
+	if (err)
+		return err;
+	p = norm;
 
 	struct vfs_inode *curr = NULL;
-	char comp[VFS_NAME_MAX];
-	const char *p = path;
 
-	/* Clone root to start the walk */
-	int err = root_mount.ops->lookup(root_mount.root, ".", &curr);
+	/* Clone root to start the walk, then honor any mount at the start. */
+	err = root_mount.ops->lookup(root_mount.root, ".", &curr);
+	if (err)
+		return err;
+	err = cross_mounts(&curr);
 	if (err)
 		return err;
 
@@ -191,11 +396,6 @@ int vfs_open(const char *path, struct vfs_inode **out)
 			return -EACCES;
 		}
 
-		if (strcmp(comp, "..") == 0 &&
-		    curr->ino == root_mount.root->ino) {
-			continue;
-		}
-
 		struct vfs_inode *next = NULL;
 		err = curr->mnt->ops->lookup(curr, comp, &next);
 		curr->mnt->ops->close(curr);
@@ -204,6 +404,9 @@ int vfs_open(const char *path, struct vfs_inode **out)
 			return err;
 
 		curr = next;
+		err = cross_mounts(&curr);
+		if (err)
+			return err;
 	}
 
 	*out = curr;

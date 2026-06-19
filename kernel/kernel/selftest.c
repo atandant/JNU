@@ -12,6 +12,7 @@
 #include <jnu/arch/cpu.h>
 #include <jnu/arch/irq.h>
 #include <jnu/base/types.h>
+#include <jnu/drivers/ahci.h>
 #include <jnu/drivers/ata.h>
 #include <jnu/drivers/lapic_timer.h>
 #include <jnu/drivers/pci.h>
@@ -57,6 +58,7 @@ static const struct selftest tests[] = {
     {"irq", irq_selftest},
     {"pci", pci_selftest},
     {"ata", ata_selftest},
+    {"ahci", ahci_selftest},
     {"virtio_blk", virtio_blk_selftest},
     {"bufcache", bufcache_selftest},
     {"minix_bitmap", minix_bitmap_selftest},

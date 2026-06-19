@@ -33,6 +33,7 @@
 #include <jnu/base/compiler.h>
 #include <jnu/base/types.h>
 #include <jnu/drivers/acpi.h>
+#include <jnu/drivers/ahci.h>
 #include <jnu/drivers/apic.h>
 #include <jnu/drivers/ata.h>
 #include <jnu/drivers/fbcon.h>
@@ -72,6 +73,53 @@ extern const char jnu_build[];
 extern const char jnu_buildtime[];
 
 void pic_remap_and_mask(void);
+
+static const char *const root_block_candidates[] = {
+    "vda",
+    "hda",
+    "sda",
+};
+
+static const char *find_root_block_device(void)
+{
+	for (size_t i = 0; i < sizeof(root_block_candidates) /
+				   sizeof(root_block_candidates[0]);
+	     i++) {
+		if (block_lookup(root_block_candidates[i]))
+			return root_block_candidates[i];
+	}
+	return NULL;
+}
+
+/*
+ * Best-effort: mount a second filesystem on /mnt if a non-root block
+ * device is present. This exercises the multi-mount path (0.0.4-a) and
+ * is transport-agnostic — any registered block device name works, so an
+ * extra ATA/SATA/virtio disk all land here. fstype is minix for now;
+ * once the FAT driver exists, try it here too.
+ */
+static void mount_secondary(const char *root_bdev)
+{
+	static const char *const cands[] = {"hdb", "sdb", "vdb", "hdc", "hdd"};
+
+	for (size_t i = 0; i < sizeof(cands) / sizeof(cands[0]); i++) {
+		if (root_bdev && strcmp(cands[i], root_bdev) == 0)
+			continue;
+		if (!block_lookup(cands[i]))
+			continue;
+
+		/* The mountpoint must exist on the root fs; create it lazily. */
+		(void)vfs_mkdir("/mnt", 0755);
+
+		int err = vfs_mount(cands[i], "minix", "/mnt");
+		if (err == 0) {
+			pr_info("mnt: mounted %s on /mnt\n", cands[i]);
+			return;
+		}
+		pr_warn("mnt: could not mount %s on /mnt (err=%d)\n", cands[i],
+			err);
+	}
+}
 
 /* ------------------------------------------------------------------------- */
 /* Limine boot-protocol requests                                              */
@@ -421,11 +469,10 @@ static void kbd_echo_loop(void)
  */
 static void dump_blocks(void)
 {
-	struct block_device *bdev = block_lookup("vda");
-	if (!bdev)
-		bdev = block_lookup("hda");
+	const char *name = find_root_block_device();
+	struct block_device *bdev = name ? block_lookup(name) : NULL;
 	if (!bdev) {
-		pr_warn("dump: no 'vda' or 'hda' block device\n");
+		pr_warn("dump: no root block device (vda/hda/sda)\n");
 		return;
 	}
 
@@ -567,6 +614,7 @@ void kernel_main(void)
 	pci_init();
 	virtio_blk_init();
 	ata_init();
+	ahci_init();
 	kbd_init();
 
 	/* Optional debug dumps. */
@@ -581,9 +629,9 @@ void kernel_main(void)
 
 	vfs_init();
 
-	const char *root_bdev = block_lookup("vda") ? "vda" : "hda";
-	if (!block_lookup(root_bdev)) {
-		panic("kernel: no root block device (vda/hda)");
+	const char *root_bdev = find_root_block_device();
+	if (!root_bdev) {
+		panic("kernel: no root block device (vda/hda/sda)");
 	}
 	int err = vfs_mount(root_bdev, "minix", "/");
 	if (err) {
@@ -591,6 +639,8 @@ void kernel_main(void)
 		      root_bdev, err);
 	}
 	pr_info("rootfs: mounted from %s\n", root_bdev);
+
+	mount_secondary(root_bdev);
 
 	struct vfs_inode *root_ino;
 	if (vfs_open("/", &root_ino) == 0) {

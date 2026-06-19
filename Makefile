@@ -41,6 +41,7 @@ MUSL_TEST      := $(USER_ROOT)/bin/musltest
 ISO_ROOT       := $(BUILD)/iso_root
 ISO_ROOT_MUSL  := $(BUILD)/iso_root_musl
 ATA_DISK       := $(BUILD)/disk.img
+ATA_DISK2      := $(BUILD)/disk2.img
 
 LIMINE_DIR     := boot/limine
 FONT_HDR       := $(GENERATED_INC)/jnu/generated/font_data.h
@@ -107,6 +108,7 @@ KERNEL_DRIVER_SRCS := \
     kernel/drivers/pci.c \
     kernel/drivers/msi.c \
     kernel/drivers/ata.c \
+    kernel/drivers/ahci.c \
     kernel/drivers/virtio_blk.c \
     kernel/drivers/acpi.c \
     kernel/drivers/acpi_pm.c \
@@ -227,9 +229,11 @@ OBJS := $(S_OBJS) $(C_OBJS) $(BUILDINFO_OBJ)
 # ---- top-level --------------------------------------------------------------
 
 .PHONY: all help doctor bootstrap bootstrap-limine check-limine iso iso-musl \
-    kernel user musltest initramfs font ata-disk vmware-disk docs format uapi \
+    kernel user musltest initramfs font ata-disk ata-disk2 sata-disk vmware-disk docs \
+    format uapi \
     check-uapi clean clean-disk \
-    distclean run run-disk run-virtio debug debug-disk list-user-programs FORCE
+    distclean run run-disk run-virtio run-ahci run-fuzzy debug debug-disk \
+    list-user-programs FORCE
 
 all: iso
 
@@ -244,6 +248,9 @@ help:
 	  '  make vmware-disk        Create build/disk.img and convert to build/disk.vmdk.' \
 	  '  make run-disk           Build, create disk image, and boot with the disk.' \
 	  '  make run-virtio         Boot with virtio-blk-pci disk (requires disk image).' \
+	  '  make run-ahci           Boot with an AHCI/SATA disk (requires disk image).' \
+	  '  make run DUALDISK=ata,virtio   Boot two disks (root + /mnt) to test multi-mount.' \
+	  '  make run-fuzzy          Boot with a seeded random QEMU hardware profile.' \
 	  '  make debug              Boot QEMU paused for GDB (-s -S).' \
 	  '  make user               Build native JNU userspace programs.' \
 	  '  make musltest           Build optional musl-linked test program.' \
@@ -302,6 +309,19 @@ list-user-programs:
 	@printf '%s\n' $(USER_PROGRAM_SRCS)
 
 ata-disk: $(ATA_DISK)
+
+# Second disk image for multi-mount testing. Same bus-agnostic MINIX
+# image as the primary; the transport is chosen at launch time.
+ata-disk2: $(ATA_DISK2)
+
+$(ATA_DISK2): $(USER_INIT) scripts/make-ata-disk.sh scripts/inject-file.py \
+    scripts/install-headers.sh
+	@bash scripts/make-ata-disk.sh "$@" "$(SIZE)"
+
+# The disk image is bus-agnostic (a raw MINIX FS image); the bus is
+# chosen at QEMU launch time. sata-disk is an alias so the SATA/AHCI
+# path is discoverable, but it builds the very same image as ata-disk.
+sata-disk: $(ATA_DISK)
 
 vmware-disk:
 	@bash scripts/prepare-vmware-disk.sh
@@ -395,14 +415,41 @@ RUN_SCRIPT := bash scripts/run-qemu.sh --iso $(KERNEL_ISO) --memory $(MEMORY) --
 RUN_DISK_ARG = --disk $(ATA_DISK)
 endif
 
+# DUALDISK=type1,type2 attaches two MINIX disks over the chosen transports
+# so the multi-mount path (root on disk 1, /mnt on disk 2) can be tested in
+# one command, e.g.:  make run DUALDISK=ata,virtio
+# Accepted names: ata/ide, sata/ahci, virtio, scsi. They select the *bus*,
+# not the filesystem — both disks are MINIX until the FAT driver lands.
+# (Linux/WSL host only; the Windows run path does not wire dual disks.)
+comma := ,
+DUAL1 := $(word 1,$(subst $(comma), ,$(DUALDISK)))
+DUAL2 := $(word 2,$(subst $(comma), ,$(DUALDISK)))
+disk_xlate = $(strip \
+  $(if $(filter ata ide ATA IDE,$(1)),ide,\
+  $(if $(filter sata ahci SATA AHCI,$(1)),ahci,\
+  $(if $(filter virtio virtiodisk VIRTIO VIRTIODISK,$(1)),virtio,\
+  $(if $(filter scsi SCSI,$(1)),scsi,ide)))))
+
 run: $(KERNEL_ISO)
+ifdef DUALDISK
+	$(MAKE) ata-disk ata-disk2
+	$(RUN_SCRIPT) --disk $(ATA_DISK) --disk-type $(call disk_xlate,$(DUAL1)) \
+	              --disk2 $(ATA_DISK2) --disk2-type $(call disk_xlate,$(DUAL2))
+else
 	$(RUN_SCRIPT) $(if $(wildcard $(ATA_DISK)),$(RUN_DISK_ARG),)
+endif
 
 run-disk: $(KERNEL_ISO) $(ATA_DISK)
 	$(RUN_SCRIPT) $(RUN_DISK_ARG)
 
 run-virtio: $(KERNEL_ISO) $(ATA_DISK)
 	$(RUN_SCRIPT) $(RUN_DISK_ARG) --disk-type virtio
+
+run-ahci: $(KERNEL_ISO) $(ATA_DISK)
+	$(RUN_SCRIPT) $(RUN_DISK_ARG) --disk-type ahci
+
+run-fuzzy: $(KERNEL_ISO) $(ATA_DISK)
+	$(RUN_SCRIPT) $(RUN_DISK_ARG) --fuzzy
 
 debug: $(KERNEL_ISO)
 	$(RUN_SCRIPT) --debug
