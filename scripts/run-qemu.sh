@@ -154,6 +154,9 @@ if [ -n "$DISK2" ] && [ -f "$DISK2" ]; then
     elif [ "$DISK2_TYPE" = "scsi" ]; then
         ARGS+=("-device" "virtio-scsi-pci,id=scsi2" "-drive" "id=sd2,file=$DISK2,format=raw,if=none" "-device" "scsi-hd,drive=sd2,bus=scsi2.0")
     else
+        if [ "$DISK_TYPE" != "ide" ]; then
+            ARGS+=("-device" "piix3-ide,id=ide")
+        fi
         ARGS+=("-drive" "id=hd1,file=$DISK2,format=raw,if=none" "-device" "ide-hd,drive=hd1,bus=ide.0,unit=1")
     fi
 elif [ -n "$DISK2" ]; then

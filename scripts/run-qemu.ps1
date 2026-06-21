@@ -11,6 +11,8 @@
 #
 # Copyright (c) 2026 The JNU Authors.
 # SPDX-License-Identifier: GPL-2.0-only
+# do not use this, soon to be deprecated
+# or updated.
 
 [CmdletBinding()]
 param(

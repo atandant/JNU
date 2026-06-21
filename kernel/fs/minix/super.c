@@ -78,12 +78,12 @@ static int minix_mount(struct vfs_mount *mnt, struct block_device *bdev)
 	err = minix_validate_super(sb, bdev);
 	if (err) {
 		if (sb->s_magic == 0)
-			pr_err(
-			    "minix: no filesystem at block 1 (magic 0x0000)"
-			    "disk may be blank or not a raw MINIX v1 image\n");
+			pr_warn("minix: no filesystem at block 1 (magic 0x0000)"
+				" — disk may be blank or not a raw MINIX v1 "
+				"image\n");
 		else
-			pr_err("minix: invalid superblock (magic 0x%04x)\n",
-			       sb->s_magic);
+			pr_warn("minix: invalid superblock (magic 0x%04x)\n",
+				sb->s_magic);
 		bufcache_put(buf);
 		return err;
 	}

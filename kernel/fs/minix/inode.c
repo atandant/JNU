@@ -218,17 +218,12 @@ int minix_write_inode(struct vfs_mount *mnt, uint32_t ino,
 	bufcache_put(buf);
 	mi->dirty = false;
 
-	if (mnt->root && mnt->root->ino == ino && mnt->root->priv != mi) {
-		struct minix_inode_info *root_mi = mnt->root->priv;
-
-		memcpy(&root_mi->raw, &mi->raw, sizeof(mi->raw));
-		root_mi->dirty = false;
-		mnt->root->size = mi->raw.i_size;
-		mnt->root->is_dir = (mi->raw.i_mode & 040000) != 0;
-		mnt->root->mode = mi->raw.i_mode;
-		mnt->root->uid = mi->raw.i_uid;
-		mnt->root->gid = mi->raw.i_gid;
-	}
+	/*
+	 * No root-inode fixup is needed: the VFS inode cache guarantees a
+	 * single canonical vfs_inode per (mnt, ino), so the root inode
+	 * looked up during a path walk is the very same object as
+	 * mnt->root. There is never a second stale copy to reconcile.
+	 */
 	return 0;
 }
 

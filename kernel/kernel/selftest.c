@@ -17,6 +17,7 @@
 #include <jnu/drivers/lapic_timer.h>
 #include <jnu/drivers/pci.h>
 #include <jnu/drivers/virtio_blk.h>
+#include <jnu/fs/fat32.h>
 #include <jnu/fs/initramfs.h>
 #include <jnu/fs/minix.h>
 #include <jnu/fs/vfs.h>
@@ -67,6 +68,7 @@ static const struct selftest tests[] = {
     {"minix_fsync", minix_fsync_selftest},
     {"vfs", vfs_selftest},
     {"minix", minix_selftest},
+    {"fat32", fat32_selftest},
 };
 
 int selftest_run_all(void)

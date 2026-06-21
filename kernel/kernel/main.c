@@ -108,12 +108,18 @@ static void mount_secondary(const char *root_bdev)
 		if (!block_lookup(cands[i]))
 			continue;
 
-		/* The mountpoint must exist on the root fs; create it lazily. */
+		/* The mountpoint must exist on the root fs; create it lazily.
+		 */
 		(void)vfs_mkdir("/mnt", 0755);
 
 		int err = vfs_mount(cands[i], "minix", "/mnt");
 		if (err == 0) {
-			pr_info("mnt: mounted %s on /mnt\n", cands[i]);
+			pr_info("mnt: mounted %s on /mnt (minix)\n", cands[i]);
+			return;
+		}
+		err = vfs_mount(cands[i], "fat32", "/mnt");
+		if (err == 0) {
+			pr_info("mnt: mounted %s on /mnt (fat32)\n", cands[i]);
 			return;
 		}
 		pr_warn("mnt: could not mount %s on /mnt (err=%d)\n", cands[i],

@@ -60,6 +60,16 @@ struct vfs_inode {
 	uint16_t uid;
 	uint16_t gid;
 	void *priv;
+
+	/*
+	 * Inode-cache bookkeeping, owned by vfs.c. A cached inode is the
+	 * single canonical in-memory object for its (mnt, ino) pair;
+	 * `refcount` counts live references and `cache_next` chains hash
+	 * collisions. A freshly built inode that has not (yet) been
+	 * canonicalized has refcount == 0 and is not on any chain.
+	 */
+	uint32_t refcount;
+	struct vfs_inode *cache_next;
 };
 
 void vfs_init(void);

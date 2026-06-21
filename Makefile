@@ -42,6 +42,7 @@ ISO_ROOT       := $(BUILD)/iso_root
 ISO_ROOT_MUSL  := $(BUILD)/iso_root_musl
 ATA_DISK       := $(BUILD)/disk.img
 ATA_DISK2      := $(BUILD)/disk2.img
+FAT32_DISK     := $(BUILD)/disk-fat32.img
 
 LIMINE_DIR     := boot/limine
 FONT_HDR       := $(GENERATED_INC)/jnu/generated/font_data.h
@@ -186,7 +187,13 @@ KERNEL_FS_SRCS := \
     kernel/fs/minix/dir.c \
     kernel/fs/minix/file.c \
     kernel/fs/minix/inode.c \
-    kernel/fs/minix/super.c
+    kernel/fs/minix/super.c \
+    kernel/fs/fat32/buffer.c \
+    kernel/fs/fat32/fat.c \
+    kernel/fs/fat32/inode.c \
+    kernel/fs/fat32/dir.c \
+    kernel/fs/fat32/file.c \
+    kernel/fs/fat32/super.c
 
 KERNEL_CORE_SRCS := \
     kernel/kernel/cmdline.c \
@@ -245,11 +252,14 @@ help:
 	  '  make                    Build native userspace, kernel ELF, and ISO.' \
 	  '  make run                Build and boot the ISO in QEMU.' \
 	  '  make ata-disk           Create build/disk.img using mkfs.minix when available.' \
+	  '  make fat32-disk         Create build/disk-fat32.img using mkfs.vfat and mcopy.' \
 	  '  make vmware-disk        Create build/disk.img and convert to build/disk.vmdk.' \
 	  '  make run-disk           Build, create disk image, and boot with the disk.' \
+	  '  make run-fat32          Build and boot with root minix disk and secondary fat32 disk.' \
 	  '  make run-virtio         Boot with virtio-blk-pci disk (requires disk image).' \
 	  '  make run-ahci           Boot with an AHCI/SATA disk (requires disk image).' \
 	  '  make run DUALDISK=ata,virtio   Boot two disks (root + /mnt) to test multi-mount.' \
+	  '  make run-fat32 DUALDISK=ata,virtio Boot root minix disk + secondary fat32 disk on custom buses.' \
 	  '  make run-fuzzy          Boot with a seeded random QEMU hardware profile.' \
 	  '  make debug              Boot QEMU paused for GDB (-s -S).' \
 	  '  make user               Build native JNU userspace programs.' \
@@ -271,12 +281,14 @@ doctor:
 	  fi; \
 	done; \
 	if command -v mkfs.minix >/dev/null 2>&1; then echo "ok: mkfs.minix"; else echo "optional missing: mkfs.minix (needed for populated make ata-disk)"; fi; \
+	if command -v mkfs.vfat >/dev/null 2>&1; then echo "ok: mkfs.vfat"; else echo "optional missing: mkfs.vfat (needed for make fat32-disk)"; fi; \
+	if command -v mcopy >/dev/null 2>&1; then echo "ok: mcopy"; else echo "optional missing: mcopy (needed for make fat32-disk)"; fi; \
 	if command -v $(QEMU) >/dev/null 2>&1; then echo "ok: $(QEMU)"; else echo "optional missing: $(QEMU) (needed for make run)"; fi; \
 	if command -v $(SPHINXBUILD) >/dev/null 2>&1; then echo "ok: $(SPHINXBUILD)"; else echo "optional missing: $(SPHINXBUILD) (needed for make docs)"; fi; \
 	if [ -f "$(LIMINE_DIR)/limine.h" ]; then echo "ok: $(LIMINE_DIR)"; else echo "missing: $(LIMINE_DIR) (run: make bootstrap-limine)"; missing=1; fi; \
 	if [ "$$missing" -ne 0 ]; then \
 	  echo; \
-	  echo "Debian/Ubuntu: sudo apt install clang lld nasm make xorriso git mtools util-linux qemu-system-x86 sphinx-doc"; \
+	  echo "Debian/Ubuntu: sudo apt install clang lld nasm make xorriso git mtools dosfstools util-linux qemu-system-x86 sphinx-doc"; \
       echo "arch based distros are compatible" \
 	  exit 1; \
 	fi
@@ -317,6 +329,11 @@ ata-disk2: $(ATA_DISK2)
 $(ATA_DISK2): $(USER_INIT) scripts/make-ata-disk.sh scripts/inject-file.py \
     scripts/install-headers.sh
 	@bash scripts/make-ata-disk.sh "$@" "$(SIZE)"
+
+fat32-disk: $(FAT32_DISK)
+
+$(FAT32_DISK): $(USER_INIT) scripts/make-fat32-disk.sh
+	@bash scripts/make-fat32-disk.sh "$@" "$(SIZE)"
 
 # The disk image is bus-agnostic (a raw MINIX FS image); the bus is
 # chosen at QEMU launch time. sata-disk is an alias so the SATA/AHCI
@@ -457,6 +474,16 @@ debug: $(KERNEL_ISO)
 debug-disk: $(KERNEL_ISO) $(ATA_DISK)
 	$(RUN_SCRIPT) $(RUN_DISK_ARG) --debug
 
+run-fat32: $(KERNEL_ISO)
+ifdef DUALDISK
+	$(MAKE) ata-disk fat32-disk
+	$(RUN_SCRIPT) --disk $(ATA_DISK) --disk-type $(call disk_xlate,$(DUAL1)) \
+	              --disk2 $(FAT32_DISK) --disk2-type $(call disk_xlate,$(DUAL2))
+else
+	$(MAKE) ata-disk fat32-disk
+	$(RUN_SCRIPT) --disk $(ATA_DISK) --disk2 $(FAT32_DISK)
+endif
+
 # ---- housekeeping -----------------------------------------------------------
 
 clean:
@@ -467,7 +494,7 @@ clean:
 	       kernel/drivers/font_data.h
 
 clean-disk: clean
-	rm -f $(ATA_DISK)
+	rm -f $(ATA_DISK) $(FAT32_DISK)
 
 distclean: clean-disk
 	rm -rf $(LIMINE_DIR)

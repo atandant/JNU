@@ -255,6 +255,32 @@ int bufcache_sync(struct block_device *bdev)
 	return 0;
 }
 
+/*
+ * Flush the entire buffer cache: sync all dirty buffers, then
+ * invalidate every unreferenced slot.  Used by the selftest to
+ * guarantee a clean 64-slot cache regardless of prior I/O.
+ */
+void bufcache_flush_all(void)
+{
+	/* First sync all dirty buffers to their devices. */
+	(void)bufcache_sync(NULL);
+
+	/* Then invalidate every unreferenced, non-loading slot. */
+	mutex_lock(&bufcache_mutex);
+	for (size_t i = 0; i < BUFCACHE_SLOTS; i++) {
+		if (slots[i].buf.refcount != 0 || slots[i].loading)
+			continue;
+		if (slots[i].valid && slots[i].buf.dirty &&
+		    bufcache_dirty_count > 0)
+			bufcache_dirty_count--;
+		slots[i].valid = false;
+		slots[i].buf.dirty = false;
+		slots[i].buf.bdev = NULL;
+		slots[i].buf.block_no = 0;
+	}
+	mutex_unlock(&bufcache_mutex);
+}
+
 void bufcache_log_stats(void)
 {
 	uint64_t hits;
@@ -333,6 +359,12 @@ int bufcache_selftest(void)
 	struct minix_buffer *held;
 	struct minix_buffer *buf;
 
+	/*
+	 * Flush any dirty/cached buffers left over from real filesystem
+	 * operations so the selftest has all 64 slots available.
+	 */
+	bufcache_flush_all();
+
 	for (size_t i = 0; i < BUFCACHE_SELFTEST_BLOCKS; i++) {
 		for (size_t j = 0; j < MINIX_BLOCK_SIZE; j++)
 			selftest_storage[i][j] = (uint8_t)(i ^ j);
@@ -377,6 +409,12 @@ int bufcache_selftest(void)
 
 	if (bufcache_dirty_count != 0)
 		return -EIO;
+
+	/*
+	 * Clean up selftest slots so subsequent tests (minix_write,
+	 * minix_dir, etc.) get a pristine cache.
+	 */
+	bufcache_flush_all();
 
 	pr_info("bufcache_selftest: [ OK ]\n");
 	return 0;

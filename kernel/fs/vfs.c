@@ -10,6 +10,7 @@
  */
 
 #include <jnu/fs/block.h>
+#include <jnu/fs/fat32.h>
 #include <jnu/fs/minix.h>
 #include <jnu/fs/vfs.h>
 #include <jnu/lib/klog.h>
@@ -23,15 +24,131 @@
  *
  * This is Design B (mountpoint pinning): a submount is pinned to the
  * (covered_mnt, covered_ino) pair of the directory it is mounted on.
- * JNU has no inode cache, but it does not need one here — every
- * vfs_inode already carries a stable identity in (ino->mnt, ino->ino),
- * so a freshly looked-up directory can be recognized as a mountpoint by
- * a small scan of this table.
+ * Every vfs_inode carries a stable identity in (ino->mnt, ino->ino), so
+ * a freshly looked-up directory can be recognized as a mountpoint by a
+ * small scan of this table.
  *
  * VFS_MOUNT_MAX is a fixed cap. Raising it (or moving to a dynamic
  * list) waits for a future update; eight live mounts is plenty for now.
  */
 #define VFS_MOUNT_MAX 8
+
+/*
+ * Inode cache (live-inode table).
+ *
+ * Guarantees a single canonical in-memory vfs_inode per (mnt, ino)
+ * while that inode is referenced. This is a correctness mechanism, not
+ * a speed optimization: without it, opening the same file twice yields
+ * two independent vfs_inode objects, each with its own mutex and its
+ * own copy of the on-disk metadata, so concurrent writers serialize on
+ * different locks and the last close clobbers the other's size and
+ * block pointers (lost update). Sharing one object behind one mutex
+ * fixes that.
+ *
+ * Lifetime: an inode enters the cache with refcount 1 the first time it
+ * is canonicalized, gains a reference on every further canonicalize of
+ * the same (mnt, ino), and is removed + written back + freed when the
+ * last reference is dropped. Idle (refcount 0) inodes are NOT retained;
+ * LRU retention of clean inodes for hit-rate is a deliberate future
+ * step and is unnecessary for the correctness goal.
+ *
+ * Filesystem code remains cache-agnostic: ops->lookup / ops->create
+ * still build a plain inode, and vfs.c folds it into the cache via
+ * vfs_icache_canonicalize().
+ *
+ * Lock ordering: icache_lock is a true leaf. It is never held while
+ * acquiring any other lock, and is never acquired while holding a
+ * vfs_inode mutex or the buffer-cache lock — the ops->close writeback
+ * that may touch the buffer cache always runs after icache_lock is
+ * dropped (canonicalize/iput unlink under the lock, then close):
+ *   bufcache_lock < pmm_lock < vfs_inode_lock, and icache_lock alone.
+ */
+#define VFS_ICACHE_BUCKETS 64
+
+static struct vfs_inode *icache[VFS_ICACHE_BUCKETS];
+static struct mutex icache_lock = MUTEX_INITIALIZER;
+
+static size_t icache_hash(const struct vfs_mount *mnt, uint32_t ino)
+{
+	uintptr_t k = (uintptr_t)mnt;
+
+	k = (k >> 4) ^ (k >> 12) ^ (uintptr_t)(ino * 2654435761u);
+	return (size_t)(k % VFS_ICACHE_BUCKETS);
+}
+
+/*
+ * Fold a freshly built inode into the cache.
+ *
+ * On entry *pio is an owned, not-yet-cached inode (refcount 0) returned
+ * by ops->lookup / ops->create / ops->mount. If another inode for the
+ * same (mnt, ino) is already cached, the duplicate is freed and *pio is
+ * replaced with the canonical object (its refcount bumped). Otherwise
+ * *pio is inserted with refcount 1. Either way, on return *pio is the
+ * canonical inode and the caller owns exactly one reference to it.
+ */
+static void vfs_icache_canonicalize(struct vfs_inode **pio)
+{
+	struct vfs_inode *cand = *pio;
+	size_t h = icache_hash(cand->mnt, cand->ino);
+	struct vfs_inode *p;
+
+	mutex_lock(&icache_lock);
+	for (p = icache[h]; p; p = p->cache_next) {
+		if (p->mnt == cand->mnt && p->ino == cand->ino) {
+			p->refcount++;
+			mutex_unlock(&icache_lock);
+			/* Drop the redundant copy (clean: no writeback). */
+			cand->mnt->ops->close(cand);
+			*pio = p;
+			return;
+		}
+	}
+	cand->refcount = 1;
+	cand->cache_next = icache[h];
+	icache[h] = cand;
+	mutex_unlock(&icache_lock);
+}
+
+/*
+ * Drop one reference to an inode.
+ *
+ * Cached inodes (refcount >= 1) are decremented and, on the 1->0
+ * transition, unlinked from the cache and handed to ops->close for
+ * writeback + free. Inodes that were never canonicalized (refcount 0 —
+ * the short-lived temporaries some filesystem operations build) are
+ * freed directly. This is the single teardown path behind vfs_close().
+ */
+static void vfs_iput(struct vfs_inode *ino)
+{
+	struct vfs_inode *victim = NULL;
+	size_t h;
+
+	if (!ino)
+		return;
+
+	h = icache_hash(ino->mnt, ino->ino);
+	mutex_lock(&icache_lock);
+	if (ino->refcount == 0) {
+		/* Never cached: a transient temporary. Free it directly. */
+		mutex_unlock(&icache_lock);
+		ino->mnt->ops->close(ino);
+		return;
+	}
+	if (--ino->refcount == 0) {
+		struct vfs_inode **pp = &icache[h];
+
+		while (*pp && *pp != ino)
+			pp = &(*pp)->cache_next;
+		if (*pp)
+			*pp = ino->cache_next;
+		ino->cache_next = NULL;
+		victim = ino;
+	}
+	mutex_unlock(&icache_lock);
+
+	if (victim)
+		victim->mnt->ops->close(victim);
+}
 
 /*
  * Upper bound for a path after lexical normalization. Matches the
@@ -42,9 +159,10 @@
 
 struct vfs_mountpoint {
 	bool used;
-	struct vfs_mount *covered_mnt; /* parent fs holding the dir, NULL=root */
-	uint32_t covered_ino;	       /* inode of the covered directory */
-	struct vfs_mount mnt;	       /* the mounted filesystem */
+	struct vfs_mount
+	    *covered_mnt;     /* parent fs holding the dir, NULL=root */
+	uint32_t covered_ino; /* inode of the covered directory */
+	struct vfs_mount mnt; /* the mounted filesystem */
 };
 
 static struct vfs_mountpoint mounts[VFS_MOUNT_MAX];
@@ -65,7 +183,8 @@ static const struct vfs_ops *ops_for_fstype(const char *fstype)
 {
 	if (strcmp(fstype, "minix") == 0)
 		return &minix_ops;
-	/* Future filesystems (fat32, …) register their ops table here. */
+	if (strcmp(fstype, "fat32") == 0)
+		return &fat32_ops;
 	return NULL;
 }
 
@@ -102,6 +221,8 @@ int vfs_mount(const char *bdev_name, const char *fstype, const char *target)
 			pr_err("vfs: mount failed: %d\n", err);
 			return err;
 		}
+		/* Pin the root inode as the canonical cache entry. */
+		vfs_icache_canonicalize(&root_mount.root);
 		mounts[0].used = true;
 		root_mounted = true;
 		pr_info("vfs: mounted %s on %s type %s\n", bdev_name, target,
@@ -149,6 +270,8 @@ int vfs_mount(const char *bdev_name, const char *fstype, const char *target)
 		pr_err("vfs: mount failed: %d\n", err);
 		return err;
 	}
+	/* Pin the submount's root inode as its canonical cache entry. */
+	vfs_icache_canonicalize(&mounts[slot].mnt.root);
 	mounts[slot].covered_mnt = covered_mnt;
 	mounts[slot].covered_ino = covered_ino;
 	mounts[slot].used = true;
@@ -184,7 +307,9 @@ static int cross_mounts(struct vfs_inode **inode)
 
 		struct vfs_inode *subroot = NULL;
 		int err = sub->ops->lookup(sub->root, ".", &subroot);
-		cur->mnt->ops->close(cur);
+		if (!err)
+			vfs_icache_canonicalize(&subroot);
+		vfs_iput(cur);
 		if (err) {
 			*inode = NULL;
 			return err;
@@ -306,6 +431,7 @@ static int vfs_parent(const char *path, struct vfs_inode **dir, char *name,
 	err = root_mount.ops->lookup(root_mount.root, ".", &curr);
 	if (err)
 		return err;
+	vfs_icache_canonicalize(&curr);
 	err = cross_mounts(&curr);
 	if (err)
 		return err;
@@ -314,16 +440,16 @@ static int vfs_parent(const char *path, struct vfs_inode **dir, char *name,
 		int res = next_component(p, comp, sizeof(comp), &p);
 
 		if (res < 0) {
-			curr->mnt->ops->close(curr);
+			vfs_iput(curr);
 			return res;
 		}
 		if (res == 0) {
-			curr->mnt->ops->close(curr);
+			vfs_iput(curr);
 			return -EINVAL;
 		}
 		if (!path_has_more(p)) {
 			if (strlen(comp) >= name_len) {
-				curr->mnt->ops->close(curr);
+				vfs_iput(curr);
 				return -ENAMETOOLONG;
 			}
 			memcpy(name, comp, strlen(comp) + 1);
@@ -332,7 +458,7 @@ static int vfs_parent(const char *path, struct vfs_inode **dir, char *name,
 		}
 
 		if (!curr->is_dir) {
-			curr->mnt->ops->close(curr);
+			vfs_iput(curr);
 			return -ENOTDIR;
 		}
 
@@ -340,7 +466,9 @@ static int vfs_parent(const char *path, struct vfs_inode **dir, char *name,
 			struct vfs_inode *next = NULL;
 
 			err = curr->mnt->ops->lookup(curr, comp, &next);
-			curr->mnt->ops->close(curr);
+			if (!err)
+				vfs_icache_canonicalize(&next);
+			vfs_iput(curr);
 			if (err)
 				return err;
 			curr = next;
@@ -373,6 +501,7 @@ int vfs_open(const char *path, struct vfs_inode **out)
 	err = root_mount.ops->lookup(root_mount.root, ".", &curr);
 	if (err)
 		return err;
+	vfs_icache_canonicalize(&curr);
 	err = cross_mounts(&curr);
 	if (err)
 		return err;
@@ -380,25 +509,27 @@ int vfs_open(const char *path, struct vfs_inode **out)
 	while (1) {
 		int res = next_component(p, comp, sizeof(comp), &p);
 		if (res < 0) {
-			curr->mnt->ops->close(curr);
+			vfs_iput(curr);
 			return res;
 		}
 		if (res == 0)
 			break;
 
 		if (!curr->is_dir) {
-			curr->mnt->ops->close(curr);
+			vfs_iput(curr);
 			return -ENOTDIR;
 		}
 
 		if (!(curr->mode & 0111)) {
-			curr->mnt->ops->close(curr);
+			vfs_iput(curr);
 			return -EACCES;
 		}
 
 		struct vfs_inode *next = NULL;
 		err = curr->mnt->ops->lookup(curr, comp, &next);
-		curr->mnt->ops->close(curr);
+		if (!err)
+			vfs_icache_canonicalize(&next);
+		vfs_iput(curr);
 
 		if (err)
 			return err;
@@ -473,6 +604,8 @@ int vfs_create(const char *path, uint16_t mode, struct vfs_inode **out)
 	mutex_lock(&dir->lock);
 	err = dir->mnt->ops->create(dir, name, mode, out);
 	mutex_unlock(&dir->lock);
+	if (!err)
+		vfs_icache_canonicalize(out);
 	vfs_close(dir);
 	return err;
 }
@@ -601,8 +734,14 @@ int vfs_readdir(struct vfs_inode *dir, size_t index, struct vfs_dirent *out)
 
 void vfs_close(struct vfs_inode *ino)
 {
+	/*
+	 * All teardown goes through the inode cache: vfs_iput drops a
+	 * reference and only writes back + frees the canonical object on
+	 * the last put. Inodes that were never cached (transient
+	 * filesystem temporaries, refcount 0) are freed immediately.
+	 */
 	if (ino && ino->mnt && ino->mnt->ops && ino->mnt->ops->close)
-		ino->mnt->ops->close(ino);
+		vfs_iput(ino);
 }
 
 int vfs_selftest(void)

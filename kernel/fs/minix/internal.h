@@ -73,6 +73,7 @@ struct minix_buffer *bufcache_get(struct block_device *bdev, uint32_t block);
 void bufcache_mark_dirty(struct minix_buffer *buf);
 void bufcache_put(struct minix_buffer *buf);
 int bufcache_sync(struct block_device *bdev);
+void bufcache_flush_all(void);
 void bufcache_log_stats(void);
 
 int minix_get_raw_inode(struct vfs_mount *mnt, uint32_t ino,
