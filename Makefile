@@ -432,11 +432,15 @@ RUN_SCRIPT := bash scripts/run-qemu.sh --iso $(KERNEL_ISO) --memory $(MEMORY) --
 RUN_DISK_ARG = --disk $(ATA_DISK)
 endif
 
-# DUALDISK=type1,type2 attaches two MINIX disks over the chosen transports
-# so the multi-mount path (root on disk 1, /mnt on disk 2) can be tested in
-# one command, e.g.:  make run DUALDISK=ata,virtio
-# Accepted names: ata/ide, sata/ahci, virtio, scsi. They select the *bus*,
-# not the filesystem — both disks are MINIX until the FAT driver lands.
+# DUALDISK=type1,type2 attaches two disks over the chosen transports so the
+# multi-mount path (root on disk 1, /mnt on disk 2) can be tested in one
+# command, e.g.:  make run DUALDISK=ata,virtio
+# Accepted bus names: ata/ide, sata/ahci, virtio, scsi (they select the
+# *bus*). As a special case the token "fat32" selects a real FAT32-formatted
+# disk for /mnt (on the IDE bus); the other token is then the bus for the
+# MINIX root disk, e.g.:  make run DUALDISK=virtio,fat32
+# The kernel probes each disk's on-disk format at mount, so the MINIX/FAT32
+# split is detected automatically regardless of bus or device name.
 # (Linux/WSL host only; the Windows run path does not wire dual disks.)
 comma := ,
 DUAL1 := $(word 1,$(subst $(comma), ,$(DUALDISK)))
@@ -449,9 +453,19 @@ disk_xlate = $(strip \
 
 run: $(KERNEL_ISO)
 ifdef DUALDISK
+ifeq ($(filter fat32,$(DUAL1) $(DUAL2)),fat32)
+	# One token is "fat32": build a real FAT32 disk2 (on the IDE bus) and
+	# a MINIX root disk1 on the *other* token's bus, e.g.
+	#   make run DUALDISK=virtio,fat32   (root=minix/virtio, /mnt=fat32)
+	$(MAKE) ata-disk fat32-disk
+	$(RUN_SCRIPT) --disk $(ATA_DISK) \
+	              --disk-type $(call disk_xlate,$(filter-out fat32,$(DUAL1) $(DUAL2))) \
+	              --disk2 $(FAT32_DISK) --disk2-type ide
+else
 	$(MAKE) ata-disk ata-disk2
 	$(RUN_SCRIPT) --disk $(ATA_DISK) --disk-type $(call disk_xlate,$(DUAL1)) \
 	              --disk2 $(ATA_DISK2) --disk2-type $(call disk_xlate,$(DUAL2))
+endif
 else
 	$(RUN_SCRIPT) $(if $(wildcard $(ATA_DISK)),$(RUN_DISK_ARG),)
 endif

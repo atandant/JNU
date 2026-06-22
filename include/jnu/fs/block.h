@@ -53,6 +53,18 @@ int block_register(struct block_device *bdev);
 struct block_device *block_lookup(const char *name);
 
 /*
+ * Number of currently registered block devices.
+ */
+size_t block_count(void);
+
+/*
+ * Return the block device at registration index `index` (0-based), or
+ * NULL if out of range. Together with block_count() this lets callers
+ * enumerate every registered device without knowing its name in advance.
+ */
+struct block_device *block_get(size_t index);
+
+/*
  * Read `count` sectors from a block device. Convenience wrapper that
  * calls through bdev->ops->read.
  */

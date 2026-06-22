@@ -52,6 +52,18 @@ struct block_device *block_lookup(const char *name)
 	return NULL;
 }
 
+size_t block_count(void)
+{
+	return bdev_count;
+}
+
+struct block_device *block_get(size_t index)
+{
+	if (index >= bdev_count)
+		return NULL;
+	return bdevs[index];
+}
+
 int block_read(struct block_device *bdev, uint64_t lba, size_t count, void *buf)
 {
 	if (!bdev || !bdev->ops || !bdev->ops->read)

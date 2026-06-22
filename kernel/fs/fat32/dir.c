@@ -90,6 +90,52 @@ static uint32_t fat32_dirent_ino(uint64_t lba, uint32_t off_in_sector)
 			  off_in_sector / FAT32_DIRENT_SIZE);
 }
 
+/*
+ * Reject directory entries whose packed 8.3 name contains bytes that are
+ * illegal in a short name. A malicious or corrupt image could otherwise
+ * smuggle control characters, an embedded NUL, or a path separator ('/')
+ * through fat32_decode_83() into a name handed back to the VFS/userspace.
+ * The only entries that legitimately carry '.' are "." and ".." (which
+ * also begin with '.'), so a leading dot is accepted wholesale.
+ */
+static bool fat32_name_valid(const uint8_t name[FAT32_NAME_LEN])
+{
+	if (name[0] == '.')
+		return true;
+
+	for (int i = 0; i < FAT32_NAME_LEN; i++) {
+		uint8_t c = name[i];
+
+		/* A leading 0x05 is the escape for a real 0xe5 byte. */
+		if (i == 0 && c == FAT32_DIRENT_E5)
+			c = FAT32_DIRENT_FREE;
+		if (c < 0x20) /* control chars and embedded NUL */
+			return false;
+		switch (c) {
+		case '"':
+		case '*':
+		case '+':
+		case ',':
+		case '.':
+		case '/':
+		case ':':
+		case ';':
+		case '<':
+		case '=':
+		case '>':
+		case '?':
+		case '[':
+		case '\\':
+		case ']':
+		case '|':
+			return false;
+		default:
+			break;
+		}
+	}
+	return true;
+}
+
 /* True for entries that should be skipped during a directory scan. */
 static bool fat32_entry_skip(const struct fat32_dirent *de)
 {
@@ -98,6 +144,8 @@ static bool fat32_entry_skip(const struct fat32_dirent *de)
 	if ((de->attr & FAT32_ATTR_LONG_NAME) == FAT32_ATTR_LONG_NAME)
 		return true;
 	if (de->attr & FAT32_ATTR_VOLUME_ID)
+		return true;
+	if (!fat32_name_valid(de->name))
 		return true;
 	return false;
 }

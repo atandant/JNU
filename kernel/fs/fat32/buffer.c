@@ -19,6 +19,7 @@
 
 #include "internal.h"
 
+#include <jnu/kernel/sched.h>
 #include <jnu/lib/klog.h>
 #include <jnu/lib/mutex.h>
 #include <jnu/lib/string.h>
@@ -29,6 +30,7 @@
 struct fat32_slot {
 	struct fat32_buffer buf;
 	bool valid;
+	bool loading; /* in-flight block_read; (bdev,lba) published */
 	uint64_t lru;
 };
 
@@ -46,6 +48,9 @@ static struct fat32_slot *fat32_pick_victim(void)
 	struct fat32_slot *victim = NULL;
 
 	for (size_t i = 0; i < FAT32_CACHE_SLOTS; i++) {
+		/* Never evict a slot whose load is still in flight. */
+		if (slots[i].loading)
+			continue;
 		if (!slots[i].valid && slots[i].buf.refcount == 0)
 			return &slots[i];
 		if (slots[i].buf.refcount != 0)
@@ -71,12 +76,26 @@ struct fat32_buffer *fat32_bget(struct block_device *bdev, uint64_t lba)
 	if (!bdev || bdev->sector_size != FAT32_SECTOR_SIZE)
 		return NULL;
 
+retry:
 	mutex_lock(&fat32_cache_lock);
 	for (size_t i = 0; i < FAT32_CACHE_SLOTS; i++) {
-		if (!slots[i].valid)
-			continue;
 		if (slots[i].buf.bdev != bdev || slots[i].buf.lba != lba)
 			continue;
+		if (!slots[i].valid && !slots[i].loading)
+			continue;
+		if (slots[i].loading) {
+			/*
+			 * Another thread is loading this exact (bdev, lba)
+			 * right now. Wait for it instead of picking a fresh
+			 * victim and creating a duplicate slot for one sector.
+			 * Single-CPU + IRQ-disable makes this unreachable
+			 * today; the structure is in place for SMP, matching
+			 * the MINIX bufcache pattern.
+			 */
+			mutex_unlock(&fat32_cache_lock);
+			sched_yield();
+			goto retry;
+		}
 		slots[i].buf.refcount++;
 		slots[i].lru = ++fat32_cache_clock;
 		mutex_unlock(&fat32_cache_lock);
@@ -92,6 +111,7 @@ struct fat32_buffer *fat32_bget(struct block_device *bdev, uint64_t lba)
 	}
 
 	slot->valid = false;
+	slot->loading = true; /* publish (bdev, lba) before dropping lock */
 	slot->buf.bdev = bdev;
 	slot->buf.lba = lba;
 	slot->buf.refcount = 1;
@@ -102,6 +122,7 @@ struct fat32_buffer *fat32_bget(struct block_device *bdev, uint64_t lba)
 	if (err) {
 		mutex_lock(&fat32_cache_lock);
 		slot->valid = false;
+		slot->loading = false;
 		slot->buf.refcount = 0;
 		mutex_unlock(&fat32_cache_lock);
 		return NULL;
@@ -109,6 +130,7 @@ struct fat32_buffer *fat32_bget(struct block_device *bdev, uint64_t lba)
 
 	mutex_lock(&fat32_cache_lock);
 	slot->valid = true;
+	slot->loading = false;
 	mutex_unlock(&fat32_cache_lock);
 	return &slot->buf;
 }

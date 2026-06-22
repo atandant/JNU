@@ -32,6 +32,8 @@ static int fat32_parse_bpb(struct block_device *bdev, struct fat32_priv *priv)
 	uint32_t bytes_per_sec, sec_per_clus, rsvd, num_fats;
 	uint32_t root_ent_cnt, tot_sec16, fat_sz16, tot_sec, fat_sz, root_clus;
 	uint32_t data_sec, cluster_count;
+	uint64_t fat_region, data_sec64, fat_bytes, fat_entry_bytes;
+	uint64_t last_data_sec;
 
 	buf = fat32_bget(bdev, 0);
 	if (!buf)
@@ -71,9 +73,17 @@ static int fat32_parse_bpb(struct block_device *bdev, struct fat32_priv *priv)
 	if (tot_sec == 0)
 		return -EINVAL;
 
-	data_sec = rsvd + num_fats * fat_sz;
-	if (data_sec >= tot_sec)
+	/*
+	 * #1: compute the data-region start in 64-bit. num_fats (<=255) times
+	 * an attacker-controlled 32-bit fat_sz overflows uint32, which would
+	 * wrap data_sec small, pass the data_sec >= tot_sec floor, and inflate
+	 * cluster_count — driving later cluster->LBA math off the device.
+	 */
+	fat_region = (uint64_t)num_fats * fat_sz;
+	data_sec64 = (uint64_t)rsvd + fat_region;
+	if (data_sec64 >= tot_sec)
 		return -EINVAL;
+	data_sec = (uint32_t)data_sec64; /* < tot_sec <= sector_count: fits */
 	cluster_count = (tot_sec - data_sec) / sec_per_clus;
 	if (cluster_count < FAT32_MIN_DATA_CLUSTERS) {
 		pr_err("fat32: only %u data clusters (< %u); not FAT32\n",
@@ -83,6 +93,30 @@ static int fat32_parse_bpb(struct block_device *bdev, struct fat32_priv *priv)
 	if (root_clus >= cluster_count + 2)
 		return -EINVAL;
 	if ((uint64_t)tot_sec > bdev->sector_count)
+		return -EINVAL;
+
+	/*
+	 * #2: the FAT must be large enough to hold an entry for every data
+	 * cluster (clusters are numbered from 2, so cluster_count + 2 entries
+	 * of 4 bytes each). Otherwise fat32_next_cluster() reads "FAT" sectors
+	 * that actually lie in the data region, fabricating bogus chains.
+	 */
+	fat_bytes = (uint64_t)fat_sz * bytes_per_sec;
+	fat_entry_bytes = ((uint64_t)cluster_count + 2u) * 4u;
+	if (fat_bytes < fat_entry_bytes)
+		return -EINVAL;
+
+	/*
+	 * #3: file identity (fat32_dirent_ino) is lba*16 + slot truncated to
+	 * 32 bits. If the data region's last sector pushes that past 32 bits,
+	 * two distinct directory entries could alias onto one ino, and the VFS
+	 * inode cache would fold them into a single inode (wrong-file reads).
+	 * Reject such volumes at mount rather than serve aliased data.
+	 */
+	last_data_sec =
+	    (uint64_t)data_sec + (uint64_t)cluster_count * sec_per_clus;
+	if (last_data_sec * (FAT32_SECTOR_SIZE / FAT32_DIRENT_SIZE) >
+	    0xffffffffu)
 		return -EINVAL;
 
 	priv->bytes_per_sec = bytes_per_sec;

@@ -74,56 +74,106 @@ extern const char jnu_buildtime[];
 
 void pic_remap_and_mask(void);
 
+/*
+ * Filesystem types probed, in order, when mounting a disk whose on-disk
+ * format is not known in advance. Each driver validates its own magic
+ * (MINIX superblock magic; FAT32 0x55AA signature + cluster floor), so a
+ * probe never mis-claims the wrong volume. Add new read-mountable
+ * filesystems here.
+ */
+static const char *const probe_fstypes[] = {
+    "minix",
+    "fat32",
+};
+
+/*
+ * Preferred root device names, tried first so the conventional root disk
+ * wins when several are present. If none of these are registered, the
+ * first probeable device (in registration order) is used as a fallback.
+ */
 static const char *const root_block_candidates[] = {
     "vda",
     "hda",
     "sda",
 };
 
-static const char *find_root_block_device(void)
+/*
+ * Try to mount `bdev_name` at `mountpoint`, probing each known fstype in
+ * turn. On success returns 0 and (if fstype_out != NULL) reports which
+ * filesystem matched; returns -ENODEV if no probe succeeded.
+ */
+static int try_mount_probe(const char *bdev_name, const char *mountpoint,
+			   const char **fstype_out)
 {
-	for (size_t i = 0; i < sizeof(root_block_candidates) /
-				   sizeof(root_block_candidates[0]);
-	     i++) {
-		if (block_lookup(root_block_candidates[i]))
-			return root_block_candidates[i];
+	for (size_t i = 0; i < ARRAY_SIZE(probe_fstypes); i++) {
+		if (vfs_mount(bdev_name, probe_fstypes[i], mountpoint) == 0) {
+			if (fstype_out)
+				*fstype_out = probe_fstypes[i];
+			return 0;
+		}
 	}
+	return -ENODEV;
+}
+
+/*
+ * Pick and mount the root filesystem on "/", probing the on-disk format
+ * rather than assuming MINIX. Preferred device names (vda/hda/sda) are
+ * tried first; otherwise every registered device is tried in
+ * registration order. On success returns the mounted device's name and
+ * sets *fstype_out; returns NULL if nothing mountable was found.
+ */
+static const char *mount_root(const char **fstype_out)
+{
+	for (size_t i = 0; i < ARRAY_SIZE(root_block_candidates); i++) {
+		const char *name = root_block_candidates[i];
+
+		if (!block_lookup(name))
+			continue;
+		if (try_mount_probe(name, "/", fstype_out) == 0)
+			return name;
+	}
+
+	for (size_t i = 0; i < block_count(); i++) {
+		struct block_device *bdev = block_get(i);
+
+		if (!bdev)
+			continue;
+		if (try_mount_probe(bdev->name, "/", fstype_out) == 0)
+			return bdev->name;
+	}
+
 	return NULL;
 }
 
 /*
  * Best-effort: mount a second filesystem on /mnt if a non-root block
  * device is present. This exercises the multi-mount path (0.0.4-a) and
- * is transport-agnostic — any registered block device name works, so an
- * extra ATA/SATA/virtio disk all land here. fstype is minix for now;
- * once the FAT driver exists, try it here too.
+ * is transport-agnostic. Every registered block device is enumerated (so
+ * an extra ATA/SATA/virtio disk under any name lands here), the root
+ * device is skipped, and the on-disk format is probed rather than assumed
+ * — the first device that mounts as any known filesystem wins.
  */
 static void mount_secondary(const char *root_bdev)
 {
-	static const char *const cands[] = {"hdb", "sdb", "vdb", "hdc", "hdd"};
+	for (size_t i = 0; i < block_count(); i++) {
+		struct block_device *bdev = block_get(i);
+		const char *fstype = NULL;
 
-	for (size_t i = 0; i < sizeof(cands) / sizeof(cands[0]); i++) {
-		if (root_bdev && strcmp(cands[i], root_bdev) == 0)
+		if (!bdev)
 			continue;
-		if (!block_lookup(cands[i]))
+		if (root_bdev && strcmp(bdev->name, root_bdev) == 0)
 			continue;
 
-		/* The mountpoint must exist on the root fs; create it lazily.
-		 */
+		/* The mountpoint must exist on the root fs; create it lazily. */
 		(void)vfs_mkdir("/mnt", 0755);
 
-		int err = vfs_mount(cands[i], "minix", "/mnt");
-		if (err == 0) {
-			pr_info("mnt: mounted %s on /mnt (minix)\n", cands[i]);
+		if (try_mount_probe(bdev->name, "/mnt", &fstype) == 0) {
+			pr_info("mnt: mounted %s on /mnt (%s)\n", bdev->name,
+				fstype);
 			return;
 		}
-		err = vfs_mount(cands[i], "fat32", "/mnt");
-		if (err == 0) {
-			pr_info("mnt: mounted %s on /mnt (fat32)\n", cands[i]);
-			return;
-		}
-		pr_warn("mnt: could not mount %s on /mnt (err=%d)\n", cands[i],
-			err);
+		pr_warn("mnt: %s present but no known filesystem; skipped\n",
+			bdev->name);
 	}
 }
 
@@ -475,10 +525,14 @@ static void kbd_echo_loop(void)
  */
 static void dump_blocks(void)
 {
-	const char *name = find_root_block_device();
-	struct block_device *bdev = name ? block_lookup(name) : NULL;
+	struct block_device *bdev = NULL;
+
+	for (size_t i = 0; !bdev && i < ARRAY_SIZE(root_block_candidates); i++)
+		bdev = block_lookup(root_block_candidates[i]);
+	if (!bdev)
+		bdev = block_get(0);
 	if (!bdev) {
-		pr_warn("dump: no root block device (vda/hda/sda)\n");
+		pr_warn("dump: no block device registered\n");
 		return;
 	}
 
@@ -635,16 +689,12 @@ void kernel_main(void)
 
 	vfs_init();
 
-	const char *root_bdev = find_root_block_device();
+	const char *root_fstype = NULL;
+	const char *root_bdev = mount_root(&root_fstype);
 	if (!root_bdev) {
-		panic("kernel: no root block device (vda/hda/sda)");
+		panic("kernel: no mountable root filesystem found");
 	}
-	int err = vfs_mount(root_bdev, "minix", "/");
-	if (err) {
-		panic("kernel: failed to mount rootfs on %s (err=%d)",
-		      root_bdev, err);
-	}
-	pr_info("rootfs: mounted from %s\n", root_bdev);
+	pr_info("rootfs: mounted from %s (%s)\n", root_bdev, root_fstype);
 
 	mount_secondary(root_bdev);
 
