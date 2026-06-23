@@ -56,8 +56,8 @@
 #include <jnu/kernel/process.h>
 #include <jnu/kernel/sched.h>
 #include <jnu/kernel/selftest.h>
+#include <jnu/lib/csprng.h>
 #include <jnu/lib/klog.h>
-#include <jnu/lib/prng.h>
 #include <jnu/lib/string.h>
 #include <jnu/mm/kmalloc.h>
 #include <jnu/mm/paging.h>
@@ -164,7 +164,8 @@ static void mount_secondary(const char *root_bdev)
 		if (root_bdev && strcmp(bdev->name, root_bdev) == 0)
 			continue;
 
-		/* The mountpoint must exist on the root fs; create it lazily. */
+		/* The mountpoint must exist on the root fs; create it lazily.
+		 */
 		(void)vfs_mkdir("/mnt", 0755);
 
 		if (try_mount_probe(bdev->name, "/mnt", &fstype) == 0) {
@@ -643,9 +644,10 @@ void kernel_main(void)
 	/* PIT timer: 100 Hz via IOAPIC. */
 	pit_init();
 
-	/* Seed the PRNG from hardware entropy (RDRAND/RDTSC/HPET).
-	 * Must run after HPET and TSC calibration are done. */
-	prng_seed();
+	/* Seed the CSPRNG (BLAKE2s + ChaCha20) from hardware entropy.
+	 * Backs getrandom(2) and ASLR.  Runs the KAT self-test; must run
+	 * after HPET and TSC calibration are done. */
+	csprng_init();
 
 	/* RTC: print wall-clock time at boot. */
 	rtc_init();

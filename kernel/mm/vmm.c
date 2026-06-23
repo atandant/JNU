@@ -12,8 +12,8 @@
 
 #include <jnu/base/compiler.h>
 #include <jnu/base/types.h>
+#include <jnu/lib/csprng.h>
 #include <jnu/lib/klog.h>
-#include <jnu/lib/prng.h>
 #include <jnu/lib/rbtree.h>
 #include <jnu/lib/string.h>
 #include <jnu/mm/kmalloc.h>
@@ -79,7 +79,7 @@ struct addr_space *vmm_create_space(void)
 	 * (262144 pages) — large enough to defeat brute-force
 	 * guessing in a single-try exploit scenario.
 	 */
-	space->mmap_base = MMAP_BASE - prng_page_offset(262144);
+	space->mmap_base = MMAP_BASE - csprng_page_offset(262144);
 
 	paging_clone_kernel_half(space->pml4);
 	return space;

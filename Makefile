@@ -97,7 +97,7 @@ KERNEL_LIB_SRCS := \
     kernel/lib/rbtree.c \
     kernel/lib/spinlock.c \
     kernel/lib/mutex.c \
-    kernel/lib/prng.c
+    kernel/lib/csprng.c
 
 KERNEL_DRIVER_SRCS := \
     kernel/drivers/serial.c \

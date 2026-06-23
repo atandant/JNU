@@ -11,8 +11,8 @@
 
 #include <jnu/kernel/elf64.h>
 #include <jnu/kernel/exec.h>
+#include <jnu/lib/csprng.h>
 #include <jnu/lib/klog.h>
-#include <jnu/lib/prng.h>
 #include <jnu/lib/string.h>
 #include <jnu/mm/kmalloc.h>
 #include <jnu/mm/paging.h>
@@ -417,7 +417,7 @@ int elf64_setup_initial_stack(struct addr_space *space,
 			      const struct exec_strings *strings,
 			      uint64_t *stack_out)
 {
-	uint64_t aslr_offset = prng_page_offset(STACK_ASLR_PAGES);
+	uint64_t aslr_offset = csprng_page_offset(STACK_ASLR_PAGES);
 	uint64_t stack_top = USER_STACK_TOP - aslr_offset;
 	uint64_t guard = stack_top - USER_STACK_SIZE - PAGE_SIZE;
 	uint64_t base = guard + PAGE_SIZE;

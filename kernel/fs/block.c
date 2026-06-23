@@ -52,10 +52,7 @@ struct block_device *block_lookup(const char *name)
 	return NULL;
 }
 
-size_t block_count(void)
-{
-	return bdev_count;
-}
+size_t block_count(void) { return bdev_count; }
 
 struct block_device *block_get(size_t index)
 {
